@@ -31,10 +31,13 @@ async def generate_voice_note(
 ) -> Optional[dict]:
     """
     Generate a TTS voice note using Cartesia REST API.
-    Uploads the audio to Supabase Storage and returns the URL.
+    Saves audio locally at static/audio/ and returns the URL.
     
     Returns: {"audio_url": str, "duration_seconds": float}
     """
+    import os
+    import uuid as _uuid
+
     settings = get_settings()
     voice_id = get_voice_id(bot_id)
 
@@ -67,16 +70,25 @@ async def generate_voice_note(
             response.raise_for_status()
             audio_bytes = response.content
 
-        # Upload to Supabase Storage
-        import uuid
-        filename = f"voice_notes/{user_id}/{bot_id}/{uuid.uuid4().hex}.mp3"
-        audio_url = await upload_to_storage(
-            "voice-notes", audio_bytes, filename, "audio/mpeg"
-        )
+        if not audio_bytes or len(audio_bytes) == 0:
+            logger.error("Cartesia returned empty audio")
+            return None
+
+        # Save to local static directory
+        audio_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "audio")
+        os.makedirs(audio_dir, exist_ok=True)
+
+        filename = f"{_uuid.uuid4().hex}.mp3"
+        filepath = os.path.join(audio_dir, filename)
+        with open(filepath, "wb") as f:
+            f.write(audio_bytes)
+
+        audio_url = f"http://localhost:8000/static/audio/{filename}"
 
         # Estimate duration (rough: MP3 at 128kbps)
-        duration = len(audio_bytes) / (128000 / 8)  # bytes / (bits_per_sec / 8)
+        duration = len(audio_bytes) / (128000 / 8)
 
+        logger.info(f"Voice note saved: {filepath} ({len(audio_bytes)} bytes)")
         return {"audio_url": audio_url, "duration_seconds": round(duration, 1)}
 
     except Exception as e:

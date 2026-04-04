@@ -78,9 +78,30 @@ async def generate_voice_note(
                 detail="Voice note generation failed. TTS service may be unavailable."
             )
 
-        # Cache messages
+        # Cache messages in Redis
         await cache_message(user_id, bot_id, "user", request.message)
         await cache_message(user_id, bot_id, "bot", text_response)
+
+        # Persist to Supabase
+        from services.background_tasks import sync_message_to_db
+        background_tasks.add_task(
+            sync_message_to_db, user_id, bot_id, "user", request.message,
+            language=request.language, activity_type="voice_note",
+        )
+        background_tasks.add_task(
+            sync_message_to_db, user_id, bot_id, "bot", text_response,
+            language=request.language, activity_type="voice_note",
+            media_url=audio_result["audio_url"],
+        )
+
+        # Publish to RabbitMQ for memory extraction
+        from services.rabbitmq_service import publish_memory_task, publish_message_log
+        background_tasks.add_task(
+            publish_memory_task, user_id, bot_id, request.message, text_response
+        )
+        background_tasks.add_task(
+            publish_message_log, user_id, bot_id, request.message, text_response
+        )
 
         # Award XP
         xp_result = await award_xp(user_id, bot_id, "voice_note_request")

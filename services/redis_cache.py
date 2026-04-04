@@ -159,6 +159,7 @@ async def end_session_and_sync(user_id: str, bot_id: str) -> dict:
                     role=row["role"],
                     content=row["content"],
                     embedding=embedding if embedding else None,
+                    activity_type="chat",
                 )
                 synced_count += 1
             except Exception as e:

@@ -173,15 +173,22 @@ from api.chat import router as chat_router
 from api.voice import router as voice_router
 from api.games import router as games_router
 from api.images import router as images_router
+from api.multimodal import router as multimodal_router
+from api.diary import router as diary_router
+from api.selfie import router as selfie_router
 
 app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(voice_router)
 app.include_router(games_router)
 app.include_router(images_router)
+app.include_router(multimodal_router)
+app.include_router(diary_router)
+app.include_router(selfie_router)
 
-# Mount static files for serving generated images
+# Mount static files for serving generated images + voice notes
 os.makedirs("static/images", exist_ok=True)
+os.makedirs("static/audio", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 

@@ -40,6 +40,7 @@ def _safe_format(template: str, **kwargs) -> str:
 @router.post("/describe-image", response_model=ImageDescribeResponse)
 async def describe_image(
     bot_id: str,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     language: str = "english",
     current_user: dict = Depends(get_current_user),
@@ -62,8 +63,27 @@ async def describe_image(
 
     description = await llm_describe(image_b64, bot_id, language)
 
+    user_id = current_user["user_id"]
+
+    # Publish to memory pipeline
+    from services.rabbitmq_service import publish_memory_task, publish_message_log
+    user_msg = f"User uploaded an image for description"
+    publish_memory_task(user_id, bot_id, user_msg, description)
+    publish_message_log(user_id, bot_id, user_msg, description)
+
+    # Persist to Supabase
+    from services.background_tasks import sync_message_to_db
+    background_tasks.add_task(
+        sync_message_to_db, user_id, bot_id, "user", user_msg,
+        activity_type="image_describe",
+    )
+    background_tasks.add_task(
+        sync_message_to_db, user_id, bot_id, "bot", description,
+        activity_type="image_describe",
+    )
+
     # Award XP
-    xp_result = await award_xp(current_user["user_id"], bot_id, "image_describe")
+    xp_result = await award_xp(user_id, bot_id, "image_describe")
 
     return ImageDescribeResponse(
         description=description,
@@ -79,6 +99,7 @@ async def describe_image(
 @router.post("/summarize-url", response_model=URLSummarizeResponse)
 async def summarize_url(
     request: URLSummarizeRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -119,8 +140,27 @@ async def summarize_url(
 
     summary = await summarize_url_content(content, request.bot_id, request.language)
 
+    user_id = current_user["user_id"]
+
+    # Publish to memory pipeline
+    from services.rabbitmq_service import publish_memory_task, publish_message_log
+    user_msg = f"User shared a URL: {request.url}"
+    publish_memory_task(user_id, request.bot_id, user_msg, summary)
+    publish_message_log(user_id, request.bot_id, user_msg, summary)
+
+    # Persist to Supabase
+    from services.background_tasks import sync_message_to_db
+    background_tasks.add_task(
+        sync_message_to_db, user_id, request.bot_id, "user", user_msg,
+        activity_type="url_summary",
+    )
+    background_tasks.add_task(
+        sync_message_to_db, user_id, request.bot_id, "bot", summary,
+        activity_type="url_summary",
+    )
+
     # Award XP
-    xp_result = await award_xp(current_user["user_id"], request.bot_id, "url_summarize")
+    xp_result = await award_xp(user_id, request.bot_id, "url_summarize")
 
     return URLSummarizeResponse(
         url=request.url,
@@ -140,6 +180,7 @@ WEATHER_API_URL = "https://wttr.in"  # Free, no API key required
 @router.get("/weather/{bot_id}", response_model=WeatherResponse)
 async def get_weather(
     bot_id: str,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -207,6 +248,22 @@ async def get_weather(
         user_message=f"Comment on today's weather: {weather_summary}. Be brief and in-character.",
     )
 
+    # Publish to memory pipeline
+    from services.rabbitmq_service import publish_memory_task
+    user_msg = f"User asked about weather in {city}"
+    publish_memory_task(current_user["user_id"], bot_id, user_msg, commentary)
+
+    # Persist to Supabase
+    from services.background_tasks import sync_message_to_db
+    background_tasks.add_task(
+        sync_message_to_db, current_user["user_id"], bot_id, "user", user_msg,
+        activity_type="weather",
+    )
+    background_tasks.add_task(
+        sync_message_to_db, current_user["user_id"], bot_id, "bot", commentary,
+        activity_type="weather",
+    )
+
     # Award XP
     xp_result = await award_xp(current_user["user_id"], bot_id, "weather_check")
 
@@ -227,6 +284,7 @@ async def get_weather(
 @router.post("/meme", response_model=MemeResponse)
 async def generate_meme(
     request: MemeRequest,
+    background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -272,6 +330,22 @@ async def generate_meme(
     # except Exception as e:
     #     logger.warning(f"Image meme generation failed (non-critical): {e}")
     #     image_url = None
+
+    # Publish to memory pipeline
+    from services.rabbitmq_service import publish_memory_task
+    user_msg = f"User requested a meme about: {request.topic or 'random topic'}"
+    publish_memory_task(current_user["user_id"], request.bot_id, user_msg, meme_text)
+
+    # Persist to Supabase
+    from services.background_tasks import sync_message_to_db
+    background_tasks.add_task(
+        sync_message_to_db, current_user["user_id"], request.bot_id, "user", user_msg,
+        activity_type="meme",
+    )
+    background_tasks.add_task(
+        sync_message_to_db, current_user["user_id"], request.bot_id, "bot", meme_text,
+        activity_type="meme",
+    )
 
     # Award XP
     xp_result = await award_xp(current_user["user_id"], request.bot_id, "meme_generate")

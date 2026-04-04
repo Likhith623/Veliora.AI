@@ -250,9 +250,23 @@ async def start_game(
         user_message=f"Start the game! My name is {user_name}.",
     )
 
-    # Store the opening message
+    # Store the opening message and publish to memory pipeline
     background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "bot", opening
+        sync_message_to_db, user_id, request.bot_id, "user",
+        f"Started game: {game['name']}", activity_type="game",
+    )
+    background_tasks.add_task(
+        sync_message_to_db, user_id, request.bot_id, "bot", opening,
+        activity_type="game",
+    )
+    from services.rabbitmq_service import publish_memory_task, publish_message_log
+    background_tasks.add_task(
+        publish_memory_task, user_id, request.bot_id,
+        f"Started game: {game['name']}", opening
+    )
+    background_tasks.add_task(
+        publish_message_log, user_id, request.bot_id,
+        f"Started game: {game['name']}", opening
     )
 
     # Award game start XP
@@ -319,12 +333,21 @@ async def game_action(
         game_state=game_state,
     )
 
-    # Store messages
+    # Store messages and publish to memory pipeline
     background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "user", request.action
+        sync_message_to_db, user_id, request.bot_id, "user", request.action,
+        activity_type="game",
     )
     background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "bot", response_text
+        sync_message_to_db, user_id, request.bot_id, "bot", response_text,
+        activity_type="game",
+    )
+    from services.rabbitmq_service import publish_memory_task, publish_message_log
+    background_tasks.add_task(
+        publish_memory_task, user_id, request.bot_id, request.action, response_text
+    )
+    background_tasks.add_task(
+        publish_message_log, user_id, request.bot_id, request.action, response_text
     )
 
     # Award turn XP

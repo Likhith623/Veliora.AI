@@ -80,12 +80,29 @@ async def generate_selfie(
     #         # User has no avatar — generate bot-only selfie
     #         pass  # Already generated above
 
+    # Publish to memory pipeline
+    from services.rabbitmq_service import publish_memory_task
+    user_msg = f"User requested a selfie of {bot_id}"
+    scene = result.get("scene_description", "Bot selfie generated")
+    publish_memory_task(user_id, bot_id, user_msg, scene)
+
+    # Persist to Supabase
+    from services.background_tasks import sync_message_to_db
+    background_tasks.add_task(
+        sync_message_to_db, user_id, bot_id, "user", user_msg,
+        activity_type="selfie",
+    )
+    background_tasks.add_task(
+        sync_message_to_db, user_id, bot_id, "bot", scene,
+        activity_type="selfie", media_url=result.get("image_url"),
+    )
+
     # Award XP
     xp_result = await award_xp(user_id, bot_id, "selfie_generate")
 
     return SelfieResponse(
         bot_id=bot_id,
         image_url=result["image_url"],
-        scene_description=result["scene_description"],
+        scene_description=scene,
         xp_earned=xp_result.get("total_earned", 150),
     )

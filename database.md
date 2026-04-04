@@ -876,3 +876,26 @@ CREATE POLICY "Service role can write media"
     ON storage.objects FOR INSERT
     WITH CHECK (bucket_id IN ('selfies', 'voice-notes', 'memes'));
 
+-- Add activity type to distinguish what generated this message
+ALTER TABLE messages
+    ADD COLUMN activity_type TEXT NOT NULL DEFAULT 'chat'
+    CHECK (activity_type IN (
+        'chat',           -- Regular chat message
+        'game',           -- Game turn text
+        'voice_note',     -- Voice note (text + audio_url)
+        'image_gen',      -- Image/selfie generation
+        'image_describe', -- Image description
+        'url_summary',    -- URL summarization
+        'weather',        -- Weather query
+        'meme',           -- Meme generation
+        'selfie'          -- Selfie generation
+    ));
+
+-- Store associated media URLs (audio, image, etc.)
+-- NOT used for context/embedding — just for record keeping
+ALTER TABLE messages
+    ADD COLUMN media_url TEXT;
+
+-- Index for filtering by activity type
+CREATE INDEX idx_messages_activity ON messages(user_id, bot_id, activity_type);
+

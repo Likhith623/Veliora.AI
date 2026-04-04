@@ -25,18 +25,22 @@ async def sync_message_to_db(
     role: str,
     content: str,
     language: Optional[str] = None,
+    activity_type: str = "chat",
+    media_url: Optional[str] = None,
 ):
     """
     Background task: Generate embedding for the message and insert
-    into Supabase messages table. Called after every chat exchange.
+    into Supabase messages table. Called after every interaction.
     
     Both user messages AND bot responses are stored.
+    activity_type tracks the source feature (chat, game, voice_note, etc.).
+    media_url stores associated audio/image URLs (not embedded).
     """
     from services.llm_engine import generate_embedding
     from services.supabase_client import insert_message
 
     try:
-        # Generate embedding for vector search
+        # Generate embedding for vector search (text only, not media URLs)
         embedding = await generate_embedding(content)
 
         # Insert into Supabase
@@ -47,9 +51,11 @@ async def sync_message_to_db(
             content=content,
             embedding=embedding if embedding else None,
             language=language,
+            activity_type=activity_type,
+            media_url=media_url,
         )
 
-        logger.debug(f"Synced {role} message to DB for {user_id}:{bot_id}")
+        logger.debug(f"Synced {role} message ({activity_type}) to DB for {user_id}:{bot_id}")
 
     except Exception as e:
         logger.error(f"Failed to sync message to DB: {e}")
