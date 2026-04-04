@@ -85,7 +85,7 @@ async def xp_flush_worker():
 
 async def flush_xp_to_db():
     """Execute a single XP flush cycle."""
-    from services.redis_cache import get_all_pending_xp, clear_pending_xp
+    from services.redis_cache import get_all_pending_xp, delete_pending_xp_field
     from services.supabase_client import upsert_user_xp
 
     try:
@@ -101,10 +101,11 @@ async def flush_xp_to_db():
                 if len(parts) == 2:
                     user_id, bot_id = parts
                     await upsert_user_xp(user_id, bot_id, xp_amount)
+                    # Delete only THIS key after successful flush (race-safe)
+                    await delete_pending_xp_field(key)
             except Exception as e:
                 logger.error(f"Failed to flush XP for {key}: {e}")
 
-        await clear_pending_xp()
         logger.info("XP flush completed")
 
     except Exception as e:
@@ -142,7 +143,8 @@ async def diary_cron_worker():
             )
             if next_run <= now:
                 # If we've passed today's run time, schedule for tomorrow
-                next_run = next_run.replace(day=next_run.day + 1)
+                from datetime import timedelta
+                next_run = next_run + timedelta(days=1)
 
             wait_seconds = (next_run - now).total_seconds()
             logger.info(f"Diary CRON: next run in {wait_seconds:.0f}s at {next_run}")
@@ -166,8 +168,6 @@ async def generate_all_diaries():
         insert_diary_entry,
     )
     from services.llm_engine import generate_diary_entry
-    from bot_prompt import BOT_PROMPTS
-
     try:
         pairs = await get_all_user_bot_pairs()
         if not pairs:

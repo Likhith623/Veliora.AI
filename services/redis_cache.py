@@ -113,6 +113,62 @@ async def clear_context(user_id: str, bot_id: str) -> bool:
         return False
 
 
+async def warm_cache_from_db(user_id: str, bot_id: str) -> list[dict]:
+    """
+    Warm-load the Redis context cache from Supabase on first chat entry.
+    Loads ALL messages (no filtering) from the DB into Redis.
+    Returns the loaded context for immediate use.
+    """
+    from services.supabase_client import get_all_messages_for_cache
+
+    key = _context_key(user_id, bot_id)
+    settings = get_settings()
+    db_messages = []  # FIX-1: Initialize before try to prevent UnboundLocalError
+
+    try:
+        # Load ALL messages from Supabase (no limit/filter)
+        db_messages = await get_all_messages_for_cache(user_id, bot_id)
+        if not db_messages:
+            return []
+
+        # Build the context list
+        context = [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in db_messages
+        ]
+
+        # FIX-2: Batch-push all messages in a single RPUSH call
+        # Upstash REST API supports variadic RPUSH: RPUSH key val1 val2 ...
+        serialized_msgs = [json.dumps(msg) for msg in context]
+        if serialized_msgs:
+            await _redis_command("RPUSH", key, *serialized_msgs)
+
+        # Keep only the most recent N messages in Redis
+        await _redis_command(
+            "LTRIM", key,
+            -settings.REDIS_CONTEXT_MAX_MESSAGES, -1
+        )
+        # Set TTL
+        await _redis_command("EXPIRE", key, settings.REDIS_CONTEXT_TTL)
+
+        logger.info(
+            f"Warmed Redis cache for {user_id}:{bot_id} "
+            f"with {len(db_messages)} messages (trimmed to {settings.REDIS_CONTEXT_MAX_MESSAGES})"
+        )
+
+        # Return the trimmed context for immediate use
+        trimmed = context[-settings.REDIS_CONTEXT_MAX_MESSAGES:]
+        return trimmed
+
+    except Exception as e:
+        logger.error(f"Redis warm_cache_from_db failed: {e}")
+        # FIX-1: Safe fallback — db_messages is always defined
+        return [
+            {"role": msg["role"], "content": msg["content"]}
+            for msg in db_messages
+        ]
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # GAME STATE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -207,6 +263,16 @@ async def clear_pending_xp() -> bool:
         return True
     except Exception as e:
         logger.warning(f"Redis clear_pending_xp failed: {e}")
+        return False
+
+
+async def delete_pending_xp_field(field: str) -> bool:
+    """Delete a single field from the pending XP hash after successful flush."""
+    try:
+        await _redis_command("HDEL", XP_HASH_KEY, field)
+        return True
+    except Exception as e:
+        logger.warning(f"Redis delete_pending_xp_field failed: {e}")
         return False
 
 

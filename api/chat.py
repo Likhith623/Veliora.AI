@@ -4,6 +4,7 @@ Main chat endpoint with language validation, semantic memory,
 game context, write-behind caching, and XP awards.
 """
 
+from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 import logging
 from config.mappings import (
@@ -18,6 +19,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["Chat"])
 
 
+def _safe_format(template: str, **kwargs) -> str:
+    """
+    Safely format a prompt template, ignoring missing keys and
+    unmatched braces (common in persona prompts with literal curly braces).
+    """
+    class SafeDict(defaultdict):
+        def __missing__(self, key):
+            return f"{{{key}}}"
+
+    try:
+        return template.format_map(SafeDict(str, **kwargs))
+    except (ValueError, KeyError):
+        # If format_map still fails (e.g., unbalanced braces),
+        # do simple string replacement as last resort
+        for k, v in kwargs.items():
+            template = template.replace(f"{{{k}}}", str(v))
+        return template
+
+
 @router.post("/send", response_model=ChatResponse)
 async def send_message(
     request: ChatRequest,
@@ -27,22 +47,22 @@ async def send_message(
     """
     Main chat endpoint. Full flow:
     1. Validate language against BOT_LANGUAGE_MAP
-    2. Load context from Redis (fallback to Supabase)
+    2. Load context from Redis (warm from Supabase on first entry)
     3. Retrieve semantic memory via two-stage vector search
     4. Check active game state from Redis
-    5. Build system prompt from bot_prompts.py
+    5. Build system prompt from bot_prompt.py
     6. Call Gemini → return response immediately
     7. Background: append to Redis, sync to Supabase with embeddings, award XP
     """
     from services.redis_cache import (
-        load_context, append_message,
+        load_context, append_message, warm_cache_from_db,
         get_game_state, increment_session_message_count,
     )
     from services.llm_engine import (
         generate_chat_response, detect_language,
     )
     from services.vector_search import semantic_search
-    from services.supabase_client import get_message_history, get_user_profile
+    from services.supabase_client import get_user_profile
     from services.background_tasks import sync_message_to_db, award_xp
     from bot_prompt import get_bot_prompt
 
@@ -52,11 +72,9 @@ async def send_message(
     language = request.language
 
     # ─── Step 1: Language Validation ───
-    # Auto-detect language if not specified
     if language == "auto" or not language:
         language = await detect_language(user_message)
 
-    # Validate against bot's supported languages
     if not validate_language(bot_id, language):
         supported = get_supported_languages(bot_id)
         return ChatResponse(
@@ -71,15 +89,11 @@ async def send_message(
             semantic_memory_used=False,
         )
 
-    # ─── Step 2: Load Context from Redis ───
+    # ─── Step 2: Load Context from Redis (warm from DB on first entry) ───
     context = await load_context(user_id, bot_id)
     if not context:
-        # Fallback: load from Supabase
-        db_messages = await get_message_history(user_id, bot_id, limit=20)
-        context = [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in db_messages
-        ]
+        # Cache miss — warm-load ALL messages from Supabase into Redis
+        context = await warm_cache_from_db(user_id, bot_id)
 
     # ─── Step 3: Semantic Memory (Two-Stage Vector Search) ───
     semantic_memory = []
@@ -93,18 +107,17 @@ async def send_message(
     # ─── Step 4: Check Game State ───
     game_state = await get_game_state(user_id)
 
-    # ─── Step 5: Build System Prompt ───
+    # ─── Step 5: Build System Prompt (safe formatting) ───
     raw_prompt = get_bot_prompt(bot_id)
     if raw_prompt == "Bot prompt not found.":
         raise HTTPException(status_code=404, detail=f"Unknown bot_id: {bot_id}")
 
-    # Get user profile for prompt personalization
     profile = await get_user_profile(user_id)
     user_name = profile.get("name", "Friend") if profile else "Friend"
     user_gender = profile.get("gender", "unknown") if profile else "unknown"
 
-    # Format the system prompt with user details
-    system_prompt = raw_prompt.format(
+    system_prompt = _safe_format(
+        raw_prompt,
         custom_bot_name=request.custom_bot_name or bot_id.replace("_", " ").title(),
         userName=user_name,
         userGender=user_gender,
@@ -122,11 +135,9 @@ async def send_message(
     )
 
     # ─── Step 7: Background Tasks ───
-    # Append both user and bot messages to Redis cache
     background_tasks.add_task(append_message, user_id, bot_id, "user", user_message)
     background_tasks.add_task(append_message, user_id, bot_id, "bot", bot_response)
 
-    # Sync both messages to Supabase with embeddings
     background_tasks.add_task(
         sync_message_to_db, user_id, bot_id, "user", user_message, language
     )
@@ -134,25 +145,24 @@ async def send_message(
         sync_message_to_db, user_id, bot_id, "bot", bot_response, language
     )
 
-    # Award XP based on message length
     msg_xp = get_message_xp(len(user_message))
     xp_result = await award_xp(user_id, bot_id, "message_short", msg_xp)
+    total_xp_earned = xp_result.get("total_earned", msg_xp)
 
-    # Check conversation milestones
     session_count = await increment_session_message_count(user_id, bot_id)
     if session_count == 10:
-        await award_xp(user_id, bot_id, "conversation_milestone_10")
-        msg_xp += XP_REWARDS["conversation_milestone_10"]
+        milestone_result = await award_xp(user_id, bot_id, "conversation_milestone_10")
+        total_xp_earned += milestone_result.get("total_earned", XP_REWARDS["conversation_milestone_10"])
     elif session_count == 25:
-        await award_xp(user_id, bot_id, "conversation_milestone_25")
-        msg_xp += XP_REWARDS["conversation_milestone_25"]
+        milestone_result = await award_xp(user_id, bot_id, "conversation_milestone_25")
+        total_xp_earned += milestone_result.get("total_earned", XP_REWARDS["conversation_milestone_25"])
 
     return ChatResponse(
         bot_id=bot_id,
         user_message=user_message,
         bot_response=bot_response,
         language=language,
-        xp_earned=xp_result.get("total_earned", msg_xp),
+        xp_earned=total_xp_earned,
         semantic_memory_used=memory_used,
     )
 

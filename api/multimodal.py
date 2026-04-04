@@ -12,11 +12,25 @@ from models.schemas import (
     ImageDescribeResponse, URLSummarizeRequest, URLSummarizeResponse,
     WeatherResponse, MemeRequest, MemeResponse,
 )
+from collections import defaultdict
 from api.auth import get_current_user
 from config.mappings import get_persona_origin
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/multimodal", tags=["Multimodal"])
+
+
+def _safe_format(template: str, **kwargs) -> str:
+    """Safely format prompt template, ignoring missing keys and unmatched braces."""
+    class SafeDict(defaultdict):
+        def __missing__(self, key):
+            return f"{{{key}}}"
+    try:
+        return template.format_map(SafeDict(str, **kwargs))
+    except (ValueError, KeyError):
+        for k, v in kwargs.items():
+            template = template.replace(f"{{{k}}}", str(v))
+        return template
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -177,16 +191,15 @@ async def get_weather(
     user_name = profile.get("name", "Friend") if profile else "Friend"
 
     raw_prompt = get_bot_prompt(bot_id)
-    try:
-        system_prompt = raw_prompt.format(
-            custom_bot_name=bot_id.replace("_", " ").title(),
-            userName=user_name,
-            userGender=profile.get("gender", "unknown") if profile else "unknown",
-            traitsString="",
-            languageString="english",
-        )
-    except Exception:
-        system_prompt = f"You are {bot_id}. Be conversational."
+    # FIX-4: Use _safe_format to handle literal braces in bot prompts
+    system_prompt = _safe_format(
+        raw_prompt,
+        custom_bot_name=bot_id.replace("_", " ").title(),
+        userName=user_name,
+        userGender=profile.get("gender", "unknown") if profile else "unknown",
+        traitsString="",
+        languageString="english",
+    )
 
     commentary = await generate_chat_response(
         system_prompt=system_prompt,

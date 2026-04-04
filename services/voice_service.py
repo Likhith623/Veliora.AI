@@ -5,6 +5,7 @@ Uses triple-streaming architecture for <500ms latency.
 """
 
 import httpx
+import asyncio
 import base64
 import logging
 import json
@@ -200,7 +201,7 @@ async def stream_tts_chunks(
 # DEEPGRAM STT — Speech-to-Text via WebSocket
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-import asyncio
+
 
 
 class DeepgramSTTStream:

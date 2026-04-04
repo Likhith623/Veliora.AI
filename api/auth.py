@@ -24,6 +24,42 @@ security = HTTPBearer()
 # JWT VALIDATION DEPENDENCY
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# Cache for JWKS public keys (refreshed every hour)
+import time as _time
+import httpx as _httpx
+from jwt.algorithms import ECAlgorithm as _ECAlgorithm
+
+_jwks_cache: dict = {}  # {kid: public_key}
+_jwks_cache_timestamp: float = 0
+_JWKS_CACHE_TTL = 3600  # 1 hour
+
+
+async def _get_jwks_key(kid: str, supabase_url: str):
+    """Get a public key from JWKS, with caching."""
+    global _jwks_cache, _jwks_cache_timestamp
+
+    # Return cached key if fresh
+    if kid in _jwks_cache and (_time.time() - _jwks_cache_timestamp) < _JWKS_CACHE_TTL:
+        return _jwks_cache[kid]
+
+    # Fetch fresh JWKS
+    jwks_url = f"{supabase_url}/auth/v1/.well-known/jwks.json"
+    async with _httpx.AsyncClient(timeout=10.0) as client:
+        jwks_response = await client.get(jwks_url)
+        jwks_response.raise_for_status()
+        jwks_data = jwks_response.json()
+
+    # Parse and cache all keys
+    _jwks_cache.clear()
+    for key_data in jwks_data.get("keys", []):
+        key_kid = key_data.get("kid")
+        if key_kid:
+            _jwks_cache[key_kid] = _ECAlgorithm.from_jwk(key_data)
+    _jwks_cache_timestamp = _time.time()
+
+    return _jwks_cache.get(kid)
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
@@ -32,12 +68,33 @@ async def get_current_user(
     token = credentials.credentials
 
     try:
-        payload = jwt.decode(
-            token,
-            settings.SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        # First, check the token header to determine algorithm
+        header = jwt.get_unverified_header(token)
+        alg = header.get("alg", "HS256")
+
+        if alg == "ES256":
+            # Supabase uses ES256 with JWKS — get cached public key
+            kid = header.get("kid")
+            public_key = await _get_jwks_key(kid, settings.SUPABASE_URL)
+
+            if not public_key:
+                raise HTTPException(status_code=401, detail="Invalid token: key not found")
+
+            payload = jwt.decode(
+                token,
+                public_key,
+                algorithms=["ES256"],
+                audience="authenticated",
+            )
+        else:
+            # Fallback to HS256 for legacy tokens
+            payload = jwt.decode(
+                token,
+                settings.SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+            )
+
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: no subject")
@@ -82,7 +139,6 @@ async def signup(request: UserSignUpRequest):
             "location": request.location,
             "bio": request.bio,
             "total_xp": 0,
-            "level": 0,
             "streak_days": 0,
             "last_login_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
         }
@@ -98,7 +154,7 @@ async def signup(request: UserSignUpRequest):
             access_token=session.access_token,
             refresh_token=session.refresh_token,
             user=UserProfileResponse(
-                id=user_id,
+                id=str(user_id),
                 email=request.email,
                 name=request.name,
                 username=request.username,
@@ -128,7 +184,7 @@ async def login(request: LoginRequest):
     """
     Login with email/password. Awards daily login XP and updates streak.
     """
-    from services.supabase_client import sign_in_user, get_user_profile, update_user_streak
+    from services.supabase_client import sign_in_user, get_user_profile, update_user_streak, create_user_profile
     from services.background_tasks import award_xp
 
     try:
@@ -143,8 +199,21 @@ async def login(request: LoginRequest):
 
         # Fetch profile
         profile = await get_user_profile(user_id)
+
+        # Auto-create profile if user exists in auth but not in users table
         if not profile:
-            raise HTTPException(status_code=404, detail="User profile not found")
+            logger.warning(f"User {user_id} exists in auth but has no profile. Auto-creating.")
+            profile_data = {
+                "email": request.email,
+                "name": request.email.split("@")[0],
+                "username": request.email.split("@")[0],
+                "age": 18,
+                "gender": "unspecified",
+                "total_xp": 0,
+                "streak_days": 0,
+                "last_login_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+            }
+            profile = await create_user_profile(user_id, profile_data)
 
         # Handle daily login streak
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")

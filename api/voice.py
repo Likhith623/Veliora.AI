@@ -5,15 +5,30 @@ WS   /voice/call: Bidirectional real-time voice call
      Triple-streaming: Deepgram STT → Gemini (streaming) → Cartesia TTS (streaming)
 """
 
+from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, WebSocket, WebSocketDisconnect
 import asyncio
 import json
 import logging
+from config.mappings import XP_REWARDS
 from models.schemas import VoiceNoteRequest, VoiceNoteResponse
 from api.auth import get_current_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/voice", tags=["Voice"])
+
+
+def _safe_format(template: str, **kwargs) -> str:
+    """Safely format prompt template, ignoring missing keys."""
+    class SafeDict(defaultdict):
+        def __missing__(self, key):
+            return f"{{{key}}}"
+    try:
+        return template.format_map(SafeDict(str, **kwargs))
+    except (ValueError, KeyError):
+        for k, v in kwargs.items():
+            template = template.replace(f"{{{k}}}", str(v))
+        return template
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -37,7 +52,7 @@ async def generate_voice_note(
     """
     from services.llm_engine import generate_chat_response
     from services.voice_service import generate_voice_note as gen_voice
-    from services.redis_cache import load_context, append_message
+    from services.redis_cache import load_context, append_message, warm_cache_from_db
     from services.background_tasks import sync_message_to_db, award_xp
     from services.supabase_client import get_user_profile
     from bot_prompt import get_bot_prompt
@@ -53,8 +68,10 @@ async def generate_voice_note(
             detail=f"Language '{request.language}' not supported. Supported: {supported}"
         )
 
-    # Load context
+    # Load context (warm from DB on first entry)
     context = await load_context(user_id, request.bot_id)
+    if not context:
+        context = await warm_cache_from_db(user_id, request.bot_id)
 
     # Get user profile for personalization
     profile = await get_user_profile(user_id)
@@ -63,7 +80,8 @@ async def generate_voice_note(
 
     # Build prompt
     raw_prompt = get_bot_prompt(request.bot_id)
-    system_prompt = raw_prompt.format(
+    system_prompt = _safe_format(
+        raw_prompt,
         custom_bot_name=request.custom_bot_name or request.bot_id.replace("_", " ").title(),
         userName=user_name,
         userGender=user_gender,
@@ -121,8 +139,6 @@ async def voice_call(websocket: WebSocket):
     3. Server → Deepgram (STT) → Gemini (streaming LLM) → Cartesia (streaming TTS)
     4. Server sends audio chunks (binary) back to client in real-time
     5. Server also sends JSON metadata: {"type": "transcript|response_text|status", ...}
-    
-    This achieves ~500-800ms response time by overlapping all three stages.
     """
     import jwt as pyjwt
     from config.settings import get_settings
@@ -130,6 +146,7 @@ async def voice_call(websocket: WebSocket):
     from services.llm_engine import generate_chat_response_stream
     from services.redis_cache import (
         load_context, append_message, set_voice_call_active, clear_voice_call,
+        warm_cache_from_db,
     )
     from services.background_tasks import sync_message_to_db, award_xp
     from services.supabase_client import get_user_profile
@@ -170,8 +187,10 @@ async def voice_call(websocket: WebSocket):
         # Mark call as active
         await set_voice_call_active(user_id, bot_id)
 
-        # Load context
+        # Load context (warm from DB on first entry)
         context = await load_context(user_id, bot_id)
+        if not context:
+            context = await warm_cache_from_db(user_id, bot_id)
 
         # Get user profile for prompt
         profile = await get_user_profile(user_id)
@@ -179,7 +198,8 @@ async def voice_call(websocket: WebSocket):
         user_gender = profile.get("gender", "unknown") if profile else "unknown"
 
         raw_prompt = get_bot_prompt(bot_id)
-        system_prompt = raw_prompt.format(
+        system_prompt = _safe_format(
+            raw_prompt,
             custom_bot_name=bot_id.replace("_", " ").title(),
             userName=user_name,
             userGender=user_gender,
@@ -217,7 +237,6 @@ async def voice_call(websocket: WebSocket):
                 transcript = await deepgram_stt.get_transcript(timeout=30.0)
 
                 if transcript is None:
-                    # No speech for 30s, send keepalive
                     try:
                         await websocket.send_json({"type": "status", "message": "listening"})
                     except Exception:
@@ -236,7 +255,6 @@ async def voice_call(websocket: WebSocket):
                     break
 
                 # ─── Triple-streaming pipeline ───
-                # Start Gemini streaming response
                 full_response = ""
 
                 async def gemini_stream():
@@ -267,27 +285,39 @@ async def voice_call(websocket: WebSocket):
                 except Exception:
                     break
 
-                # Update context
+                # Update context (in-place mutation — FIX-6)
                 context.append({"role": "user", "content": transcript})
                 context.append({"role": "bot", "content": full_response})
 
-                # Keep context manageable
+                # Keep context manageable (in-place slice — FIX-6)
                 if len(context) > 20:
-                    context = context[-20:]
+                    context[:] = context[-20:]
+
+                # FIX-5: Add error callback so create_task failures are logged
+                def _task_error_handler(t: asyncio.Task):
+                    if t.cancelled():
+                        return
+                    exc = t.exception()
+                    if exc:
+                        logger.warning(f"Voice call background task failed: {exc}")
 
                 # Store messages in background
-                asyncio.create_task(
+                t1 = asyncio.create_task(
                     append_message(user_id, bot_id, "user", transcript)
                 )
-                asyncio.create_task(
+                t1.add_done_callback(_task_error_handler)
+                t2 = asyncio.create_task(
                     append_message(user_id, bot_id, "bot", full_response)
                 )
-                asyncio.create_task(
+                t2.add_done_callback(_task_error_handler)
+                t3 = asyncio.create_task(
                     sync_message_to_db(user_id, bot_id, "user", transcript)
                 )
-                asyncio.create_task(
+                t3.add_done_callback(_task_error_handler)
+                t4 = asyncio.create_task(
                     sync_message_to_db(user_id, bot_id, "bot", full_response)
                 )
+                t4.add_done_callback(_task_error_handler)
 
                 # Track call duration for XP
                 elapsed = (asyncio.get_event_loop().time() - call_start) / 60
@@ -295,10 +325,11 @@ async def voice_call(websocket: WebSocket):
                 if new_minutes > call_minutes:
                     minutes_diff = new_minutes - call_minutes
                     call_minutes = new_minutes
-                    asyncio.create_task(
+                    t5 = asyncio.create_task(
                         award_xp(user_id, bot_id, "voice_call_minute",
                                  minutes_diff * XP_REWARDS.get("voice_call_minute", 50))
                     )
+                    t5.add_done_callback(_task_error_handler)
 
         # Run receiver and processor concurrently
         receiver_task = asyncio.create_task(audio_receiver())
