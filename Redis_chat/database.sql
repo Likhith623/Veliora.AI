@@ -1,0 +1,21 @@
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- Redis_chat — Supabase Schema Reference
+-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+-- This module uses the Veliora.AI Supabase schema.
+-- See database.md for the full schema definition.
+--
+-- Key tables used:
+--   messages        — Chat history (synced from Redis on end-chat)
+--   users           — User profiles
+--   personas        — Bot persona metadata
+--   user_xp         — XP tracking
+--   user_game_sessions — Game session data
+--   diaries         — Persona diary entries
+--   games           — Game catalog
+--
+-- The messages table receives data from Redis when end-chat is called:
+--   INSERT INTO messages (user_id, bot_id, role, content, embedding, language)
+--   VALUES ($1, $2, $3, $4, $5, $6)
+--
+-- Memories are stored ONLY in Redis (not persisted to Supabase).
+-- They use HNSW vector indexes for semantic search and RFM scoring.

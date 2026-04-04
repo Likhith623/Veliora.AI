@@ -38,6 +38,7 @@ async def generate_chat_response(
     user_message: str,
     game_state: Optional[dict] = None,
     semantic_memory: Optional[list[str]] = None,
+    language: Optional[str] = None,
 ) -> str:
     """
     Generate a chat response using Gemini 1.5 Flash.
@@ -164,7 +165,7 @@ async def generate_chat_response_stream(
 
 async def generate_embedding(text: str) -> list[float]:
     """
-    Generate a 768-dimensional embedding using Gemini's text-embedding-004 model.
+    Generate a 768-dimensional embedding using Gemini's gemini-embedding-001 model.
     """
     settings = get_settings()
     url = _get_url(settings.GEMINI_EMBEDDING_MODEL, "embedContent")

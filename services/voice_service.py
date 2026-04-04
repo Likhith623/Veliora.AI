@@ -54,7 +54,8 @@ async def generate_voice_note(
         "voice": {"mode": "id", "id": voice_id},
         "output_format": {
             "container": "mp3",
-            "bit_rate": 128000,
+            "encoding": "pcm_f32le",
+            "sample_rate": 44100,
         },
     }
 
