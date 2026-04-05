@@ -52,19 +52,6 @@ Every user is verified through video or voice introductions. Messages are automa
 
 ---
 
-## Team NEUTRONS
-
-> **SRM University, AP -- Amaravati**
-
-| Role | Name | Reg. Number | Email |
-|------|------|-------------|-------|
-| **Team Leader** | Vasireddy Likhith Chowdary | AP23110010253 | likhithchowdary_vasireddy@srmap.edu.in |
-| Member | Kakani Pujitha | AP23110011433 | pujitha_kakani@srmap.edu.in |
-| Member | K. Nikitha | AP23110011376 | anikitha_kunapareddy@srmap.edu.in |
-| Member | Samad Shaik | AP23110010747 | samad_shaik@srmap.edu.in |
-
----
-
 ## Core Features
 
 ### 1. Verified Humans Only
