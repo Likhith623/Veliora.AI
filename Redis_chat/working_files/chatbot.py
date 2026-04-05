@@ -94,9 +94,9 @@ async def get_bot_response_combined(
     )
 
     history_block = "\n\n".join(
-        f"Timestamp: {r.get('timestamp', '?')}\n"
+        f"[{r.get('activity_type', 'chat').upper()}] {r.get('timestamp', '?')}\n"
         f"User: {r.get('user_message', '')}\n"
-        f"Bot: {r.get('bot_response', '')}"
+        f"Bot: {r.get('bot_response', '')}" + (f" (Media: {r['media_url']})" if r.get('media_url') else "")
         for r in recent
     )
 
@@ -178,9 +178,9 @@ async def get_bot_response_from_memory(
     ) if semantic else "No memories found."
 
     history_block = "\n\n".join(
-        f"Timestamp: {r.get('timestamp', '?')}\n"
+        f"[{r.get('activity_type', 'chat').upper()}] {r.get('timestamp', '?')}\n"
         f"User: {r.get('user_message', '')}\n"
-        f"Bot: {r.get('bot_response', '')}"
+        f"Bot: {r.get('bot_response', '')}" + (f" (Media: {r['media_url']})" if r.get('media_url') else "")
         for r in recent
     )
 
@@ -237,9 +237,9 @@ async def get_bot_response_rfm(
     ) if rfm_memories else "No high-RFM memories."
 
     history_block = "\n\n".join(
-        f"Timestamp: {r.get('timestamp', '?')}\n"
+        f"[{r.get('activity_type', 'chat').upper()}] {r.get('timestamp', '?')}\n"
         f"User: {r.get('user_message', '')}\n"
-        f"Bot: {r.get('bot_response', '')}"
+        f"Bot: {r.get('bot_response', '')}" + (f" (Media: {r['media_url']})" if r.get('media_url') else "")
         for r in recent
     )
 

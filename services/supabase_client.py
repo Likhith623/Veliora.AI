@@ -118,18 +118,20 @@ async def insert_message(
 ) -> dict:
     """Insert a message (user or bot) into the messages table."""
     client = get_supabase_admin()
+    if activity_type and activity_type != "chat":
+        content = f"[{activity_type.upper()}] {content}"
+    if media_url:
+        content = f"{content} (Media: {media_url})"
+
     data = {
         "user_id": user_id,
         "bot_id": bot_id,
         "role": role,
         "content": content,
         "language": language,
-        "activity_type": activity_type,
     }
     if embedding:
         data["embedding"] = embedding
-    if media_url:
-        data["media_url"] = media_url
 
     def _insert():
         return client.table("messages").insert(data).execute()
