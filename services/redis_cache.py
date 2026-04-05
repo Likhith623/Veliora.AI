@@ -114,8 +114,16 @@ async def load_session_from_supabase(user_id: str, bot_id: str):
     messages = await get_all_messages_for_cache(user_id, bot_id)
     logger.info(f"Loaded {len(messages)} messages from Supabase for {user_id}:{bot_id}")
 
-    # Load into Redis
+    from config.settings import get_settings
+    settings = get_settings()
+
+    # Load into Redis chat records for semantic search and async sync
     manager.load_user_session(user_id, bot_id, messages)
+
+    # Load recent messages into the context queue for LLM
+    context_msgs = messages[-settings.REDIS_CONTEXT_MAX_MESSAGES:]
+    for msg in context_msgs:
+        await cache_message(user_id, bot_id, msg["role"], msg["content"])
 
 
 async def end_session_and_sync(user_id: str, bot_id: str) -> dict:
@@ -145,6 +153,10 @@ async def end_session_and_sync(user_id: str, bot_id: str) -> dict:
 
     synced_count = 0
     for chat in chats:
+        # Skip historical messages that were loaded from Supabase initially
+        if chat.get("is_historical") == "true":
+            continue
+
         # Convert chat records to message rows
         message_rows = serialize_chat_to_messages(chat)
 
@@ -159,7 +171,8 @@ async def end_session_and_sync(user_id: str, bot_id: str) -> dict:
                     role=row["role"],
                     content=row["content"],
                     embedding=embedding if embedding else None,
-                    activity_type="chat",
+                    activity_type=row.get("activity_type", "chat"),
+                    media_url=row.get("media_url"),
                 )
                 synced_count += 1
             except Exception as e:

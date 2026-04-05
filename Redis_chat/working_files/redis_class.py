@@ -206,6 +206,7 @@ class RedisManager:
                     "user_message": msg["content"],
                     "bot_response": bot_resp,
                     "timestamp": timestamp,
+                    "is_historical": "true"
                 }
                 self.store_chat(user_id, bot_id, chat_id, chat_record)
             else:
@@ -217,6 +218,7 @@ class RedisManager:
                     "user_message": "",
                     "bot_response": msg["content"],
                     "timestamp": timestamp,
+                    "is_historical": "true"
                 }
                 self.store_chat(user_id, bot_id, chat_id, chat_record)
             i += 1

@@ -82,25 +82,14 @@ async def generate_voice_note(
         await cache_message(user_id, bot_id, "user", request.message)
         await cache_message(user_id, bot_id, "bot", text_response)
 
-        # Persist to Supabase
-        from services.background_tasks import sync_message_to_db
-        background_tasks.add_task(
-            sync_message_to_db, user_id, bot_id, "user", request.message,
-            language=request.language, activity_type="voice_note",
-        )
-        background_tasks.add_task(
-            sync_message_to_db, user_id, bot_id, "bot", text_response,
-            language=request.language, activity_type="voice_note",
-            media_url=audio_result["audio_url"],
-        )
-
-        # Publish to RabbitMQ for memory extraction
+        # Publish to RabbitMQ for memory extraction and Redis chat logging
         from services.rabbitmq_service import publish_memory_task, publish_message_log
         background_tasks.add_task(
             publish_memory_task, user_id, bot_id, request.message, text_response
         )
         background_tasks.add_task(
-            publish_message_log, user_id, bot_id, request.message, text_response
+            publish_message_log, user_id, bot_id, request.message, text_response,
+            activity_type="voice_note", media_url=audio_result["audio_url"]
         )
 
         # Award XP
@@ -246,8 +235,13 @@ async def voice_call(websocket: WebSocket):
         await websocket.close()
         return
 
+    from services.redis_cache import get_context, has_active_session, load_session_from_supabase
+    if not await has_active_session(user_id, bot_id):
+        await load_session_from_supabase(user_id, bot_id)
+        
+    call_context = await get_context(user_id, bot_id)
+
     system_prompt = get_bot_prompt(bot_id)
-    call_context = []
     call_active = True
 
     async def receive_audio():
@@ -327,6 +321,11 @@ async def voice_call(websocket: WebSocket):
                     # Cache messages
                     await cache_message(user_id, bot_id, "user", transcript)
                     await cache_message(user_id, bot_id, "bot", full_response)
+
+                    # Trigger memory storage and message log for DB persistence
+                    from services.rabbitmq_service import publish_memory_task, publish_message_log
+                    publish_memory_task(user_id, bot_id, transcript, full_response)
+                    publish_message_log(user_id, bot_id, transcript, full_response, activity_type="voice_call")
 
                 except Exception as e:
                     logger.error(f"Response generation error: {e}")

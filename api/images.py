@@ -94,25 +94,23 @@ async def generate_selfie(
         # Step 4: Build full URL (localhost:8000)
         full_url = f"http://localhost:8000{relative_url}"
 
-        # Step 5: Publish to memory pipeline
-        from services.rabbitmq_service import publish_memory_task, publish_message_log
+        # Step 5: Publish to memory pipeline and cache
+        from services.redis_cache import cache_message, has_active_session, load_session_from_supabase
+        if not await has_active_session(user_id, bot_id):
+            await load_session_from_supabase(user_id, bot_id)
+
         bot_resp = f"Generated a selfie with emotion: {context.get('emotion', 'neutral')}, at {context.get('location', 'a room')}"
+        
+        await cache_message(user_id, bot_id, "user", request.message)
+        await cache_message(user_id, bot_id, "bot", bot_resp)
+
+        from services.rabbitmq_service import publish_memory_task, publish_message_log
         background_tasks.add_task(
             publish_memory_task, user_id, bot_id, request.message, bot_resp
         )
         background_tasks.add_task(
-            publish_message_log, user_id, bot_id, request.message, bot_resp
-        )
-
-        # Step 6: Persist to Supabase
-        from services.background_tasks import sync_message_to_db
-        background_tasks.add_task(
-            sync_message_to_db, user_id, bot_id, "user", request.message,
-            activity_type="image_gen",
-        )
-        background_tasks.add_task(
-            sync_message_to_db, user_id, bot_id, "bot", bot_resp,
-            activity_type="image_gen", media_url=full_url,
+            publish_message_log, user_id, bot_id, request.message, bot_resp,
+            activity_type="image_gen", media_url=full_url
         )
 
         # Step 7: Award XP in background

@@ -168,6 +168,7 @@ app.add_middleware(
 # ROUTERS
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+# -- Chatbot Core APIs --
 from api.auth import router as auth_router
 from api.chat import router as chat_router
 from api.voice import router as voice_router
@@ -185,6 +186,40 @@ app.include_router(images_router)
 app.include_router(multimodal_router)
 app.include_router(diary_router)
 app.include_router(selfie_router)
+
+# -- Realtime Communication APIs (No distinct auth, uses Chatbot Auth) --
+from realtime_communication.routers.profiles import router as rc_profiles
+from realtime_communication.routers.matching import router as rc_matching
+from realtime_communication.routers.chat import router as rc_chat
+from realtime_communication.routers.contests import router as rc_contests
+from realtime_communication.routers.games import router as rc_games
+from realtime_communication.routers.family_rooms import router as rc_family_rooms
+from realtime_communication.routers.translation import router as rc_translation
+from realtime_communication.routers.safety import router as rc_safety
+from realtime_communication.routers.friends import router as rc_friends
+from realtime_communication.routers.xp import router as rc_xp
+from realtime_communication.routers.privacy import router as rc_privacy
+from realtime_communication.routers.questions import router as rc_questions
+from realtime_communication.routers.live_games import router as rc_live_games
+from realtime_communication.routers.calls import router as rc_calls
+from realtime_communication.routers.verification import router as rc_verification
+
+rt_prefix = "/api/v1"
+app.include_router(rc_profiles, prefix=rt_prefix)
+app.include_router(rc_verification, prefix=rt_prefix)
+app.include_router(rc_matching, prefix=rt_prefix)
+app.include_router(rc_chat, prefix=rt_prefix)
+app.include_router(rc_calls, prefix=rt_prefix)
+app.include_router(rc_translation, prefix=rt_prefix)
+app.include_router(rc_friends, prefix=rt_prefix)
+app.include_router(rc_xp, prefix=rt_prefix)
+app.include_router(rc_privacy, prefix=rt_prefix)
+app.include_router(rc_questions, prefix=rt_prefix)
+app.include_router(rc_games, prefix=rt_prefix)
+app.include_router(rc_live_games, prefix=rt_prefix)
+app.include_router(rc_contests, prefix=rt_prefix)
+app.include_router(rc_family_rooms, prefix=rt_prefix)
+app.include_router(rc_safety, prefix=rt_prefix)
 
 # Mount static files for serving generated images + voice notes
 os.makedirs("static/images", exist_ok=True)

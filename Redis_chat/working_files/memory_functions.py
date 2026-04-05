@@ -149,7 +149,8 @@ async def get_semantically_similar_memories(
 
     uid_esc = _escape_tag(user_id)
     bid_esc = _escape_tag(bot_id)
-    query_str = f"@user_id:{{{uid_esc}}} @bot_id:{{{bid_esc}}}=>[KNN {k} @embedding $vec as score]"
+    # The filter string must be enclosed in parentheses when used with => [KNN ...]
+    query_str = f"(@user_id:{{{uid_esc}}} @bot_id:{{{bid_esc}}})=>[KNN {k} @embedding $vec as score]"
     params = {"vec": vec.tobytes()}
     query = (
         Query(query_str)
@@ -431,7 +432,8 @@ Include all important keywords. Output only the merged memory.
 
 async def log_message(
     redis_manager, user_id: str, bot_id: str,
-    user_input: str, bot_response: str
+    user_input: str, bot_response: str,
+    activity_type: str = "chat", media_url: str = None
 ):
     """Persist a user-bot exchange chronologically in Redis."""
     chat_id = str(uuid.uuid4())
@@ -444,5 +446,9 @@ async def log_message(
         "user_message": user_input,
         "bot_response": bot_response,
         "timestamp": timestamp,
+        "activity_type": activity_type,
     }
+    if media_url:
+        chat_record["media_url"] = media_url
+        
     redis_manager.store_chat(user_id, bot_id, chat_id, chat_record)

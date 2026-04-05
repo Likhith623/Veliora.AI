@@ -35,6 +35,7 @@ class Settings(BaseSettings):
 
     # ─── Gemini API ───
     GEMINI_API_KEY: str
+    GOOGLE_TRANSLATE_API_KEY: str = ""
     GEMINI_MODEL: str = "gemini-2.0-flash"
     GEMINI_EMBEDDING_MODEL: str = "gemini-embedding-001"
     GEMINI_EMBEDDING_DIMENSIONS: int = 768

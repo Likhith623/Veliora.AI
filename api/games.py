@@ -189,13 +189,19 @@ async def start_game(
     Start a new game session. Sets game state in Redis.
     Gemini generates the opening message as Game Master.
     """
-    from services.redis_cache import set_game_state, get_game_state
+    from services.redis_cache import set_game_state, get_game_state, cache_message, has_active_session, load_session_from_supabase, get_context
     from services.supabase_client import create_game_session, get_user_profile
     from services.llm_engine import generate_chat_response
-    from services.background_tasks import award_xp, sync_message_to_db
+    from services.background_tasks import award_xp
     from bot_prompt import get_bot_prompt
 
     user_id = current_user["user_id"]
+
+    # Auto-load session if needed
+    if not await has_active_session(user_id, request.bot_id):
+        await load_session_from_supabase(user_id, request.bot_id)
+
+    chat_context = await get_context(user_id, request.bot_id)
 
     # Check if user already has an active game
     existing_game = await get_game_state(user_id)
@@ -246,19 +252,15 @@ async def start_game(
 
     opening = await generate_chat_response(
         system_prompt=f"{bot_prompt}\n\n{gm_prompt}",
-        context=[],
+        context=chat_context,
         user_message=f"Start the game! My name is {user_name}.",
     )
 
+    # Cache messages to Redis context so the LLM remembers
+    await cache_message(user_id, request.bot_id, "user", f"Started game: {game['name']}")
+    await cache_message(user_id, request.bot_id, "bot", opening)
+
     # Store the opening message and publish to memory pipeline
-    background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "user",
-        f"Started game: {game['name']}", activity_type="game",
-    )
-    background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "bot", opening,
-        activity_type="game",
-    )
     from services.rabbitmq_service import publish_memory_task, publish_message_log
     background_tasks.add_task(
         publish_memory_task, user_id, request.bot_id,
@@ -266,7 +268,7 @@ async def start_game(
     )
     background_tasks.add_task(
         publish_message_log, user_id, request.bot_id,
-        f"Started game: {game['name']}", opening
+        f"Started game: {game['name']}", opening, activity_type="game"
     )
 
     # Award game start XP
@@ -291,13 +293,19 @@ async def game_action(
     Send a game action. Gemini acts as Game Master.
     Tracks turns and auto-ends at max_turns.
     """
-    from services.redis_cache import set_game_state, get_game_state
+    from services.redis_cache import set_game_state, get_game_state, cache_message, has_active_session, load_session_from_supabase, get_context
     from services.llm_engine import generate_chat_response
     from services.supabase_client import update_game_session
-    from services.background_tasks import award_xp, sync_message_to_db
+    from services.background_tasks import award_xp
     from bot_prompt import get_bot_prompt
 
     user_id = current_user["user_id"]
+
+    # Auto-load session if needed
+    if not await has_active_session(user_id, request.bot_id):
+        await load_session_from_supabase(user_id, request.bot_id)
+
+    chat_context = await get_context(user_id, request.bot_id)
 
     # Get current game state
     game_state = await get_game_state(user_id)
@@ -328,26 +336,23 @@ async def game_action(
     # Generate response
     response_text = await generate_chat_response(
         system_prompt=f"{bot_prompt}\n\n{gm_prompt}",
-        context=[],
+        context=chat_context,
         user_message=request.action,
         game_state=game_state,
     )
 
-    # Store messages and publish to memory pipeline
-    background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "user", request.action,
-        activity_type="game",
-    )
-    background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "bot", response_text,
-        activity_type="game",
-    )
+    # Cache messages to Redis context so the LLM remembers
+    await cache_message(user_id, request.bot_id, "user", request.action)
+    await cache_message(user_id, request.bot_id, "bot", response_text)
+
+    # Publish to memory pipeline
     from services.rabbitmq_service import publish_memory_task, publish_message_log
     background_tasks.add_task(
         publish_memory_task, user_id, request.bot_id, request.action, response_text
     )
     background_tasks.add_task(
-        publish_message_log, user_id, request.bot_id, request.action, response_text
+        publish_message_log, user_id, request.bot_id, request.action, response_text,
+        activity_type="game"
     )
 
     # Award turn XP

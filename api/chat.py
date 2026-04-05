@@ -64,12 +64,8 @@ async def send_message(
         # ─── Step 2: Get memory-enhanced response ───
         redis_manager = get_redis_manager()
 
-        # Get user name for personalization
-        try:
-            profile = await get_user_profile(user_id)
-            user_name = profile.get("name", "Friend") if profile else "Friend"
-        except Exception:
-            user_name = "Friend"
+        # Get user name for personalization from token securely
+        user_name = current_user.get("name", "Friend")
 
         result = await get_bot_response_combined(
             redis_manager, user_id, bot_id, request.message, user_name

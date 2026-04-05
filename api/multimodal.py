@@ -68,19 +68,17 @@ async def describe_image(
     # Publish to memory pipeline
     from services.rabbitmq_service import publish_memory_task, publish_message_log
     user_msg = f"User uploaded an image for description"
-    publish_memory_task(user_id, bot_id, user_msg, description)
-    publish_message_log(user_id, bot_id, user_msg, description)
+    
+    from services.redis_cache import cache_message, has_active_session, load_session_from_supabase
+    
+    if not await has_active_session(user_id, bot_id):
+        await load_session_from_supabase(user_id, bot_id)
+        
+    await cache_message(user_id, bot_id, "user", user_msg)
+    await cache_message(user_id, bot_id, "bot", description)
 
-    # Persist to Supabase
-    from services.background_tasks import sync_message_to_db
-    background_tasks.add_task(
-        sync_message_to_db, user_id, bot_id, "user", user_msg,
-        activity_type="image_describe",
-    )
-    background_tasks.add_task(
-        sync_message_to_db, user_id, bot_id, "bot", description,
-        activity_type="image_describe",
-    )
+    publish_memory_task(user_id, bot_id, user_msg, description)
+    publish_message_log(user_id, bot_id, user_msg, description, activity_type="image_describe")
 
     # Award XP
     xp_result = await award_xp(user_id, bot_id, "image_describe")
@@ -145,19 +143,17 @@ async def summarize_url(
     # Publish to memory pipeline
     from services.rabbitmq_service import publish_memory_task, publish_message_log
     user_msg = f"User shared a URL: {request.url}"
-    publish_memory_task(user_id, request.bot_id, user_msg, summary)
-    publish_message_log(user_id, request.bot_id, user_msg, summary)
+    
+    from services.redis_cache import cache_message, has_active_session, load_session_from_supabase
+    
+    if not await has_active_session(user_id, request.bot_id):
+        await load_session_from_supabase(user_id, request.bot_id)
 
-    # Persist to Supabase
-    from services.background_tasks import sync_message_to_db
-    background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "user", user_msg,
-        activity_type="url_summary",
-    )
-    background_tasks.add_task(
-        sync_message_to_db, user_id, request.bot_id, "bot", summary,
-        activity_type="url_summary",
-    )
+    await cache_message(user_id, request.bot_id, "user", user_msg)
+    await cache_message(user_id, request.bot_id, "bot", summary)
+
+    publish_memory_task(user_id, request.bot_id, user_msg, summary)
+    publish_message_log(user_id, request.bot_id, user_msg, summary, activity_type="url_summary")
 
     # Award XP
     xp_result = await award_xp(user_id, request.bot_id, "url_summarize")
@@ -242,27 +238,29 @@ async def get_weather(
         languageString="english",
     )
 
+    u_id = current_user["user_id"]
+    from services.redis_cache import cache_message, has_active_session, load_session_from_supabase, get_context
+    if not await has_active_session(u_id, bot_id):
+        await load_session_from_supabase(u_id, bot_id)
+        
+    chat_context = await get_context(u_id, bot_id)
+
     commentary = await generate_chat_response(
         system_prompt=system_prompt,
-        context=[],
+        context=chat_context,
         user_message=f"Comment on today's weather: {weather_summary}. Be brief and in-character.",
     )
 
     # Publish to memory pipeline
-    from services.rabbitmq_service import publish_memory_task
+    from services.rabbitmq_service import publish_memory_task, publish_message_log
+    
     user_msg = f"User asked about weather in {city}"
-    publish_memory_task(current_user["user_id"], bot_id, user_msg, commentary)
+    
+    await cache_message(u_id, bot_id, "user", user_msg)
+    await cache_message(u_id, bot_id, "bot", commentary)
 
-    # Persist to Supabase
-    from services.background_tasks import sync_message_to_db
-    background_tasks.add_task(
-        sync_message_to_db, current_user["user_id"], bot_id, "user", user_msg,
-        activity_type="weather",
-    )
-    background_tasks.add_task(
-        sync_message_to_db, current_user["user_id"], bot_id, "bot", commentary,
-        activity_type="weather",
-    )
+    publish_memory_task(u_id, bot_id, user_msg, commentary)
+    publish_message_log(u_id, bot_id, user_msg, commentary, activity_type="weather")
 
     # Award XP
     xp_result = await award_xp(current_user["user_id"], bot_id, "weather_check")
@@ -332,20 +330,20 @@ async def generate_meme(
     #     image_url = None
 
     # Publish to memory pipeline
-    from services.rabbitmq_service import publish_memory_task
+    from services.rabbitmq_service import publish_memory_task, publish_message_log
+    from services.redis_cache import cache_message, has_active_session, load_session_from_supabase
+    
     user_msg = f"User requested a meme about: {request.topic or 'random topic'}"
-    publish_memory_task(current_user["user_id"], request.bot_id, user_msg, meme_text)
+    u_id = current_user["user_id"]
+    
+    if not await has_active_session(u_id, request.bot_id):
+        await load_session_from_supabase(u_id, request.bot_id)
 
-    # Persist to Supabase
-    from services.background_tasks import sync_message_to_db
-    background_tasks.add_task(
-        sync_message_to_db, current_user["user_id"], request.bot_id, "user", user_msg,
-        activity_type="meme",
-    )
-    background_tasks.add_task(
-        sync_message_to_db, current_user["user_id"], request.bot_id, "bot", meme_text,
-        activity_type="meme",
-    )
+    await cache_message(u_id, request.bot_id, "user", user_msg)
+    await cache_message(u_id, request.bot_id, "bot", meme_text)
+
+    publish_memory_task(u_id, request.bot_id, user_msg, meme_text)
+    publish_message_log(u_id, request.bot_id, user_msg, meme_text, activity_type="meme")
 
     # Award XP
     xp_result = await award_xp(current_user["user_id"], request.bot_id, "meme_generate")

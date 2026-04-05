@@ -80,21 +80,24 @@ async def generate_selfie(
     #         # User has no avatar — generate bot-only selfie
     #         pass  # Already generated above
 
-    # Publish to memory pipeline
-    from services.rabbitmq_service import publish_memory_task
+    # Cache messages to Redis context so the LLM remembers
+    from services.redis_cache import cache_message, has_active_session, load_session_from_supabase
+    
+    if not await has_active_session(user_id, bot_id):
+        await load_session_from_supabase(user_id, bot_id)
+        
     user_msg = f"User requested a selfie of {bot_id}"
     scene = result.get("scene_description", "Bot selfie generated")
-    publish_memory_task(user_id, bot_id, user_msg, scene)
+    
+    await cache_message(user_id, bot_id, "user", user_msg)
+    await cache_message(user_id, bot_id, "bot", scene)
 
-    # Persist to Supabase
-    from services.background_tasks import sync_message_to_db
-    background_tasks.add_task(
-        sync_message_to_db, user_id, bot_id, "user", user_msg,
-        activity_type="selfie",
-    )
-    background_tasks.add_task(
-        sync_message_to_db, user_id, bot_id, "bot", scene,
-        activity_type="selfie", media_url=result.get("image_url"),
+    # Publish to memory pipeline
+    from services.rabbitmq_service import publish_memory_task, publish_message_log
+    publish_memory_task(user_id, bot_id, user_msg, scene)
+    publish_message_log(
+        user_id, bot_id, user_msg, scene,
+        activity_type="selfie", media_url=result.get("image_url")
     )
 
     # Award XP

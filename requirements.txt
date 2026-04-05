@@ -21,6 +21,7 @@ python-dotenv==1.0.1
 
 # ─── File Upload Handling ───
 python-multipart==0.0.20
+aiofiles>=23.2.0
 
 # ─── WebSocket Support (included in uvicorn[standard]) ───
 websockets==14.1
@@ -53,5 +54,5 @@ numpy>=1.24.0
 # ─── Gradio Client (for FaceID selfie generation) ───
 gradio_client>=1.0.0
 
-# ─── Image Processing ───
-Pillow>=10.0.0
+# ─── Image Processing & File Upload ───
+Pillow>=10.2.0

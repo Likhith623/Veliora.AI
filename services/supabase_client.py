@@ -173,7 +173,7 @@ async def get_all_messages_for_cache(user_id: str, bot_id: str) -> list[dict]:
     def _select_all():
         return (
             client.table("messages")
-            .select("role, content")
+            .select("id, role, content, created_at, activity_type")
             .eq("user_id", user_id)
             .eq("bot_id", bot_id)
             .order("created_at", desc=False)

@@ -74,14 +74,16 @@ def serialize_chat_to_messages(chat: dict, embedding: list = None) -> list[dict]
     two rows for the Supabase `messages` table.
 
     Redis chat format:
-        {id, user_id, bot_id, user_message, bot_response, timestamp}
+        {id, user_id, bot_id, user_message, bot_response, timestamp, activity_type, media_url}
 
     Supabase messages format:
-        {user_id, bot_id, role, content, language, embedding, created_at}
+        {user_id, bot_id, role, content, language, embedding, created_at, activity_type, media_url}
     """
     user_id = chat.get("user_id", "")
     bot_id = chat.get("bot_id", "")
     timestamp = chat.get("timestamp")
+    activity_type = chat.get("activity_type", "chat")
+    media_url = chat.get("media_url")
     rows = []
 
     if chat.get("user_message"):
@@ -91,6 +93,8 @@ def serialize_chat_to_messages(chat: dict, embedding: list = None) -> list[dict]
             "role": "user",
             "content": chat["user_message"],
             "created_at": timestamp,
+            "activity_type": activity_type,
+            "media_url": media_url,
         })
 
     if chat.get("bot_response"):
@@ -100,6 +104,8 @@ def serialize_chat_to_messages(chat: dict, embedding: list = None) -> list[dict]
             "role": "bot",
             "content": chat["bot_response"],
             "created_at": timestamp,
+            "activity_type": activity_type,
+            "media_url": media_url,
         })
 
     return rows

@@ -78,7 +78,8 @@ def publish_memory_task(
 
 
 def publish_message_log(
-    user_id: str, bot_id: str, user_message: str, bot_response: str
+    user_id: str, bot_id: str, user_message: str, bot_response: str,
+    activity_type: str = "chat", media_url: str = None
 ):
     """
     Publish a chat message log to the user's message queue.
@@ -97,6 +98,8 @@ def publish_message_log(
             "bot_id": bot_id,
             "user_message": user_message,
             "bot_response": bot_response,
+            "activity_type": activity_type,
+            "media_url": media_url,
         })
         channel.basic_publish(
             exchange="",

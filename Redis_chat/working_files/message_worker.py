@@ -39,6 +39,8 @@ async def on_message_log(redis_manager, msg: aio_pika.IncomingMessage):
             bot_id = data.get("bot_id", "")
             user_message = data.get("user_message", "")
             bot_response = data.get("bot_response", "")
+            activity_type = data.get("activity_type", "chat")
+            media_url = data.get("media_url")
 
             if not user_id or not bot_id:
                 logger.warning(f"[MessageWorker] Skipping: missing user_id or bot_id")
@@ -47,6 +49,8 @@ async def on_message_log(redis_manager, msg: aio_pika.IncomingMessage):
             await log_message(
                 redis_manager, user_id, bot_id,
                 user_message, bot_response,
+                activity_type=activity_type,
+                media_url=media_url
             )
             logger.debug(f"[MessageWorker] Logged for {user_id}:{bot_id}")
         except Exception as e:
