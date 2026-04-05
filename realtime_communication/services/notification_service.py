@@ -75,7 +75,7 @@ async def send_notification(
         body = str(format_kwargs)
     
     try:
-        result = db.table("notifications").insert({
+        result = db.table("notifications_realtime").insert({
             "user_id": user_id,
             "type": notif_type,
             "title": title,

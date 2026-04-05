@@ -68,7 +68,7 @@ async def webrtc_signal(websocket: WebSocket, relationship_id: str, user_id: str
     db = get_supabase()
     
     # Verify relationship exists and user is part of it
-    rel = db.table("relationships") \
+    rel = db.table("relationships_realtime") \
         .select("user_a_id, user_b_id, level, status") \
         .eq("id", relationship_id) \
         .execute()
@@ -112,7 +112,7 @@ async def webrtc_signal(websocket: WebSocket, relationship_id: str, user_id: str
                     continue
                 
                 # Notify partner
-                caller = db.table("profiles").select("display_name").eq("id", user_id).execute()
+                caller = db.table("profiles_realtime").select("display_name").eq("id", user_id).execute()
                 caller_name = caller.data[0]["display_name"] if caller.data else "Someone"
                 
                 await send_notification(
@@ -141,19 +141,19 @@ async def webrtc_signal(websocket: WebSocket, relationship_id: str, user_id: str
                 call_type = msg.get("call_type", "audio")
                 if duration > 0:
                     try:
-                        current = db.table("relationships") \
+                        current = db.table("relationships_realtime") \
                             .select("total_call_minutes") \
                             .eq("id", relationship_id) \
                             .execute()
                         if current.data:
                             new_mins = current.data[0].get("total_call_minutes", 0) + (duration // 60)
-                            db.table("relationships").update({
+                            db.table("relationships_realtime").update({
                                 "total_call_minutes": new_mins,
                                 "last_interaction_at": datetime.utcnow().isoformat(),
                             }).eq("id", relationship_id).execute()
                         
                         # Phase 7: Log the call explicitly
-                        db.table("call_logs").insert({
+                        db.table("call_logs_realtime").insert({
                             "relationship_id": relationship_id,
                             "caller_id": user_id,  # Person ending the call will log for simplicity, or we can use metadata
                             "receiver_id": partner_id,
@@ -177,7 +177,7 @@ async def webrtc_signal(websocket: WebSocket, relationship_id: str, user_id: str
                 })
                 
                 # Send missed call notification
-                caller = db.table("profiles").select("display_name").eq("id", user_id).execute()
+                caller = db.table("profiles_realtime").select("display_name").eq("id", user_id).execute()
                 caller_name = caller.data[0]["display_name"] if caller.data else "Someone"
                 await send_notification(
                     partner_id, "missed_call",
@@ -270,11 +270,11 @@ async def get_call_logs(relationship_id: str, limit: int = 50, offset: int = 0, 
     db = get_supabase()
     
     # Authorize access
-    rel = db.table("relationships").select("user_a_id, user_b_id, status").eq("id", relationship_id).execute()
+    rel = db.table("relationships_realtime").select("user_a_id, user_b_id, status").eq("id", relationship_id).execute()
     if not rel.data or (current_user not in [rel.data[0]["user_a_id"], rel.data[0]["user_b_id"]]):
         raise HTTPException(status_code=403, detail="Unauthorized access to these call logs.")
     
-    logs = db.table("call_logs") \
+    logs = db.table("call_logs_realtime") \
         .select("id, caller_id, receiver_id, call_type, started_at, duration_seconds, status, created_at") \
         .eq("relationship_id", relationship_id) \
         .order("created_at", desc=True) \

@@ -43,14 +43,14 @@ async def create_room(req: CreateRoomRequest, user_id: str = Depends(get_current
     db = get_supabase()
     
     # Check if user has reached Level 5 in at least one relationship
-    rels = db.table("relationships") \
+    rels = db.table("relationships_realtime") \
         .select("level") \
         .or_(f"user_a_id.eq.{user_id},user_b_id.eq.{user_id}") \
         .gte("level", 5) \
         .execute()
     
     # For demo purposes, allow room creation
-    room = db.table("family_rooms").insert({
+    room = db.table("family_rooms_realtime").insert({
         "room_name": req.room_name,
         "description": req.description,
         "room_type": req.room_type,
@@ -65,7 +65,7 @@ async def create_room(req: CreateRoomRequest, user_id: str = Depends(get_current
     room_data = room.data[0]
     
     # Add creator as first member
-    db.table("family_room_members").insert({
+    db.table("family_room_members_realtime").insert({
         "room_id": room_data["id"],
         "user_id": user_id,
         "role_in_room": "mother",  # Default, can be changed
@@ -80,8 +80,8 @@ async def get_user_rooms(user_id: str = Depends(get_current_user_id)):
     """Get all rooms the user is a member of."""
     db = get_supabase()
     
-    memberships = db.table("family_room_members") \
-        .select("*, family_rooms(*)") \
+    memberships = db.table("family_room_members_realtime") \
+        .select("*, family_rooms_realtime(*)") \
         .eq("user_id", user_id) \
         .eq("status", "active") \
         .execute()
@@ -92,8 +92,8 @@ async def get_user_rooms(user_id: str = Depends(get_current_user_id)):
         if not room:
             continue
         # Get member count
-        members = db.table("family_room_members") \
-            .select("user_id, role_in_room, profiles(display_name, country, avatar_config)") \
+        members = db.table("family_room_members_realtime") \
+            .select("user_id, role_in_room, profiles_realtime(display_name, country, avatar_config)") \
             .eq("room_id", room.get("id", "")) \
             .eq("status", "active") \
             .execute()
@@ -115,7 +115,7 @@ async def invite_to_room(room_id: str, req: InviteToRoomRequest, user_id: str = 
     db = get_supabase()
     
     # Check if inviter is a member/moderator
-    membership = db.table("family_room_members") \
+    membership = db.table("family_room_members_realtime") \
         .select("*") \
         .eq("room_id", room_id) \
         .eq("user_id", user_id) \
@@ -126,8 +126,8 @@ async def invite_to_room(room_id: str, req: InviteToRoomRequest, user_id: str = 
         raise HTTPException(status_code=403, detail="You are not a member of this room")
     
     # Check room capacity
-    room = db.table("family_rooms").select("max_members").eq("id", room_id).execute()
-    current_members = db.table("family_room_members") \
+    room = db.table("family_rooms_realtime").select("max_members").eq("id", room_id).execute()
+    current_members = db.table("family_room_members_realtime") \
         .select("id", count="exact") \
         .eq("room_id", room_id) \
         .eq("status", "active") \
@@ -141,7 +141,7 @@ async def invite_to_room(room_id: str, req: InviteToRoomRequest, user_id: str = 
     is_moderator = req.role_in_room in ["mother", "father", "grandparent"]
     
     # Add member
-    member = db.table("family_room_members").insert({
+    member = db.table("family_room_members_realtime").insert({
         "room_id": room_id,
         "user_id": req.user_id,
         "role_in_room": req.role_in_room,
@@ -149,7 +149,7 @@ async def invite_to_room(room_id: str, req: InviteToRoomRequest, user_id: str = 
     }).execute()
     
     # Notify invited user
-    db.table("notifications").insert({
+    db.table("notifications_realtime").insert({
         "user_id": req.user_id,
         "type": "family_room_invite",
         "title": "🏠 You've been invited to a Family Room!",
@@ -181,7 +181,7 @@ async def join_room(room_id: str, req: Optional[JoinRoomRequest] = None, user_id
     target_user_id = None
     if body and body.username:
         # Lookup profile by username
-        prof = db.table("profiles").select("id").eq("username", body.username).execute()
+        prof = db.table("profiles_realtime").select("id").eq("username", body.username).execute()
         if not prof.data or len(prof.data) == 0:
             raise HTTPException(status_code=404, detail="User not found")
         target_user_id = prof.data[0]["id"]
@@ -192,7 +192,7 @@ async def join_room(room_id: str, req: Optional[JoinRoomRequest] = None, user_id
         target_user_id = user_id
 
     # Basic checks: room exists and active
-    room = db.table("family_rooms").select("id, max_members, is_active").eq("id", room_id).execute()
+    room = db.table("family_rooms_realtime").select("id, max_members, is_active").eq("id", room_id).execute()
     if not room.data or len(room.data) == 0:
         raise HTTPException(status_code=404, detail="Room not found")
     room_data = room.data[0]
@@ -200,7 +200,7 @@ async def join_room(room_id: str, req: Optional[JoinRoomRequest] = None, user_id
         raise HTTPException(status_code=400, detail="Room is not active")
 
     # Check existing membership
-    existing = db.table("family_room_members") \
+    existing = db.table("family_room_members_realtime") \
         .select("id") \
         .eq("room_id", room_id) \
         .eq("user_id", target_user_id) \
@@ -209,7 +209,7 @@ async def join_room(room_id: str, req: Optional[JoinRoomRequest] = None, user_id
         raise HTTPException(status_code=400, detail="User is already a member of this room")
 
     # Capacity
-    current = db.table("family_room_members").select("id", count="exact").eq("room_id", room_id).eq("status", "active").execute()
+    current = db.table("family_room_members_realtime").select("id", count="exact").eq("room_id", room_id).eq("status", "active").execute()
     max_members = room_data.get("max_members") or 8
     if current.count >= max_members:
         raise HTTPException(status_code=400, detail="Room is full")
@@ -219,7 +219,7 @@ async def join_room(room_id: str, req: Optional[JoinRoomRequest] = None, user_id
 
     # If caller is trying to add another user (username provided), enforce caller is a moderator
     if body and body.username:
-        caller_membership = db.table("family_room_members") \
+        caller_membership = db.table("family_room_members_realtime") \
             .select("is_moderator") \
             .eq("room_id", room_id) \
             .eq("user_id", user_id) \
@@ -229,7 +229,7 @@ async def join_room(room_id: str, req: Optional[JoinRoomRequest] = None, user_id
             raise HTTPException(status_code=403, detail="Only room moderators can add other users by username")
 
     # Insert member
-    member = db.table("family_room_members").insert({
+    member = db.table("family_room_members_realtime").insert({
         "room_id": room_id,
         "user_id": target_user_id,
         "role_in_room": role,
@@ -238,7 +238,7 @@ async def join_room(room_id: str, req: Optional[JoinRoomRequest] = None, user_id
 
     # Notify the added user (if different)
     if target_user_id and (not user_id or target_user_id != user_id):
-        db.table("notifications").insert({
+        db.table("notifications_realtime").insert({
             "user_id": target_user_id,
             "type": "family_room_added",
             "title": "🏠 You've been added to a Family Room",
@@ -255,7 +255,7 @@ async def send_room_message(room_id: str, req: RoomMessageRequest, user_id: str 
     db = get_supabase()
     
     # Get all members' primary languages
-    members = db.table("family_room_members") \
+    members = db.table("family_room_members_realtime") \
         .select("user_id") \
         .eq("room_id", room_id) \
         .eq("status", "active") \
@@ -264,7 +264,7 @@ async def send_room_message(room_id: str, req: RoomMessageRequest, user_id: str 
     member_ids = [m["user_id"] for m in (members.data or [])]
     
     # Get unique languages
-    languages = db.table("user_languages") \
+    languages = db.table("user_languages_realtime") \
         .select("language_code, user_id") \
         .in_("user_id", member_ids) \
         .eq("is_primary", True) \
@@ -282,7 +282,7 @@ async def send_room_message(room_id: str, req: RoomMessageRequest, user_id: str 
     translations[source_lang] = req.original_text
     
     # Save message
-    message = db.table("family_room_messages").insert({
+    message = db.table("family_room_messages_realtime").insert({
         "room_id": room_id,
         "sender_id": user_id,
         "content_type": req.content_type,
@@ -308,7 +308,7 @@ async def get_room_messages(room_id: str, limit: int = 50, user_id: str = Depend
     """Get messages for a family room."""
     db = get_supabase()
     
-    messages = db.table("family_room_messages") \
+    messages = db.table("family_room_messages_realtime") \
         .select("*, profiles:sender_id(display_name, avatar_config, country)") \
         .eq("room_id", room_id) \
         .eq("is_deleted", False) \
@@ -324,13 +324,13 @@ async def leave_room(room_id: str, user_id: str = Depends(get_current_user_id)):
     """Initiate leaving a family room (7-day farewell period)."""
     db = get_supabase()
     
-    db.table("family_room_members").update({
+    db.table("family_room_members_realtime").update({
         "status": "leaving",
         "leaving_announced_at": datetime.utcnow().isoformat()
     }).eq("room_id", room_id).eq("user_id", user_id).execute()
     
     # Check remaining members
-    remaining = db.table("family_room_members") \
+    remaining = db.table("family_room_members_realtime") \
         .select("id", count="exact") \
         .eq("room_id", room_id) \
         .in_("status", ["active"]) \
@@ -338,7 +338,7 @@ async def leave_room(room_id: str, user_id: str = Depends(get_current_user_id)):
     
     if remaining.count <= 1:
         # Auto-dissolve room
-        db.table("family_rooms").update({"is_active": False}).eq("id", room_id).execute()
+        db.table("family_rooms_realtime").update({"is_active": False}).eq("id", room_id).execute()
         return {"status": "room_dissolved", "message": "Room has been dissolved as not enough members remain."}
     
     return {
@@ -355,7 +355,7 @@ async def create_potluck(room_id: str, req: CreatePotluckRequest, user_id: str =
     """Create a cultural potluck event."""
     db = get_supabase()
     
-    potluck = db.table("cultural_potlucks").insert({
+    potluck = db.table("cultural_potlucks_realtime").insert({
         "room_id": room_id,
         "host_id": user_id,
         "theme": req.theme,
@@ -368,7 +368,7 @@ async def create_potluck(room_id: str, req: CreatePotluckRequest, user_id: str =
     }).execute()
     
     # Notify all room members
-    members = db.table("family_room_members") \
+    members = db.table("family_room_members_realtime") \
         .select("user_id") \
         .eq("room_id", room_id) \
         .eq("status", "active") \
@@ -376,7 +376,7 @@ async def create_potluck(room_id: str, req: CreatePotluckRequest, user_id: str =
         .execute()
     
     for member in (members.data or []):
-        db.table("notifications").insert({
+        db.table("notifications_realtime").insert({
             "user_id": member["user_id"],
             "type": "potluck_reminder",
             "title": f"🍽️ Cultural Potluck: {req.theme}",
@@ -401,12 +401,12 @@ async def create_join_code(room_id: str, req: CreateJoinCodeRequest, user_id: st
     db = get_supabase()
 
     # Verify caller is moderator for the room
-    membership = db.table("family_room_members").select("is_moderator").eq("room_id", room_id).eq("user_id", user_id).eq("status", "active").execute()
+    membership = db.table("family_room_members_realtime").select("is_moderator").eq("room_id", room_id).eq("user_id", user_id).eq("status", "active").execute()
     if not membership.data or len(membership.data) == 0 or not membership.data[0].get("is_moderator", False):
         raise HTTPException(status_code=403, detail="Only room moderators can create join codes")
 
     # Ensure room exists
-    room = db.table("family_rooms").select("id").eq("id", room_id).execute()
+    room = db.table("family_rooms_realtime").select("id").eq("id", room_id).execute()
     if not room.data or len(room.data) == 0:
         raise HTTPException(status_code=404, detail="Room not found")
 
@@ -414,7 +414,7 @@ async def create_join_code(room_id: str, req: CreateJoinCodeRequest, user_id: st
     code = None
     for _ in range(6):
         candidate = _generate_code(8)
-        exists = db.table("family_room_join_codes").select("id").eq("code", candidate).execute()
+        exists = db.table("family_room_join_codes_realtime").select("id").eq("code", candidate).execute()
         if not exists.data or len(exists.data) == 0:
             code = candidate
             break
@@ -433,7 +433,7 @@ async def create_join_code(room_id: str, req: CreateJoinCodeRequest, user_id: st
         # expect ISO timestamp
         payload["expires_at"] = req.expires_at
 
-    created = db.table("family_room_join_codes").insert(payload).execute()
+    created = db.table("family_room_join_codes_realtime").insert(payload).execute()
     if not created.data:
         raise HTTPException(status_code=500, detail="Failed to create join code")
 
@@ -448,7 +448,7 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
     db = get_supabase()
     
     # Verify user is an active member of this room
-    membership = db.table("family_room_members") \
+    membership = db.table("family_room_members_realtime") \
         .select("id, role_in_room") \
         .eq("room_id", room_id) \
         .eq("user_id", user_id) \
@@ -499,10 +499,10 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
                 source_lang = source_lang or "en"
                 
                 # Fetch members and languages for active translation
-                members = db.table("family_room_members").select("user_id").eq("room_id", room_id).eq("status", "active").execute()
+                members = db.table("family_room_members_realtime").select("user_id").eq("room_id", room_id).eq("status", "active").execute()
                 member_ids = [m["user_id"] for m in (members.data or [])]
                 
-                languages = db.table("user_languages").select("language_code, user_id").in_("user_id", member_ids).eq("is_primary", True).execute()
+                languages = db.table("user_languages_realtime").select("language_code, user_id").in_("user_id", member_ids).eq("is_primary", True).execute()
                 unique_langs = set(l["language_code"] for l in (languages.data or []))
                 
                 translations = {source_lang: original_text}
@@ -515,7 +515,7 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
                             translations[lang] = original_text  # Fallback to original
                 
                 # Save to DB
-                new_msg = db.table("family_room_messages").insert({
+                new_msg = db.table("family_room_messages_realtime").insert({
                     "room_id": room_id,
                     "sender_id": user_id,
                     "content_type": content_type,
@@ -550,11 +550,11 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
 async def list_join_codes(room_id: str, user_id: str = Depends(get_current_user_id)):
     """List join codes for a room (moderators only)."""
     db = get_supabase()
-    membership = db.table("family_room_members").select("is_moderator").eq("room_id", room_id).eq("user_id", user_id).eq("status", "active").execute()
+    membership = db.table("family_room_members_realtime").select("is_moderator").eq("room_id", room_id).eq("user_id", user_id).eq("status", "active").execute()
     if not membership.data or len(membership.data) == 0 or not membership.data[0].get("is_moderator", False):
         raise HTTPException(status_code=403, detail="Only room moderators can view join codes")
 
-    codes = db.table("family_room_join_codes").select("*").eq("room_id", room_id).order("created_at", desc=True).execute()
+    codes = db.table("family_room_join_codes_realtime").select("*").eq("room_id", room_id).order("created_at", desc=True).execute()
     return {"codes": codes.data or []}
 
 
@@ -565,7 +565,7 @@ async def join_by_code(req: JoinByCodeRequest, user_id: str = Depends(get_curren
     Validates activity, expiry, and max uses atomically (best-effort with simple checks).
     """
     db = get_supabase()
-    code_row = db.table("family_room_join_codes").select("*").eq("code", req.code).execute()
+    code_row = db.table("family_room_join_codes_realtime").select("*").eq("code", req.code).execute()
     if not code_row.data or len(code_row.data) == 0:
         raise HTTPException(status_code=404, detail="Join code not found")
     row = code_row.data[0]
@@ -579,12 +579,12 @@ async def join_by_code(req: JoinByCodeRequest, user_id: str = Depends(get_curren
     room_id = row["room_id"]
 
     # Check existing membership
-    existing = db.table("family_room_members").select("id").eq("room_id", room_id).eq("user_id", user_id).execute()
+    existing = db.table("family_room_members_realtime").select("id").eq("room_id", room_id).eq("user_id", user_id).execute()
     if existing.data and len(existing.data) > 0:
         raise HTTPException(status_code=400, detail="You are already a member of this room")
 
     # Add member
-    member = db.table("family_room_members").insert({
+    member = db.table("family_room_members_realtime").insert({
         "room_id": room_id,
         "user_id": user_id,
         "role_in_room": "member",
@@ -592,10 +592,10 @@ async def join_by_code(req: JoinByCodeRequest, user_id: str = Depends(get_curren
     }).execute()
 
     # Increment usage counter
-    db.table("family_room_join_codes").update({"uses": row.get("uses", 0) + 1}).eq("id", row["id"]).execute()
+    db.table("family_room_join_codes_realtime").update({"uses": row.get("uses", 0) + 1}).eq("id", row["id"]).execute()
 
     # Notify room creator/owner
-    db.table("notifications").insert({
+    db.table("notifications_realtime").insert({
         "user_id": row.get("created_by"),
         "type": "join_code_used",
         "title": "A join code was used",
@@ -611,7 +611,7 @@ async def get_potlucks(room_id: str, user_id: str = Depends(get_current_user_id)
     """Get all potluck events for a room."""
     db = get_supabase()
     
-    potlucks = db.table("cultural_potlucks") \
+    potlucks = db.table("cultural_potlucks_realtime") \
         .select("*, profiles:host_id(display_name, country, avatar_config)") \
         .eq("room_id", room_id) \
         .order("scheduled_at", desc=True) \
@@ -645,7 +645,7 @@ async def create_room_poll(
     """Create a poll in a family room."""
     db = get_supabase()
     
-    membership = db.table("family_room_members") \
+    membership = db.table("family_room_members_realtime") \
         .select("id") \
         .eq("room_id", room_id) \
         .eq("user_id", user_id) \
@@ -659,7 +659,7 @@ async def create_room_poll(
     if len(options_list) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 options")
     
-    poll = db.table("polls").insert({
+    poll = db.table("polls_realtime").insert({
         "creator_id": user_id,
         "room_id": room_id,
         "question": question,
@@ -671,7 +671,7 @@ async def create_room_poll(
         raise HTTPException(status_code=500, detail="Failed to create poll")
     
     # Create room message
-    db.table("family_room_messages").insert({
+    db.table("family_room_messages_realtime").insert({
         "room_id": room_id,
         "sender_id": user_id,
         "content_type": "poll",
@@ -692,7 +692,7 @@ async def vote_room_poll(
     """Vote on a room poll."""
     db = get_supabase()
     
-    poll = db.table("polls").select("*").eq("id", poll_id).eq("room_id", room_id).execute()
+    poll = db.table("polls_realtime").select("*").eq("id", poll_id).eq("room_id", room_id).execute()
     if not poll.data:
         raise HTTPException(status_code=404, detail="Poll not found in this room")
     
@@ -701,17 +701,17 @@ async def vote_room_poll(
         raise HTTPException(status_code=400, detail="Invalid option")
     
     if not poll_data.get("allow_multiple"):
-        existing = db.table("poll_votes").select("id").eq("poll_id", poll_id).eq("user_id", user_id).execute()
+        existing = db.table("poll_votes_realtime").select("id").eq("poll_id", poll_id).eq("user_id", user_id).execute()
         if existing.data:
             raise HTTPException(status_code=400, detail="Already voted")
     
-    db.table("poll_votes").insert({
+    db.table("poll_votes_realtime").insert({
         "poll_id": poll_id,
         "user_id": user_id,
         "selected_option": selected_option,
     }).execute()
     
-    all_votes = db.table("poll_votes").select("selected_option").eq("poll_id", poll_id).execute()
+    all_votes = db.table("poll_votes_realtime").select("selected_option").eq("poll_id", poll_id).execute()
     results = {}
     for v in (all_votes.data or []):
         results[v["selected_option"]] = results.get(v["selected_option"], 0) + 1
@@ -731,7 +731,7 @@ async def react_to_room_message(
     """Add/toggle a reaction on a room message."""
     db = get_supabase()
     
-    msg = db.table("family_room_messages") \
+    msg = db.table("family_room_messages_realtime") \
         .select("id, reactions") \
         .eq("id", message_id) \
         .eq("room_id", room_id) \
@@ -751,7 +751,7 @@ async def react_to_room_message(
     else:
         reactions[emoji] = [user_id]
     
-    db.table("family_room_messages").update({"reactions": reactions}).eq("id", message_id).execute()
+    db.table("family_room_messages_realtime").update({"reactions": reactions}).eq("id", message_id).execute()
     
     return {"reactions": reactions}
 
@@ -767,7 +767,7 @@ async def delete_room_message(
     """Soft-delete a room message (sender or moderator only)."""
     db = get_supabase()
     
-    msg = db.table("family_room_messages") \
+    msg = db.table("family_room_messages_realtime") \
         .select("sender_id") \
         .eq("id", message_id) \
         .eq("room_id", room_id) \
@@ -780,7 +780,7 @@ async def delete_room_message(
     is_sender = msg.data[0]["sender_id"] == user_id
     is_mod = False
     if not is_sender:
-        membership = db.table("family_room_members") \
+        membership = db.table("family_room_members_realtime") \
             .select("is_moderator") \
             .eq("room_id", room_id) \
             .eq("user_id", user_id) \
@@ -790,6 +790,6 @@ async def delete_room_message(
     if not is_sender and not is_mod:
         raise HTTPException(status_code=403, detail="Only the sender or a moderator can delete")
     
-    db.table("family_room_messages").update({"is_deleted": True}).eq("id", message_id).execute()
+    db.table("family_room_messages_realtime").update({"is_deleted": True}).eq("id", message_id).execute()
     
     return {"status": "deleted"}

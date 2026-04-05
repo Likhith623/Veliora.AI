@@ -35,7 +35,7 @@ async def search_users(
     db = get_supabase()
     
     # Search by username match or display_name match (case-insensitive via ilike)
-    results = db.table("profiles") \
+    results = db.table("profiles_realtime") \
         .select("id, username, display_name, bio, avatar_config, country, city, is_verified, care_score, profile_photo_url") \
         .eq("is_banned", False) \
         .neq("id", current_user) \
@@ -46,7 +46,7 @@ async def search_users(
     # Filter by privacy (allow_search)
     filtered = []
     for profile in (results.data or []):
-        privacy = db.table("privacy_settings") \
+        privacy = db.table("privacy_settings_realtime") \
             .select("allow_search, profile_visibility") \
             .eq("user_id", profile["id"]) \
             .execute()
@@ -60,7 +60,7 @@ async def search_users(
         
         if is_searchable:
             # Check existing relationship
-            existing_rel = db.table("relationships") \
+            existing_rel = db.table("relationships_realtime") \
                 .select("id, status") \
                 .or_(
                     f"and(user_a_id.eq.{current_user},user_b_id.eq.{profile['id']}),"
@@ -69,7 +69,7 @@ async def search_users(
                 .execute()
             
             # Check pending friend request
-            pending_req = db.table("friend_requests") \
+            pending_req = db.table("friend_requests_realtime") \
                 .select("id, status, sender_id") \
                 .or_(
                     f"and(sender_id.eq.{current_user},receiver_id.eq.{profile['id']}),"
@@ -117,7 +117,7 @@ async def send_friend_request(
     db = get_supabase()
     
     # Check target exists
-    target = db.table("profiles") \
+    target = db.table("profiles_realtime") \
         .select("id, display_name, is_banned") \
         .eq("id", target_id) \
         .execute()
@@ -127,7 +127,7 @@ async def send_friend_request(
         raise HTTPException(status_code=400, detail="This user is not available")
     
     # Check existing relationship
-    existing = db.table("relationships") \
+    existing = db.table("relationships_realtime") \
         .select("id, status") \
         .or_(
             f"and(user_a_id.eq.{current_user},user_b_id.eq.{target_id}),"
@@ -140,7 +140,7 @@ async def send_friend_request(
             return {"status": "already_friends", "relationship_id": rel["id"]}
     
     # Check existing pending request
-    pending = db.table("friend_requests") \
+    pending = db.table("friend_requests_realtime") \
         .select("id") \
         .or_(
             f"and(sender_id.eq.{current_user},receiver_id.eq.{target_id}),"
@@ -152,7 +152,7 @@ async def send_friend_request(
         raise HTTPException(status_code=400, detail="A friend request already exists between you two")
     
     # Check privacy: if target allows friend requests
-    privacy = db.table("privacy_settings") \
+    privacy = db.table("privacy_settings_realtime") \
         .select("profile_visibility, allow_friend_requests") \
         .eq("user_id", target_id) \
         .execute()
@@ -167,7 +167,7 @@ async def send_friend_request(
         raise HTTPException(status_code=403, detail="This user does not accept friend requests")
     
     # Get sender name
-    sender = db.table("profiles").select("display_name").eq("id", current_user).execute()
+    sender = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
     sender_name = sender.data[0]["display_name"] if sender.data else "Someone"
     
     if visibility == "public":
@@ -180,7 +180,7 @@ async def send_friend_request(
         )
         
         # Create a friend request record (already accepted)
-        db.table("friend_requests").insert({
+        db.table("friend_requests_realtime").insert({
             "sender_id": current_user,
             "receiver_id": target_id,
             "status": "accepted",
@@ -201,7 +201,7 @@ async def send_friend_request(
         }
     else:
         # PRIVATE: create pending request
-        fr = db.table("friend_requests").insert({
+        fr = db.table("friend_requests_realtime").insert({
             "sender_id": current_user,
             "receiver_id": target_id,
             "status": "pending",
@@ -232,7 +232,7 @@ async def respond_to_request(
     """Accept or reject a friend request."""
     db = get_supabase()
     
-    fr = db.table("friend_requests").select("*").eq("id", request_id).execute()
+    fr = db.table("friend_requests_realtime").select("*").eq("id", request_id).execute()
     if not fr.data:
         raise HTTPException(status_code=404, detail="Friend request not found")
     
@@ -247,7 +247,7 @@ async def respond_to_request(
     sender_id = fr_data["sender_id"]
     
     # Get names
-    receiver = db.table("profiles").select("display_name").eq("id", current_user).execute()
+    receiver = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
     receiver_name = receiver.data[0]["display_name"] if receiver.data else "Someone"
     
     if req.action == "accept":
@@ -259,7 +259,7 @@ async def respond_to_request(
             role_b="friend"
         )
         
-        db.table("friend_requests").update({
+        db.table("friend_requests_realtime").update({
             "status": "accepted",
             "responded_at": datetime.utcnow().isoformat(),
         }).eq("id", request_id).execute()
@@ -277,7 +277,7 @@ async def respond_to_request(
         }
     
     elif req.action == "reject":
-        db.table("friend_requests").update({
+        db.table("friend_requests_realtime").update({
             "status": "rejected",
             "responded_at": datetime.utcnow().isoformat(),
         }).eq("id", request_id).execute()
@@ -305,7 +305,7 @@ async def get_friend_requests(
     db = get_supabase()
     
     if direction == "incoming":
-        results = db.table("friend_requests") \
+        results = db.table("friend_requests_realtime") \
             .select("*") \
             .eq("receiver_id", current_user) \
             .eq("status", "pending") \
@@ -315,7 +315,7 @@ async def get_friend_requests(
         # Enrich with sender info
         enriched = []
         for fr in (results.data or []):
-            sender = db.table("profiles") \
+            sender = db.table("profiles_realtime") \
                 .select("id, display_name, username, avatar_config, country, bio, profile_photo_url, is_verified") \
                 .eq("id", fr["sender_id"]) \
                 .execute()
@@ -327,7 +327,7 @@ async def get_friend_requests(
         return {"requests": enriched, "count": len(enriched)}
     
     elif direction == "outgoing":
-        results = db.table("friend_requests") \
+        results = db.table("friend_requests_realtime") \
             .select("*") \
             .eq("sender_id", current_user) \
             .eq("status", "pending") \
@@ -336,7 +336,7 @@ async def get_friend_requests(
         
         enriched = []
         for fr in (results.data or []):
-            receiver = db.table("profiles") \
+            receiver = db.table("profiles_realtime") \
                 .select("id, display_name, username, avatar_config, country, bio, profile_photo_url") \
                 .eq("id", fr["receiver_id"]) \
                 .execute()
@@ -357,7 +357,7 @@ async def list_friends(current_user: str = Depends(get_current_user_id)):
     """Get all friends with their profiles (avatar, name, bio, status, XP)."""
     db = get_supabase()
     
-    rels = db.table("relationships") \
+    rels = db.table("relationships_realtime") \
         .select("*") \
         .or_(f"user_a_id.eq.{current_user},user_b_id.eq.{current_user}") \
         .eq("status", "active") \
@@ -368,14 +368,14 @@ async def list_friends(current_user: str = Depends(get_current_user_id)):
     for rel in (rels.data or []):
         friend_id = rel["user_b_id"] if rel["user_a_id"] == current_user else rel["user_a_id"]
         
-        profile = db.table("profiles") \
+        profile = db.table("profiles_realtime") \
             .select("id, display_name, username, avatar_config, country, city, bio, "
                     "is_verified, care_score, status, last_active_at, profile_photo_url") \
             .eq("id", friend_id) \
             .execute()
         
         # Get XP
-        xp = db.table("realtime_xp") \
+        xp = db.table("realtime_xp_realtime") \
             .select("current_xp, streak_days") \
             .eq("user_id", friend_id) \
             .execute()
@@ -407,7 +407,7 @@ async def get_friend_profile(friend_id: str, current_user: str = Depends(get_cur
     db = get_supabase()
     
     # Verify friendship
-    rel = db.table("relationships") \
+    rel = db.table("relationships_realtime") \
         .select("id, level, bond_points, streak_days, messages_exchanged, matched_at") \
         .or_(
             f"and(user_a_id.eq.{current_user},user_b_id.eq.{friend_id}),"
@@ -420,7 +420,7 @@ async def get_friend_profile(friend_id: str, current_user: str = Depends(get_cur
         raise HTTPException(status_code=403, detail="You are not friends with this user")
     
     # Get full profile
-    profile = db.table("profiles") \
+    profile = db.table("profiles_realtime") \
         .select("id, username, display_name, country, city, timezone, bio, "
                 "voice_bio_url, profile_photo_url, avatar_config, is_verified, "
                 "care_score, reliability_score, total_bond_points, status, "
@@ -432,19 +432,19 @@ async def get_friend_profile(friend_id: str, current_user: str = Depends(get_cur
         raise HTTPException(status_code=404, detail="Profile not found")
     
     # Get languages
-    languages = db.table("user_languages").select("*").eq("user_id", friend_id).execute()
+    languages = db.table("user_languages_realtime").select("*").eq("user_id", friend_id).execute()
     
     # Get achievements
-    achievements = db.table("user_achievements") \
-        .select("*, achievements(name, icon_emoji, rarity, description)") \
+    achievements = db.table("user_achievements_realtime") \
+        .select("*, achievements_realtime(name, icon_emoji, rarity, description)") \
         .eq("user_id", friend_id) \
         .execute()
     
     # Get XP
-    xp = db.table("realtime_xp").select("*").eq("user_id", friend_id).execute()
+    xp = db.table("realtime_xp_realtime").select("*").eq("user_id", friend_id).execute()
     
     # Respect privacy settings
-    privacy = db.table("privacy_settings").select("*").eq("user_id", friend_id).execute()
+    privacy = db.table("privacy_settings_realtime").select("*").eq("user_id", friend_id).execute()
     privacy_data = privacy.data[0] if privacy.data else {}
     
     profile_data = profile.data[0]
@@ -471,7 +471,7 @@ async def unfriend(relationship_id: str, current_user: str = Depends(get_current
     """End a friendship."""
     db = get_supabase()
     
-    rel = db.table("relationships").select("*").eq("id", relationship_id).execute()
+    rel = db.table("relationships_realtime").select("*").eq("id", relationship_id).execute()
     if not rel.data:
         raise HTTPException(status_code=404, detail="Relationship not found")
     
@@ -479,7 +479,7 @@ async def unfriend(relationship_id: str, current_user: str = Depends(get_current
     if current_user not in [rel_data["user_a_id"], rel_data["user_b_id"]]:
         raise HTTPException(status_code=403, detail="You are not part of this relationship")
     
-    db.table("relationships").update({
+    db.table("relationships_realtime").update({
         "status": "ended",
         "ended_by": current_user,
         "end_reason": "unfriended",

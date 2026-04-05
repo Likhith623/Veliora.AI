@@ -327,7 +327,7 @@ async def create_live_game(req: CreateLiveGameRequest, current_user: str = Depen
         raise HTTPException(status_code=400, detail=f"Unknown game type. Available: {list(GAME_INITIALIZERS.keys())}")
     
     # Verify relationship
-    rel = db.table("relationships").select("*").eq("id", req.relationship_id).eq("status", "active").execute()
+    rel = db.table("relationships_realtime").select("*").eq("id", req.relationship_id).eq("status", "active").execute()
     if not rel.data:
         raise HTTPException(status_code=404, detail="Relationship not found or inactive")
     
@@ -338,11 +338,11 @@ async def create_live_game(req: CreateLiveGameRequest, current_user: str = Depen
     partner_id = rel_data["user_b_id"] if rel_data["user_a_id"] == current_user else rel_data["user_a_id"]
     
     # Find or create the game catalog entry
-    game_catalog = db.table("games").select("id").eq("game_type", req.game_type).eq("is_immersive", True).execute()
+    game_catalog = db.table("games_realtime_communication").select("id").eq("game_type", req.game_type).eq("is_immersive", True).execute()
     if not game_catalog.data:
         # Auto-create catalog entry
         titles = {"pong": "🏓 Pong", "air_hockey": "🥅 Air Hockey", "tic_tac_toe": "❌ Tic-Tac-Toe"}
-        cat = db.table("games").insert({
+        cat = db.table("games_realtime_communication").insert({
             "game_type": req.game_type,
             "title": titles.get(req.game_type, req.game_type),
             "description": f"Live {req.game_type} game",
@@ -359,7 +359,7 @@ async def create_live_game(req: CreateLiveGameRequest, current_user: str = Depen
         game_id = game_catalog.data[0]["id"]
     
     # Create session
-    session = db.table("game_sessions").insert({
+    session = db.table("game_sessions_realtime").insert({
         "game_id": game_id,
         "relationship_id": req.relationship_id,
         "players": [
@@ -377,7 +377,7 @@ async def create_live_game(req: CreateLiveGameRequest, current_user: str = Depen
     session_id = session.data[0]["id"]
     
     # Notify partner
-    sender = db.table("profiles").select("display_name").eq("id", current_user).execute()
+    sender = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
     sender_name = sender.data[0]["display_name"] if sender.data else "Your friend"
     
     await send_notification(
@@ -407,7 +407,7 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
     db = get_supabase()
     
     # Validate session
-    session = db.table("game_sessions").select("*").eq("id", session_id).execute()
+    session = db.table("game_sessions_realtime").select("*").eq("id", session_id).execute()
     if not session.data:
         await websocket.close(code=4004, reason="Session not found")
         return
@@ -441,7 +441,7 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
                     manager.game_states[session_id] = state
                     
                     # Update session status
-                    db.table("game_sessions").update({
+                    db.table("game_sessions_realtime").update({
                         "status": "active",
                         "started_at": datetime.utcnow().isoformat(),
                     }).eq("id", session_id).execute()
@@ -585,7 +585,7 @@ async def _finish_game(session_id: str, state: dict, db):
     
     # Update session in DB
     scores = state.get("scores", {})
-    db.table("game_sessions").update({
+    db.table("game_sessions_realtime").update({
         "status": "completed",
         "winner_id": winner_id,
         "game_data": state,
@@ -596,21 +596,21 @@ async def _finish_game(session_id: str, state: dict, db):
     }).eq("id", session_id).execute()
     
     # Award bond points to relationship
-    session = db.table("game_sessions").select("relationship_id").eq("id", session_id).execute()
+    session = db.table("game_sessions_realtime").select("relationship_id").eq("id", session_id).execute()
     if session.data and session.data[0].get("relationship_id"):
         rel_id = session.data[0]["relationship_id"]
-        rel = db.table("relationships").select("bond_points").eq("id", rel_id).execute()
+        rel = db.table("relationships_realtime").select("bond_points").eq("id", rel_id).execute()
         if rel.data:
             new_bp = rel.data[0].get("bond_points", 0) + 5
-            db.table("relationships").update({"bond_points": new_bp}).eq("id", rel_id).execute()
+            db.table("relationships_realtime").update({"bond_points": new_bp}).eq("id", rel_id).execute()
             await check_and_level_up(rel_id)
     
     # Update realtime_xp game stats
     for uid in [pa, pb]:
         if uid:
-            xp_row = db.table("realtime_xp").select("games_played, games_won").eq("user_id", uid).execute()
+            xp_row = db.table("realtime_xp_realtime").select("games_played, games_won").eq("user_id", uid).execute()
             if xp_row.data:
-                db.table("realtime_xp").update({
+                db.table("realtime_xp_realtime").update({
                     "games_played": xp_row.data[0].get("games_played", 0) + 1,
                     "games_won": xp_row.data[0].get("games_won", 0) + (1 if uid == winner_id else 0),
                 }).eq("user_id", uid).execute()

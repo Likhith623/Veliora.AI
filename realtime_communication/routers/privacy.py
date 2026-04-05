@@ -11,10 +11,10 @@ router = APIRouter(prefix="/privacy", tags=["Privacy Settings"])
 
 def _ensure_privacy_row(db, user_id: str) -> dict:
     """Get or create privacy settings for a user."""
-    row = db.table("privacy_settings").select("*").eq("user_id", user_id).execute()
+    row = db.table("privacy_settings_realtime").select("*").eq("user_id", user_id).execute()
     if row.data:
         return row.data[0]
-    new = db.table("privacy_settings").insert({"user_id": user_id}).execute()
+    new = db.table("privacy_settings_realtime").insert({"user_id": user_id}).execute()
     return new.data[0] if new.data else {
         "profile_visibility": "public",
         "show_last_active": True,
@@ -58,7 +58,7 @@ async def update_privacy_settings(
     
     update_data["updated_at"] = datetime.utcnow().isoformat()
     
-    result = db.table("privacy_settings") \
+    result = db.table("privacy_settings_realtime") \
         .update(update_data) \
         .eq("user_id", current_user) \
         .execute()
@@ -76,7 +76,7 @@ async def get_user_privacy(user_id: str, current_user: str = Depends(get_current
     """
     db = get_supabase()
     
-    row = db.table("privacy_settings").select("*").eq("user_id", user_id).execute()
+    row = db.table("privacy_settings_realtime").select("*").eq("user_id", user_id).execute()
     
     if not row.data:
         # Default: everything visible

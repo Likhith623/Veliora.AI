@@ -19,7 +19,7 @@ async def signup(req: SignUpRequest):
     
     try:
         # Check if username already exists
-        existing = db.table("profiles").select("id").eq("username", req.username).execute()
+        existing = db.table("profiles_realtime").select("id").eq("username", req.username).execute()
         if existing.data and len(existing.data) > 0:
             raise HTTPException(status_code=400, detail="Username already taken")
         
@@ -43,7 +43,7 @@ async def signup(req: SignUpRequest):
         is_minor = age < 18
         
         # Create profile using admin client (bypasses RLS)
-        profile = db.table("profiles").insert({
+        profile = db.table("profiles_realtime").insert({
             "id": user_id,
             "username": req.username,
             "display_name": req.display_name,
@@ -102,13 +102,13 @@ async def login(req: LoginRequest):
         user_id = auth_response.user.id
         
         # Check if profile exists using admin client
-        profile = db.table("profiles").select("id").eq("id", user_id).execute()
+        profile = db.table("profiles_realtime").select("id").eq("id", user_id).execute()
         
         if not profile.data or len(profile.data) == 0:
             # Create profile if it doesn't exist (for legacy auth users)
             # Using default values for required fields
             username = auth_response.user.email.split('@')[0]
-            db.table("profiles").insert({
+            db.table("profiles_realtime").insert({
                 "id": user_id,
                 "username": username,
                 "display_name": username,
@@ -120,7 +120,7 @@ async def login(req: LoginRequest):
             }).execute()
         else:
             # Update last active
-            db.table("profiles").update({
+            db.table("profiles_realtime").update({
                 "last_active_at": datetime.utcnow().isoformat(),
                 "status": "active"
             }).eq("id", user_id).execute()
@@ -151,7 +151,7 @@ async def submit_verification(req: VerificationRequest, user_id: str = Depends(g
     db = get_supabase()
     
     # Create verification record
-    record = db.table("verification_records").insert({
+    record = db.table("verification_records_realtime").insert({
         "user_id": user_id,
         "verification_type": req.verification_type,
         "video_url": req.video_url,
@@ -165,13 +165,13 @@ async def submit_verification(req: VerificationRequest, user_id: str = Depends(g
     
     if record.data:
         # Auto-approve for demo (in production, add to moderation queue)
-        db.table("profiles").update({
+        db.table("profiles_realtime").update({
             "is_verified": True,
             "verification_method": req.verification_type,
             "verified_at": datetime.utcnow().isoformat()
         }).eq("id", user_id).execute()
         
-        db.table("verification_records").update({
+        db.table("verification_records_realtime").update({
             "status": "approved"
         }).eq("id", record.data[0]["id"]).execute()
     
@@ -183,20 +183,20 @@ async def get_current_user(user_id: str = Depends(get_current_user_id)):
     """Get current user's profile."""
     db = get_supabase()
     
-    profile = db.table("profiles").select("*").eq("id", user_id).execute()
+    profile = db.table("profiles_realtime").select("*").eq("id", user_id).execute()
     if not profile.data or len(profile.data) == 0:
         raise HTTPException(status_code=404, detail="Profile not found")
     
     profile_data = profile.data[0]
     
-    languages = db.table("user_languages").select("*").eq("user_id", user_id).execute()
-    achievements = db.table("user_achievements") \
-        .select("*, achievements(*)") \
+    languages = db.table("user_languages_realtime").select("*").eq("user_id", user_id).execute()
+    achievements = db.table("user_achievements_realtime") \
+        .select("*, achievements_realtime(*)") \
         .eq("user_id", user_id) \
         .execute()
     
     # Get relationships
-    rels = db.table("relationships") \
+    rels = db.table("relationships_realtime") \
         .select("*") \
         .or_(f"user_a_id.eq.{user_id},user_b_id.eq.{user_id}") \
         .eq("status", "active") \
@@ -205,7 +205,7 @@ async def get_current_user(user_id: str = Depends(get_current_user_id)):
     enriched_rels = []
     for rel in (rels.data or []):
         partner_id = rel["user_b_id"] if rel["user_a_id"] == user_id else rel["user_a_id"]
-        partner = db.table("profiles") \
+        partner = db.table("profiles_realtime") \
             .select("id, display_name, country, avatar_config, is_verified, status") \
             .eq("id", partner_id) \
             .execute()
@@ -236,7 +236,7 @@ async def logout(user_id: str = Depends(get_current_user_id)):
     db = get_supabase()
     
     # Update status to offline
-    db.table("profiles").update({
+    db.table("profiles_realtime").update({
         "status": "offline",
         "last_active_at": datetime.utcnow().isoformat()
     }).eq("id", user_id).execute()

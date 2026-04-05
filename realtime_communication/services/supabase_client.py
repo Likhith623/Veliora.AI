@@ -5,6 +5,7 @@ from typing import Dict, Any, Optional
 # Specific mappings for anomaly tables that deviate from standard naming
 TABLE_MAPPINGS: Dict[str, str] = {
     "messages": "messages_realtime_comunicatio_realtime",
+    "games_realtime_communication": "games_realtime_communication"
 }
 
 def get_table_name(base_name: str) -> str:

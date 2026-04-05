@@ -59,7 +59,7 @@ manager = ConnectionManager()
 # ─── Helper: verify user is in relationship ────────────────────────────────────
 
 def _verify_relationship(db, relationship_id: str, user_id: str):
-    rel = db.table("relationships") \
+    rel = db.table("relationships_realtime") \
         .select("*") \
         .eq("id", relationship_id) \
         .eq("status", "active") \
@@ -101,7 +101,7 @@ async def send_message(req: SendMessageRequest, current_user: str = Depends(get_
     target_lang = "en"
     try:
         # First check privacy_settings for translation_language
-        priv = db.table("privacy_settings") \
+        priv = db.table("privacy_settings_realtime") \
             .select("translation_language") \
             .eq("user_id", partner_id) \
             .execute()
@@ -109,7 +109,7 @@ async def send_message(req: SendMessageRequest, current_user: str = Depends(get_
             target_lang = priv.data[0]["translation_language"]
         else:
             # Fallback to primary language
-            partner_lang = db.table("user_languages") \
+            partner_lang = db.table("user_languages_realtime") \
                 .select("language_code") \
                 .eq("user_id", partner_id) \
                 .eq("is_primary", True) \
@@ -160,7 +160,7 @@ async def send_message(req: SendMessageRequest, current_user: str = Depends(get_
         "extracted_facts": [{"fact": f["category"], "value": f["value"]} for f in facts] if facts else [],
     }
     
-    message = db.table("messages").insert(msg_payload).execute()
+    message = db.table("messages_realtime_comunicatio_realtime").insert(msg_payload).execute()
     if not message.data:
         raise HTTPException(status_code=500, detail="Failed to send message")
     
@@ -168,7 +168,7 @@ async def send_message(req: SendMessageRequest, current_user: str = Depends(get_
     
     # Update relationship stats
     try:
-        db.table("relationships").update({
+        db.table("relationships_realtime").update({
             "messages_exchanged": rel_data.get("messages_exchanged", 0) + 1,
             "last_interaction_at": datetime.utcnow().isoformat(),
             "updated_at": datetime.utcnow().isoformat()
@@ -179,7 +179,7 @@ async def send_message(req: SendMessageRequest, current_user: str = Depends(get_
     # Save extracted facts
     for fact in facts:
         try:
-            db.table("chat_facts").insert({
+            db.table("chat_facts_realtime").insert({
                 "user_id": user_id,
                 "relationship_id": req.relationship_id,
                 "source_message_id": msg_data["id"],
@@ -204,7 +204,7 @@ async def send_message(req: SendMessageRequest, current_user: str = Depends(get_
     
     # Notification
     try:
-        sender_profile = db.table("profiles").select("display_name").eq("id", user_id).execute()
+        sender_profile = db.table("profiles_realtime").select("display_name").eq("id", user_id).execute()
         sender_name = sender_profile.data[0]["display_name"] if sender_profile.data else "Someone"
         
         preview = (translation["translated_text"] or req.original_text or "")[:100]
@@ -301,7 +301,7 @@ async def get_messages(
     db = get_supabase()
     _verify_relationship(db, relationship_id, current_user)
     
-    messages = db.table("messages") \
+    messages = db.table("messages_realtime_comunicatio_realtime") \
         .select("*") \
         .eq("relationship_id", relationship_id) \
         .eq("is_deleted", False) \
@@ -311,7 +311,7 @@ async def get_messages(
     
     # Mark unread as read
     try:
-        db.table("messages") \
+        db.table("messages_realtime_comunicatio_realtime") \
             .update({"is_read": True, "read_at": datetime.utcnow().isoformat()}) \
             .eq("relationship_id", relationship_id) \
             .neq("sender_id", current_user) \
@@ -334,12 +334,12 @@ async def get_relationship_details(relationship_id: str, current_user: str = Dep
     rel_data = _verify_relationship(db, relationship_id, current_user)
     
     partner_id = rel_data["user_b_id"] if rel_data["user_a_id"] == current_user else rel_data["user_a_id"]
-    partner = db.table("profiles") \
+    partner = db.table("profiles_realtime") \
         .select("id, display_name, country, city, timezone, avatar_config, is_verified, care_score, status, status_message, last_active_at, profile_photo_url") \
         .eq("id", partner_id) \
         .execute()
     
-    milestones = db.table("relationship_milestones") \
+    milestones = db.table("relationship_milestones_realtime") \
         .select("*") \
         .eq("relationship_id", relationship_id) \
         .order("achieved_at", desc=True) \
@@ -387,7 +387,7 @@ async def create_poll(req: CreatePollRequest, current_user: str = Depends(get_cu
     if req.relationship_id:
         _verify_relationship(db, req.relationship_id, current_user)
     
-    poll = db.table("polls").insert({
+    poll = db.table("polls_realtime").insert({
         "creator_id": current_user,
         "relationship_id": req.relationship_id,
         "room_id": req.room_id,
@@ -405,7 +405,7 @@ async def create_poll(req: CreatePollRequest, current_user: str = Depends(get_cu
     
     # Create a message with the poll
     if req.relationship_id:
-        msg = db.table("messages").insert({
+        msg = db.table("messages_realtime_comunicatio_realtime").insert({
             "relationship_id": req.relationship_id,
             "sender_id": current_user,
             "content_type": "poll",
@@ -422,10 +422,10 @@ async def create_poll(req: CreatePollRequest, current_user: str = Depends(get_cu
             })
         
         # Notify partner
-        rel = db.table("relationships").select("user_a_id, user_b_id").eq("id", req.relationship_id).execute()
+        rel = db.table("relationships_realtime").select("user_a_id, user_b_id").eq("id", req.relationship_id).execute()
         if rel.data:
             partner_id = rel.data[0]["user_b_id"] if rel.data[0]["user_a_id"] == current_user else rel.data[0]["user_a_id"]
-            sender = db.table("profiles").select("display_name").eq("id", current_user).execute()
+            sender = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
             sender_name = sender.data[0]["display_name"] if sender.data else "Someone"
             await send_notification(
                 partner_id, "poll_created",
@@ -441,7 +441,7 @@ async def vote_poll(poll_id: str, req: VotePollRequest, current_user: str = Depe
     """Vote on a poll option."""
     db = get_supabase()
     
-    poll = db.table("polls").select("*").eq("id", poll_id).execute()
+    poll = db.table("polls_realtime").select("*").eq("id", poll_id).execute()
     if not poll.data:
         raise HTTPException(status_code=404, detail="Poll not found")
     
@@ -455,7 +455,7 @@ async def vote_poll(poll_id: str, req: VotePollRequest, current_user: str = Depe
     
     # Check if already voted (if not allow_multiple)
     if not poll_data.get("allow_multiple"):
-        existing = db.table("poll_votes") \
+        existing = db.table("poll_votes_realtime") \
             .select("id") \
             .eq("poll_id", poll_id) \
             .eq("user_id", current_user) \
@@ -464,14 +464,14 @@ async def vote_poll(poll_id: str, req: VotePollRequest, current_user: str = Depe
             raise HTTPException(status_code=400, detail="You already voted on this poll")
     
     # Record vote
-    vote = db.table("poll_votes").insert({
+    vote = db.table("poll_votes_realtime").insert({
         "poll_id": poll_id,
         "user_id": current_user,
         "selected_option": req.selected_option,
     }).execute()
     
     # Get updated results
-    all_votes = db.table("poll_votes") \
+    all_votes = db.table("poll_votes_realtime") \
         .select("selected_option, user_id") \
         .eq("poll_id", poll_id) \
         .execute()
@@ -502,13 +502,13 @@ async def get_poll(poll_id: str, current_user: str = Depends(get_current_user_id
     """Get poll details with current results."""
     db = get_supabase()
     
-    poll = db.table("polls").select("*").eq("id", poll_id).execute()
+    poll = db.table("polls_realtime").select("*").eq("id", poll_id).execute()
     if not poll.data:
         raise HTTPException(status_code=404, detail="Poll not found")
     
     poll_data = poll.data[0]
     
-    votes = db.table("poll_votes").select("selected_option, user_id").eq("poll_id", poll_id).execute()
+    votes = db.table("poll_votes_realtime").select("selected_option, user_id").eq("poll_id", poll_id).execute()
     
     results = {}
     voter_data = {}
@@ -547,7 +547,7 @@ async def react_to_message(
     """Add or toggle an emoji reaction on a message."""
     db = get_supabase()
     
-    msg = db.table("messages").select("id, reactions, relationship_id, sender_id").eq("id", message_id).execute()
+    msg = db.table("messages_realtime_comunicatio_realtime").select("id, reactions, relationship_id, sender_id").eq("id", message_id).execute()
     if not msg.data:
         raise HTTPException(status_code=404, detail="Message not found")
     
@@ -565,7 +565,7 @@ async def react_to_message(
     else:
         reactions[req.emoji] = [current_user]
     
-    db.table("messages").update({"reactions": reactions}).eq("id", message_id).execute()
+    db.table("messages_realtime_comunicatio_realtime").update({"reactions": reactions}).eq("id", message_id).execute()
     
     # Broadcast
     if msg_data.get("relationship_id"):
@@ -579,7 +579,7 @@ async def react_to_message(
     
     # Notify message sender
     if msg_data["sender_id"] != current_user:
-        sender = db.table("profiles").select("display_name").eq("id", current_user).execute()
+        sender = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
         sender_name = sender.data[0]["display_name"] if sender.data else "Someone"
         await send_notification(
             msg_data["sender_id"], "message_reaction",
@@ -599,14 +599,14 @@ async def delete_message(message_id: str, current_user: str = Depends(get_curren
     """Soft-delete a message (only by sender)."""
     db = get_supabase()
     
-    msg = db.table("messages").select("sender_id, relationship_id").eq("id", message_id).execute()
+    msg = db.table("messages_realtime_comunicatio_realtime").select("sender_id, relationship_id").eq("id", message_id).execute()
     if not msg.data:
         raise HTTPException(status_code=404, detail="Message not found")
     
     if msg.data[0]["sender_id"] != current_user:
         raise HTTPException(status_code=403, detail="You can only delete your own messages")
     
-    db.table("messages").update({"is_deleted": True}).eq("id", message_id).execute()
+    db.table("messages_realtime_comunicatio_realtime").update({"is_deleted": True}).eq("id", message_id).execute()
     
     await manager.broadcast(msg.data[0]["relationship_id"], {
         "type": "message_deleted",
@@ -629,7 +629,7 @@ async def forward_message(
     """Forward a message to another relationship."""
     db = get_supabase()
     
-    msg = db.table("messages").select("*").eq("id", message_id).execute()
+    msg = db.table("messages_realtime_comunicatio_realtime").select("*").eq("id", message_id).execute()
     if not msg.data:
         raise HTTPException(status_code=404, detail="Message not found")
     
@@ -637,7 +637,7 @@ async def forward_message(
     
     original = msg.data[0]
     
-    forwarded = db.table("messages").insert({
+    forwarded = db.table("messages_realtime_comunicatio_realtime").insert({
         "relationship_id": req.target_relationship_id,
         "sender_id": current_user,
         "content_type": original["content_type"],
@@ -672,7 +672,7 @@ async def gift_xp_in_chat(req: GiftXPRequest, current_user: str = Depends(get_cu
     
     # Find relationship
     db = get_supabase()
-    rel = db.table("relationships") \
+    rel = db.table("relationships_realtime") \
         .select("id") \
         .or_(
             f"and(user_a_id.eq.{current_user},user_b_id.eq.{req.receiver_id}),"
@@ -682,11 +682,11 @@ async def gift_xp_in_chat(req: GiftXPRequest, current_user: str = Depends(get_cu
         .execute()
     
     if rel.data:
-        sender = db.table("profiles").select("display_name").eq("id", current_user).execute()
+        sender = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
         sender_name = sender.data[0]["display_name"] if sender.data else "Someone"
         
         # Create a system message
-        msg = db.table("messages").insert({
+        msg = db.table("messages_realtime_comunicatio_realtime").insert({
             "relationship_id": rel.data[0]["id"],
             "sender_id": current_user,
             "content_type": "xp_gift",
@@ -733,7 +733,7 @@ async def websocket_chat(websocket: WebSocket, relationship_id: str, user_id: st
                 # Mark messages as read
                 db = get_supabase()
                 try:
-                    db.table("messages") \
+                    db.table("messages_realtime_comunicatio_realtime") \
                         .update({"is_read": True, "read_at": datetime.utcnow().isoformat()}) \
                         .eq("relationship_id", relationship_id) \
                         .neq("sender_id", user_id) \
@@ -758,7 +758,7 @@ async def websocket_chat(websocket: WebSocket, relationship_id: str, user_id: st
                 video_url = message_data.get("video_url")
                 reply_to_id = message_data.get("reply_to_id")
                 
-                rel = db.table("relationships").select("*").eq("id", relationship_id).eq("status", "active").execute()
+                rel = db.table("relationships_realtime").select("*").eq("id", relationship_id).eq("status", "active").execute()
                 if not rel.data:
                     await websocket.send_json({"type": "error", "message": "Relationship not found"})
                     continue
@@ -777,11 +777,11 @@ async def websocket_chat(websocket: WebSocket, relationship_id: str, user_id: st
                 # Target language
                 target_lang = "en"
                 try:
-                    priv = db.table("privacy_settings").select("translation_language").eq("user_id", partner_id).execute()
+                    priv = db.table("privacy_settings_realtime").select("translation_language").eq("user_id", partner_id).execute()
                     if priv.data and priv.data[0].get("translation_language"):
                         target_lang = priv.data[0]["translation_language"]
                     else:
-                        pl = db.table("user_languages").select("language_code").eq("user_id", partner_id).eq("is_primary", True).limit(1).execute()
+                        pl = db.table("user_languages_realtime").select("language_code").eq("user_id", partner_id).eq("is_primary", True).limit(1).execute()
                         if pl.data:
                             target_lang = pl.data[0]["language_code"]
                 except Exception:
@@ -796,7 +796,7 @@ async def websocket_chat(websocket: WebSocket, relationship_id: str, user_id: st
                         pass
                 
                 # Save
-                message = db.table("messages").insert({
+                message = db.table("messages_realtime_comunicatio_realtime").insert({
                     "relationship_id": relationship_id,
                     "sender_id": user_id,
                     "content_type": content_type,
@@ -820,7 +820,7 @@ async def websocket_chat(websocket: WebSocket, relationship_id: str, user_id: st
                     
                     # Update relationship
                     try:
-                        db.table("relationships").update({
+                        db.table("relationships_realtime").update({
                             "messages_exchanged": rel_data.get("messages_exchanged", 0) + 1,
                             "last_interaction_at": datetime.utcnow().isoformat(),
                         }).eq("id", relationship_id).execute()

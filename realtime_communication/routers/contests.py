@@ -14,16 +14,16 @@ async def _update_leaderboard(db, user_id: str, contest_type: str, score_to_add:
     period = "weekly" if contest_type == "weekly" else "monthly" if "monthly" in contest_type else "daily"
     
     # Grab existing record inside proper table
-    existing = db.table("contest_leaderboard").select("id, score").eq("user_id", user_id).eq("contest_type", contest_type).eq("period", period).execute()
+    existing = db.table("contest_leaderboard_realtime").select("id, score").eq("user_id", user_id).eq("contest_type", contest_type).eq("period", period).execute()
     
     if existing.data and len(existing.data) > 0:
         new_score = existing.data[0].get("score", 0) + score_to_add
-        db.table("contest_leaderboard").update({
+        db.table("contest_leaderboard_realtime").update({
             "score": new_score, 
             "updated_at": datetime.utcnow().isoformat()
         }).eq("id", existing.data[0]["id"]).execute()
     else:
-        db.table("contest_leaderboard").insert({
+        db.table("contest_leaderboard_realtime").insert({
             "user_id": user_id,
             "contest_type": contest_type,
             "period": period,
@@ -37,7 +37,7 @@ async def create_contest(req: ContestRequest, user_id: str = Depends(get_current
     db = get_supabase()
     
     # Enforce Security & Reality Constraints
-    rel = db.table("relationships").select("user_a_id, user_b_id").eq("id", req.relationship_id).eq("status", "active").execute()
+    rel = db.table("relationships_realtime").select("user_a_id, user_b_id").eq("id", req.relationship_id).eq("status", "active").execute()
     if not rel.data:
         raise HTTPException(status_code=404, detail="Relationship not active or found")
     
@@ -57,11 +57,11 @@ async def get_contests(relationship_id: str, user_id: str = Depends(get_current_
     """Fetch historic and scheduled challenges mapped across the bond."""
     db = get_supabase()
     
-    rel = db.table("relationships").select("user_a_id, user_b_id").eq("id", relationship_id).execute()
+    rel = db.table("relationships_realtime").select("user_a_id, user_b_id").eq("id", relationship_id).execute()
     if not rel.data or user_id not in [rel.data[0]["user_a_id"], rel.data[0]["user_b_id"]]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    contests = db.table("contests").select("*").eq("relationship_id", relationship_id).order("created_at", desc=True).execute()
+    contests = db.table("contests_realtime").select("*").eq("relationship_id", relationship_id).order("created_at", desc=True).execute()
     return {"contests": contests.data or []}
 
 
@@ -70,16 +70,16 @@ async def get_contest_details(contest_id: str, user_id: str = Depends(get_curren
     """View precise status and deep contest parameters."""
     db = get_supabase()
     
-    contest = db.table("contests").select("*").eq("id", contest_id).execute()
+    contest = db.table("contests_realtime").select("*").eq("id", contest_id).execute()
     if not contest.data:
         raise HTTPException(status_code=404, detail="Contest missing")
     
     c_data = contest.data[0]
-    rel = db.table("relationships").select("user_a_id, user_b_id").eq("id", c_data["relationship_id"]).execute()
+    rel = db.table("relationships_realtime").select("user_a_id, user_b_id").eq("id", c_data["relationship_id"]).execute()
     if not rel.data or user_id not in [rel.data[0]["user_a_id"], rel.data[0]["user_b_id"]]:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    questions = db.table("contest_questions") \
+    questions = db.table("contest_questions_realtime") \
         .select("id, question_text, question_type, options, points, question_order, question_about_user") \
         .eq("contest_id", contest_id).order("question_order").execute()
     
@@ -109,9 +109,9 @@ async def get_global_leaderboard(period: str, contest_type: Optional[str] = "wee
     """Highly optimized O(log n) real-time query against indexed Leaderboard ranks (Phase 7 table)."""
     db = get_supabase()
     
-    # We query .table("contest_leaderboard") and it correctly maps to contest_leaderboard_realtime
-    lb_ranked = db.table("contest_leaderboard") \
-        .select("user_id, score, rank, profiles(display_name, avatar_config, country)") \
+    # We query .table("contest_leaderboard_realtime") and it correctly maps to contest_leaderboard_realtime
+    lb_ranked = db.table("contest_leaderboard_realtime") \
+        .select("user_id, score, rank, profiles_realtime(display_name, avatar_config, country)") \
         .eq("period", period) \
         .eq("contest_type", contest_type) \
         .order("score", desc=True) \

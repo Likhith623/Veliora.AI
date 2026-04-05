@@ -84,7 +84,7 @@ async def submit_verification(req: VerificationRequest, user_id: str = Depends(g
     db = get_supabase()
 
     # Query existing verification state using the O(1) string mapped Supabase Wrapper
-    existing = db.table("verification_records") \
+    existing = db.table("verification_records_realtime") \
         .select("status") \
         .eq("user_id", user_id) \
         .in_("status", ["pending", "approved"]) \
@@ -141,15 +141,15 @@ async def submit_verification(req: VerificationRequest, user_id: str = Depends(g
         "created_at": datetime.utcnow().isoformat()
     }
     
-    # We use `.table("verification_records")` safely because of the Phase 1 Realtime Wrapper 
-    record = db.table("verification_records").insert(payload).execute()
+    # We use `.table("verification_records_realtime")` safely because of the Phase 1 Realtime Wrapper 
+    record = db.table("verification_records_realtime").insert(payload).execute()
     
     if not record.data:
         raise HTTPException(status_code=500, detail="Database failure. Could not insert verification record.")
 
     # Synchronously Elevate Profile Status if fully verified
     if is_real_human:
-        db.table("profiles").update({
+        db.table("profiles_realtime").update({
             "is_verified": True,
             "status": "active"
         }).eq("id", user_id).execute()
@@ -168,7 +168,7 @@ async def get_verification_status(user_id: str = Depends(get_current_user_id)):
     """Retrieve the current verification liveness score and status."""
     db = get_supabase()
     
-    record = db.table("verification_records") \
+    record = db.table("verification_records_realtime") \
         .select("verification_type, liveness_score, status, is_real_human, created_at") \
         .eq("user_id", user_id) \
         .order("created_at", desc=True) \

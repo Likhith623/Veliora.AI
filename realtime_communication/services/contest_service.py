@@ -22,7 +22,7 @@ QUESTION_TEMPLATES = [
 
 async def update_user_streak(db, user_id: str, contest_type: str) -> dict:
     """O(1) logic to maintain daily/weekly contest streaks."""
-    profile = db.table("profiles").select("id, current_streak, last_contest_played_at").eq("id", user_id).execute()
+    profile = db.table("profiles_realtime").select("id, current_streak, last_contest_played_at").eq("id", user_id).execute()
     
     if not profile.data:
         return {"current_streak": 0}
@@ -69,7 +69,7 @@ async def update_user_streak(db, user_id: str, contest_type: str) -> dict:
                 streak_awarded = True
                 
     if streak_awarded:
-        db.table("profiles").update({
+        db.table("profiles_realtime").update({
             "current_streak": current_streak,
             "last_contest_played_at": now.isoformat(),
             "updated_at": now.isoformat()
@@ -82,25 +82,25 @@ async def generate_contest(relationship_id: str, contest_type: str = "weekly") -
     """Generate a bonding contest integrating historical facts."""
     db = get_supabase()
     
-    rel = db.table("relationships").select("*").eq("id", relationship_id).execute()
+    rel = db.table("relationships_realtime").select("*").eq("id", relationship_id).execute()
     if not rel.data:
         return {"error": "Relationship not found"}
     
     rel_data = rel.data[0]
-    user_a = db.table("profiles").select("display_name").eq("id", rel_data["user_a_id"]).execute()
-    user_b = db.table("profiles").select("display_name").eq("id", rel_data["user_b_id"]).execute()
+    user_a = db.table("profiles_realtime").select("display_name").eq("id", rel_data["user_a_id"]).execute()
+    user_b = db.table("profiles_realtime").select("display_name").eq("id", rel_data["user_b_id"]).execute()
     
     name_a = user_a.data[0]["display_name"] if user_a.data else "Partner A"
     name_b = user_b.data[0]["display_name"] if user_b.data else "Partner B"
     
-    facts_a = db.table("chat_facts").select("*").eq("user_id", rel_data["user_a_id"]).eq("relationship_id", relationship_id).eq("used_in_contest", False).execute()
-    facts_b = db.table("chat_facts").select("*").eq("user_id", rel_data["user_b_id"]).eq("relationship_id", relationship_id).eq("used_in_contest", False).execute()
+    facts_a = db.table("chat_facts_realtime").select("*").eq("user_id", rel_data["user_a_id"]).eq("relationship_id", relationship_id).eq("used_in_contest", False).execute()
+    facts_b = db.table("chat_facts_realtime").select("*").eq("user_id", rel_data["user_b_id"]).eq("relationship_id", relationship_id).eq("used_in_contest", False).execute()
     
     num_questions = {"daily": 3, "weekly": 5, "monthly": 10}.get(contest_type, 5)
     time_limit = {"daily": 5, "weekly": 10, "monthly": 20}.get(contest_type, 10)
     
     now = datetime.utcnow()
-    contest = db.table("contests").insert({
+    contest = db.table("contests_realtime").insert({
         "relationship_id": relationship_id,
         "contest_type": contest_type,
         "title": f"{contest_type.capitalize()} Bond Challenge 💫",
@@ -130,7 +130,7 @@ async def generate_contest(relationship_id: str, contest_type: str = "weekly") -
             {"template": f"What did {about_name} mention about their {fact['fact_category']}?", "category": fact["fact_category"]}
         )
         
-        q = db.table("contest_questions").insert({
+        q = db.table("contest_questions_realtime").insert({
             "contest_id": contest_data["id"],
             "question_text": template["template"].format(name=about_name),
             "question_type": "open",
@@ -144,7 +144,7 @@ async def generate_contest(relationship_id: str, contest_type: str = "weekly") -
         if q.data:
             questions.append(q.data[0])
             used_categories.add(fact["fact_category"])
-            db.table("chat_facts").update({"used_in_contest": True}).eq("id", fact["id"]).execute()
+            db.table("chat_facts_realtime").update({"used_in_contest": True}).eq("id", fact["id"]).execute()
     
     remaining = num_questions - len(questions)
     if remaining > 0:
@@ -154,7 +154,7 @@ async def generate_contest(relationship_id: str, contest_type: str = "weekly") -
             about_user = random.choice([rel_data["user_a_id"], rel_data["user_b_id"]])
             about_name = name_a if about_user == rel_data["user_a_id"] else name_b
             
-            q = db.table("contest_questions").insert({
+            q = db.table("contest_questions_realtime").insert({
                 "contest_id": contest_data["id"],
                 "question_text": template["template"].format(name=about_name),
                 "question_type": "open",
@@ -172,16 +172,16 @@ async def submit_answer(question_id: str, user_id: str, answer: str) -> dict:
     """Submit a contest answer."""
     db = get_supabase()
     
-    question = db.table("contest_questions").select("*").eq("id", question_id).execute()
+    question = db.table("contest_questions_realtime").select("*").eq("id", question_id).execute()
     if not question.data:
         return {"error": "Question not found"}
     
     q_data = question.data[0]
-    contest = db.table("contests").select("*").eq("id", q_data["contest_id"]).execute()
+    contest = db.table("contests_realtime").select("*").eq("id", q_data["contest_id"]).execute()
     if not contest.data:
         return {"error": "Contest not found"}
         
-    rel_data = db.table("relationships").select("*").eq("id", contest.data[0]["relationship_id"]).execute().data[0]
+    rel_data = db.table("relationships_realtime").select("*").eq("id", contest.data[0]["relationship_id"]).execute().data[0]
     
     is_user_a = user_id == rel_data["user_a_id"]
     ans_field, time_field, pts_field = ("user_a_answer", "user_a_answered_at", "user_a_points") if is_user_a else ("user_b_answer", "user_b_answered_at", "user_b_points")
@@ -196,7 +196,7 @@ async def submit_answer(question_id: str, user_id: str, answer: str) -> dict:
         elif correct in user_answer or user_answer in correct:
             points = q_data["points"] // 2
             
-    db.table("contest_questions").update({
+    db.table("contest_questions_realtime").update({
         ans_field: answer,
         time_field: datetime.utcnow().isoformat(),
         pts_field: points
@@ -208,18 +208,18 @@ async def submit_answer(question_id: str, user_id: str, answer: str) -> dict:
 async def finish_contest(contest_id: str, user_id: str) -> dict:
     """Evaluate completion, handle streaks, and upsert leaderboards."""
     db = get_supabase()
-    contest = db.table("contests").select("*").eq("id", contest_id).execute()
+    contest = db.table("contests_realtime").select("*").eq("id", contest_id).execute()
     
     if not contest.data:
         return {"error": "Contest not found"}
         
     c_data = contest.data[0]
-    questions = db.table("contest_questions").select("user_a_points, user_b_points").eq("contest_id", contest_id).execute()
+    questions = db.table("contest_questions_realtime").select("user_a_points, user_b_points").eq("contest_id", contest_id).execute()
     
     a_total = sum(q.get("user_a_points") or 0 for q in questions.data or [])
     b_total = sum(q.get("user_b_points") or 0 for q in questions.data or [])
     
-    db.table("contests").update({
+    db.table("contests_realtime").update({
         "status": "completed",
         "user_a_score": a_total,
         "user_b_score": b_total,
@@ -227,7 +227,7 @@ async def finish_contest(contest_id: str, user_id: str) -> dict:
     }).eq("id", contest_id).execute()
     
     # Process Streaks
-    rel = db.table("relationships").select("*").eq("id", c_data["relationship_id"]).execute().data[0]
+    rel = db.table("relationships_realtime").select("*").eq("id", c_data["relationship_id"]).execute().data[0]
     is_user_a = user_id == rel["user_a_id"]
     
     streak_data = await update_user_streak(db, user_id, c_data["contest_type"])

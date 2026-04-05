@@ -52,7 +52,7 @@ async def add_my_question(
     db = get_supabase()
     
     # Limit to 20 questions per user
-    existing = db.table("user_questions") \
+    existing = db.table("user_questions_realtime") \
         .select("id", count="exact") \
         .eq("user_id", current_user) \
         .eq("is_active", True) \
@@ -61,7 +61,7 @@ async def add_my_question(
     if existing.count >= 20:
         raise HTTPException(status_code=400, detail="Maximum 20 questions allowed")
     
-    q = db.table("user_questions").insert({
+    q = db.table("user_questions_realtime").insert({
         "user_id": current_user,
         "question_text": req.question_text,
         "correct_answer": req.correct_answer,
@@ -77,7 +77,7 @@ async def get_my_questions(current_user: str = Depends(get_current_user_id)):
     """Get all my personal questions with answers."""
     db = get_supabase()
     
-    questions = db.table("user_questions") \
+    questions = db.table("user_questions_realtime") \
         .select("*") \
         .eq("user_id", current_user) \
         .eq("is_active", True) \
@@ -96,11 +96,11 @@ async def update_my_question(
     """Update a personal question."""
     db = get_supabase()
     
-    q = db.table("user_questions").select("user_id").eq("id", question_id).execute()
+    q = db.table("user_questions_realtime").select("user_id").eq("id", question_id).execute()
     if not q.data or q.data[0]["user_id"] != current_user:
         raise HTTPException(status_code=403, detail="Not your question")
     
-    result = db.table("user_questions").update({
+    result = db.table("user_questions_realtime").update({
         "question_text": req.question_text,
         "correct_answer": req.correct_answer,
         "category": req.category,
@@ -115,11 +115,11 @@ async def delete_my_question(question_id: str, current_user: str = Depends(get_c
     """Delete (deactivate) a personal question."""
     db = get_supabase()
     
-    q = db.table("user_questions").select("user_id").eq("id", question_id).execute()
+    q = db.table("user_questions_realtime").select("user_id").eq("id", question_id).execute()
     if not q.data or q.data[0]["user_id"] != current_user:
         raise HTTPException(status_code=403, detail="Not your question")
     
-    db.table("user_questions").update({
+    db.table("user_questions_realtime").update({
         "is_active": False,
         "updated_at": datetime.utcnow().isoformat(),
     }).eq("id", question_id).execute()
@@ -135,7 +135,7 @@ async def get_friend_questions(friend_id: str, current_user: str = Depends(get_c
     db = get_supabase()
     
     # Verify friendship
-    rel = db.table("relationships") \
+    rel = db.table("relationships_realtime") \
         .select("id") \
         .or_(
             f"and(user_a_id.eq.{current_user},user_b_id.eq.{friend_id}),"
@@ -148,7 +148,7 @@ async def get_friend_questions(friend_id: str, current_user: str = Depends(get_c
         raise HTTPException(status_code=403, detail="You must be friends to view their questions")
     
     # Get questions WITHOUT correct_answer
-    questions = db.table("user_questions") \
+    questions = db.table("user_questions_realtime") \
         .select("id, question_text, category, times_asked, times_answered_correctly, created_at") \
         .eq("user_id", friend_id) \
         .eq("is_active", True) \
@@ -156,7 +156,7 @@ async def get_friend_questions(friend_id: str, current_user: str = Depends(get_c
         .execute()
     
     # Get friend's name
-    friend = db.table("profiles").select("display_name").eq("id", friend_id).execute()
+    friend = db.table("profiles_realtime").select("display_name").eq("id", friend_id).execute()
     friend_name = friend.data[0]["display_name"] if friend.data else "Your friend"
     
     return {
@@ -175,7 +175,7 @@ async def answer_friend_question(
     db = get_supabase()
     
     # Get the question
-    q = db.table("user_questions").select("*").eq("id", req.question_id).execute()
+    q = db.table("user_questions_realtime").select("*").eq("id", req.question_id).execute()
     if not q.data:
         raise HTTPException(status_code=404, detail="Question not found")
     
@@ -186,7 +186,7 @@ async def answer_friend_question(
         raise HTTPException(status_code=400, detail="Cannot answer your own question")
     
     # Verify friendship
-    rel = db.table("relationships") \
+    rel = db.table("relationships_realtime") \
         .select("id") \
         .or_(
             f"and(user_a_id.eq.{current_user},user_b_id.eq.{friend_id}),"
@@ -214,7 +214,7 @@ async def answer_friend_question(
             xp_earned = 5
     
     # Update question stats
-    db.table("user_questions").update({
+    db.table("user_questions_realtime").update({
         "times_asked": q_data.get("times_asked", 0) + 1,
         "times_answered_correctly": q_data.get("times_answered_correctly", 0) + (1 if is_correct else 0),
     }).eq("id", req.question_id).execute()
@@ -225,7 +225,7 @@ async def answer_friend_question(
                        source_id=req.question_id)
     
     # Notify the friend
-    answerer = db.table("profiles").select("display_name").eq("id", current_user).execute()
+    answerer = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
     answerer_name = answerer.data[0]["display_name"] if answerer.data else "Someone"
     
     await send_notification(

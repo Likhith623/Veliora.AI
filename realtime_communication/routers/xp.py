@@ -26,7 +26,7 @@ async def send_xp_gift(req: GiftXPRequest, current_user: str = Depends(get_curre
     db = get_supabase()
     
     # Verify friendship
-    rel = db.table("relationships") \
+    rel = db.table("relationships_realtime") \
         .select("id") \
         .or_(
             f"and(user_a_id.eq.{current_user},user_b_id.eq.{req.receiver_id}),"
@@ -62,7 +62,7 @@ async def get_xp_transactions(
     """Get XP transaction history."""
     db = get_supabase()
     
-    txs = db.table("xp_transactions") \
+    txs = db.table("xp_transactions_realtime") \
         .select("*") \
         .eq("user_id", current_user) \
         .order("created_at", desc=True) \
@@ -78,7 +78,7 @@ async def get_user_xp(user_id: str, current_user: str = Depends(get_current_user
     db = get_supabase()
     
     # Verify friendship
-    rel = db.table("relationships") \
+    rel = db.table("relationships_realtime") \
         .select("id") \
         .or_(
             f"and(user_a_id.eq.{current_user},user_b_id.eq.{user_id}),"

@@ -53,11 +53,11 @@ def calculate_level(bond_points: int) -> int:
 
 def _ensure_xp_row(db, user_id: str) -> dict:
     """Get or create the realtime_xp row for a user."""
-    row = db.table("realtime_xp").select("*").eq("user_id", user_id).execute()
+    row = db.table("realtime_xp_realtime").select("*").eq("user_id", user_id).execute()
     if row.data:
         return row.data[0]
     # Create
-    new = db.table("realtime_xp").insert({"user_id": user_id}).execute()
+    new = db.table("realtime_xp_realtime").insert({"user_id": user_id}).execute()
     return new.data[0] if new.data else {"current_xp": 0}
 
 
@@ -77,7 +77,7 @@ async def award_xp(
     new_total = xp_row.get("total_xp_earned", 0) + (amount if amount > 0 else 0)
 
     # Update realtime_xp
-    db.table("realtime_xp").update({
+    db.table("realtime_xp_realtime").update({
         "current_xp": max(0, new_xp),
         "total_xp_earned": new_total,
         "last_activity_at": datetime.utcnow().isoformat(),
@@ -85,7 +85,7 @@ async def award_xp(
     }).eq("user_id", user_id).execute()
 
     # Log transaction
-    tx = db.table("xp_transactions").insert({
+    tx = db.table("xp_transactions_realtime").insert({
         "user_id": user_id,
         "amount": amount,
         "transaction_type": transaction_type,
@@ -118,13 +118,13 @@ async def gift_xp(sender_id: str, receiver_id: str, amount: int) -> dict:
 
     # Deduct from sender
     sender_new = sender_xp["current_xp"] - amount
-    db.table("realtime_xp").update({
+    db.table("realtime_xp_realtime").update({
         "current_xp": sender_new,
         "total_xp_gifted": sender_xp.get("total_xp_gifted", 0) + amount,
         "updated_at": datetime.utcnow().isoformat(),
     }).eq("user_id", sender_id).execute()
 
-    db.table("xp_transactions").insert({
+    db.table("xp_transactions_realtime").insert({
         "user_id": sender_id,
         "amount": -amount,
         "transaction_type": "gifted_out",
@@ -137,13 +137,13 @@ async def gift_xp(sender_id: str, receiver_id: str, amount: int) -> dict:
     # Add to receiver
     receiver_xp = _ensure_xp_row(db, receiver_id)
     receiver_new = receiver_xp["current_xp"] + amount
-    db.table("realtime_xp").update({
+    db.table("realtime_xp_realtime").update({
         "current_xp": receiver_new,
         "total_xp_received": receiver_xp.get("total_xp_received", 0) + amount,
         "updated_at": datetime.utcnow().isoformat(),
     }).eq("user_id", receiver_id).execute()
 
-    db.table("xp_transactions").insert({
+    db.table("xp_transactions_realtime").insert({
         "user_id": receiver_id,
         "amount": amount,
         "transaction_type": "gifted_in",
@@ -154,7 +154,7 @@ async def gift_xp(sender_id: str, receiver_id: str, amount: int) -> dict:
     }).execute()
 
     # Get sender name for notification
-    sender_profile = db.table("profiles").select("display_name").eq("id", sender_id).execute()
+    sender_profile = db.table("profiles_realtime").select("display_name").eq("id", sender_id).execute()
     sender_name = sender_profile.data[0]["display_name"] if sender_profile.data else "Someone"
 
     await send_notification(
@@ -176,7 +176,7 @@ async def get_friend_leaderboard(user_id: str) -> list[dict]:
     db = get_supabase()
 
     # Get all friends (active relationships)
-    rels = db.table("relationships") \
+    rels = db.table("relationships_realtime") \
         .select("user_a_id, user_b_id") \
         .or_(f"user_a_id.eq.{user_id},user_b_id.eq.{user_id}") \
         .eq("status", "active") \
@@ -193,9 +193,9 @@ async def get_friend_leaderboard(user_id: str) -> list[dict]:
     # Get XP data for all friends
     leaderboard = []
     for fid in friend_ids:
-        xp = db.table("realtime_xp").select("current_xp, games_won, contests_won, streak_days") \
+        xp = db.table("realtime_xp_realtime").select("current_xp, games_won, contests_won, streak_days") \
             .eq("user_id", fid).execute()
-        profile = db.table("profiles").select("display_name, avatar_config, country") \
+        profile = db.table("profiles_realtime").select("display_name, avatar_config, country") \
             .eq("id", fid).execute()
 
         xp_data = xp.data[0] if xp.data else {"current_xp": 0, "games_won": 0, "contests_won": 0, "streak_days": 0}
@@ -226,7 +226,7 @@ async def check_and_level_up(relationship_id: str) -> dict | None:
     """Check if a relationship should level up based on bond_points."""
     db = get_supabase()
 
-    rel = db.table("relationships").select("*").eq("id", relationship_id).execute()
+    rel = db.table("relationships_realtime").select("*").eq("id", relationship_id).execute()
     if not rel.data:
         return None
 
@@ -236,13 +236,13 @@ async def check_and_level_up(relationship_id: str) -> dict | None:
 
     if new_level > current_level:
         # Level up!
-        db.table("relationships").update({
+        db.table("relationships_realtime").update({
             "level": new_level,
             "updated_at": datetime.utcnow().isoformat(),
         }).eq("id", relationship_id).execute()
 
         # Create milestone
-        db.table("relationship_milestones").insert({
+        db.table("relationship_milestones_realtime").insert({
             "relationship_id": relationship_id,
             "milestone_type": "level_up",
             "title": f"🆙 Level {new_level}: {LEVEL_NAMES.get(new_level, '')}!",

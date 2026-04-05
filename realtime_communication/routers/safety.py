@@ -14,7 +14,7 @@ async def report_user(req: ReportRequest, user_id: str = Depends(get_current_use
     """Report a user for inappropriate behavior."""
     db = get_supabase()
     
-    report = db.table("reports").insert({
+    report = db.table("reports_realtime").insert({
         "reporter_id": user_id,
         "reported_user_id": req.reported_user_id,
         "relationship_id": req.relationship_id,
@@ -24,7 +24,7 @@ async def report_user(req: ReportRequest, user_id: str = Depends(get_current_use
     }).execute()
     
     if report.data:
-        db.table("moderation_queue").insert({
+        db.table("moderation_queue_realtime").insert({
             "user_id": req.reported_user_id,
             "queue_type": "report_review",
             "priority": "high" if req.reason in ["harassment", "threatening", "underage"] else "normal",
@@ -33,7 +33,7 @@ async def report_user(req: ReportRequest, user_id: str = Depends(get_current_use
             "status": "pending"
         }).execute()
         
-        db.table("matching_queue") \
+        db.table("matching_queue_realtime") \
             .update({"status": "cancelled"}) \
             .eq("user_id", req.reported_user_id) \
             .eq("status", "searching") \
@@ -51,7 +51,7 @@ async def sever_bond(req: SeverBondRequest, user_id: str = Depends(get_current_u
     """One-tap sever a relationship bond."""
     db = get_supabase()
     
-    rel = db.table("relationships").select("*").eq("id", req.relationship_id).execute()
+    rel = db.table("relationships_realtime").select("*").eq("id", req.relationship_id).execute()
     if not rel.data:
         raise HTTPException(status_code=404, detail="Relationship not found")
     
@@ -64,7 +64,7 @@ async def sever_bond(req: SeverBondRequest, user_id: str = Depends(get_current_u
     
     farewell_field = "farewell_message_a" if rel_data["user_a_id"] == user_id else "farewell_message_b"
     
-    db.table("relationships").update({
+    db.table("relationships_realtime").update({
         "status": "ended",
         "ended_by": user_id,
         "end_reason": "severed",
@@ -96,7 +96,7 @@ async def submit_exit_survey(
     """Submit an exit survey after ending a relationship."""
     db = get_supabase()
     
-    survey = db.table("exit_surveys").insert({
+    survey = db.table("exit_surveys_realtime").insert({
         "user_id": user_id,
         "relationship_id": relationship_id,
         "reason": reason,
@@ -113,7 +113,7 @@ async def get_reliability_info(user_id: str, current_user: str = Depends(get_cur
     """Get user's reliability information."""
     db = get_supabase()
     
-    profile = db.table("profiles") \
+    profile = db.table("profiles_realtime") \
         .select("reliability_score, status, status_message, last_active_at, status_return_date") \
         .eq("id", user_id) \
         .execute()
@@ -147,7 +147,7 @@ async def get_minor_protection_settings(user_id: str, current_user: str = Depend
     """Get minor protection settings."""
     db = get_supabase()
     
-    profile = db.table("profiles") \
+    profile = db.table("profiles_realtime") \
         .select("is_minor, parent_email, parent_approved, date_of_birth") \
         .eq("id", user_id) \
         .execute()

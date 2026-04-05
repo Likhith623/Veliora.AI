@@ -48,7 +48,7 @@ async def set_my_role(req: SetRoleRequest, current_user: str = Depends(get_curre
         raise HTTPException(status_code=400, detail="You must provide either `offering_role` or `preferred_roles` (empty list to clear)")
     
     # Get current matching_preferences
-    profile = db.table("profiles").select("matching_preferences").eq("id", current_user).execute()
+    profile = db.table("profiles_realtime").select("matching_preferences").eq("id", current_user).execute()
     if not profile.data:
         raise HTTPException(status_code=404, detail="Profile not found")
     
@@ -77,7 +77,7 @@ async def set_my_role(req: SetRoleRequest, current_user: str = Depends(get_curre
         "updated_at": datetime.utcnow().isoformat()
     }
     
-    result = db.table("profiles").update(update_data).eq("id", current_user).execute()
+    result = db.table("profiles_realtime").update(update_data).eq("id", current_user).execute()
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Failed to update profile")
@@ -106,7 +106,7 @@ async def get_profile(user_id: str, current_user: str = Depends(get_optional_use
     """Get a user's public profile."""
     db = get_supabase()
 
-    profile = db.table("profiles") \
+    profile = db.table("profiles_realtime") \
         .select("id, username, display_name, country, city, timezone, bio, voice_bio_url, profile_photo_url, avatar_config, is_verified, care_score, reliability_score, total_bond_points, status, created_at") \
         .eq("id", user_id) \
         .execute()
@@ -116,16 +116,16 @@ async def get_profile(user_id: str, current_user: str = Depends(get_optional_use
 
     profile_data = profile.data[0]
 
-    languages = db.table("user_languages").select("*").eq("user_id", user_id).execute()
+    languages = db.table("user_languages_realtime").select("*").eq("user_id", user_id).execute()
 
     # Get achievement count
-    achievements = db.table("user_achievements") \
-        .select("*, achievements(name, icon_emoji, rarity)") \
+    achievements = db.table("user_achievements_realtime") \
+        .select("*, achievements_realtime(name, icon_emoji, rarity)") \
         .eq("user_id", user_id) \
         .execute()
 
     # Get active relationships count
-    rels = db.table("relationships") \
+    rels = db.table("relationships_realtime") \
         .select("id") \
         .or_(f"user_a_id.eq.{user_id},user_b_id.eq.{user_id}") \
         .eq("status", "active") \
@@ -158,7 +158,7 @@ async def update_my_profile(update: ProfileUpdate, current_user: str = Depends(g
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow().isoformat()
     
-    result = db.table("profiles").update(update_data).eq("id", current_user).execute()
+    result = db.table("profiles_realtime").update(update_data).eq("id", current_user).execute()
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -179,7 +179,7 @@ async def update_profile(user_id: str, update: ProfileUpdate, current_user: str 
     update_data = {k: v for k, v in update.model_dump().items() if v is not None}
     update_data["updated_at"] = datetime.utcnow().isoformat()
     
-    result = db.table("profiles").update(update_data).eq("id", user_id).execute()
+    result = db.table("profiles_realtime").update(update_data).eq("id", user_id).execute()
     
     if not result.data:
         raise HTTPException(status_code=404, detail="Profile not found")
@@ -195,7 +195,7 @@ async def update_avatar(user_id: str, avatar_config: dict, current_user: str = D
     
     db = get_supabase()
     
-    result = db.table("profiles").update({
+    result = db.table("profiles_realtime").update({
         "avatar_config": avatar_config,
         "updated_at": datetime.utcnow().isoformat()
     }).eq("id", user_id).execute()
@@ -214,7 +214,7 @@ async def add_language(user_id: str, lang: LanguageInput, current_user: str = De
     
     db = get_supabase()
     
-    result = db.table("user_languages").insert({
+    result = db.table("user_languages_realtime").insert({
         "user_id": user_id,
         "language_code": lang.language_code,
         "language_name": lang.language_name,
@@ -234,7 +234,7 @@ async def remove_language(user_id: str, language_code: str, current_user: str = 
     
     db = get_supabase()
     
-    db.table("user_languages") \
+    db.table("user_languages_realtime") \
         .delete() \
         .eq("user_id", user_id) \
         .eq("language_code", language_code) \
@@ -269,7 +269,7 @@ async def update_status(
     if return_date:
         update_data["status_return_date"] = return_date
     
-    result = db.table("profiles").update(update_data).eq("id", user_id).execute()
+    result = db.table("profiles_realtime").update(update_data).eq("id", user_id).execute()
     
     return {"status": status, "message": status_message}
 
@@ -279,7 +279,7 @@ async def get_relationships(user_id: str, current_user: str = Depends(get_option
     """Get all relationships for a user."""
     db = get_supabase()
     
-    rels = db.table("relationships") \
+    rels = db.table("relationships_realtime") \
         .select("*") \
         .or_(f"user_a_id.eq.{user_id},user_b_id.eq.{user_id}") \
         .order("last_interaction_at", desc=True) \
@@ -288,7 +288,7 @@ async def get_relationships(user_id: str, current_user: str = Depends(get_option
     enriched = []
     for rel in (rels.data or []):
         partner_id = rel["user_b_id"] if rel["user_a_id"] == user_id else rel["user_a_id"]
-        partner = db.table("profiles") \
+        partner = db.table("profiles_realtime") \
             .select("id, display_name, country, avatar_config, is_verified, status, care_score") \
             .eq("id", partner_id) \
             .execute()
@@ -313,7 +313,7 @@ async def get_notifications(user_id: str, unread_only: bool = False, current_use
     """Get user's notifications."""
     db = get_supabase()
     
-    query = db.table("notifications") \
+    query = db.table("notifications_realtime") \
         .select("*") \
         .eq("user_id", user_id) \
         .order("created_at", desc=True) \
@@ -335,7 +335,7 @@ async def mark_notification_read(user_id: str, notification_id: str, current_use
     
     db = get_supabase()
     
-    db.table("notifications").update({
+    db.table("notifications_realtime").update({
         "is_read": True,
         "read_at": datetime.utcnow().isoformat()
     }).eq("id", notification_id).eq("user_id", user_id).execute()
@@ -351,7 +351,7 @@ async def mark_all_notifications_read(user_id: str, current_user: str = Depends(
     
     db = get_supabase()
     
-    db.table("notifications").update({
+    db.table("notifications_realtime").update({
         "is_read": True,
         "read_at": datetime.utcnow().isoformat()
     }).eq("user_id", user_id).eq("is_read", False).execute()
@@ -366,7 +366,7 @@ async def delete_notification(user_id: str, notification_id: str, current_user: 
         raise HTTPException(status_code=403, detail="Cannot modify another user's notifications")
     
     db = get_supabase()
-    db.table("notifications").delete().eq("id", notification_id).eq("user_id", user_id).execute()
+    db.table("notifications_realtime").delete().eq("id", notification_id).eq("user_id", user_id).execute()
     
     return {"status": "deleted"}
 
@@ -378,6 +378,6 @@ async def clear_all_notifications(user_id: str, current_user: str = Depends(get_
         raise HTTPException(status_code=403, detail="Cannot modify another user's notifications")
     
     db = get_supabase()
-    db.table("notifications").delete().eq("user_id", user_id).execute()
+    db.table("notifications_realtime").delete().eq("user_id", user_id).execute()
     
     return {"status": "cleared"}

@@ -39,7 +39,7 @@ async def get_all_games():
     """Get all available games."""
     db = get_supabase()
     
-    games = db.table("games") \
+    games = db.table("games_realtime_communication") \
         .select("*") \
         .eq("is_active", True) \
         .order("category") \
@@ -60,7 +60,7 @@ async def start_game(req: StartGameRequest, user_id: str = Depends(get_current_u
     """Start a game session."""
     db = get_supabase()
     
-    game = db.table("games").select("*").eq("id", req.game_id).execute()
+    game = db.table("games_realtime_communication").select("*").eq("id", req.game_id).execute()
     if not game.data:
         raise HTTPException(status_code=404, detail="Game not found")
     
@@ -70,7 +70,7 @@ async def start_game(req: StartGameRequest, user_id: str = Depends(get_current_u
     partner_id = None
     
     if req.relationship_id:
-        rel = db.table("relationships").select("*").eq("id", req.relationship_id).eq("status", "active").execute()
+        rel = db.table("relationships_realtime").select("*").eq("id", req.relationship_id).eq("status", "active").execute()
         if rel.data:
             rel_data = rel.data[0]
             if user_id not in [rel_data["user_a_id"], rel_data["user_b_id"]]:
@@ -78,7 +78,7 @@ async def start_game(req: StartGameRequest, user_id: str = Depends(get_current_u
             partner_id = rel_data["user_b_id"] if rel_data["user_a_id"] == user_id else rel_data["user_a_id"]
             players.append({"user_id": partner_id, "score": 0})
     
-    session = db.table("game_sessions").insert({
+    session = db.table("game_sessions_realtime").insert({
         "game_id": req.game_id,
         "relationship_id": req.relationship_id,
         "room_id": req.room_id,
@@ -95,7 +95,7 @@ async def start_game(req: StartGameRequest, user_id: str = Depends(get_current_u
     
     # Notify partner
     if partner_id:
-        sender = db.table("profiles").select("display_name").eq("id", user_id).execute()
+        sender = db.table("profiles_realtime").select("display_name").eq("id", user_id).execute()
         sender_name = sender.data[0]["display_name"] if sender.data else "Your friend"
         await send_notification(
             partner_id, "game_invite",
@@ -115,14 +115,14 @@ async def game_action(req: GameActionRequest, user_id: str = Depends(get_current
     """Perform a game action."""
     db = get_supabase()
     
-    session = db.table("game_sessions").select("*").eq("id", req.session_id).execute()
+    session = db.table("game_sessions_realtime").select("*").eq("id", req.session_id).execute()
     if not session.data:
         raise HTTPException(status_code=404, detail="Game session not found")
     
     session_data = session.data[0]
     game_data = session_data.get("game_data", {})
     
-    game = db.table("games").select("game_type, bond_points_reward, xp_reward").eq("id", session_data["game_id"]).execute()
+    game = db.table("games_realtime_communication").select("game_type, bond_points_reward, xp_reward").eq("id", session_data["game_id"]).execute()
     game_info = game.data[0] if game.data else {}
     
     result = {"success": True}
@@ -141,7 +141,7 @@ async def game_action(req: GameActionRequest, user_id: str = Depends(get_current
         game_data.setdefault("reveals", []).append(req.data)
         result["revealed"] = True
     elif req.action == "next_round":
-        db.table("game_sessions").update({
+        db.table("game_sessions_realtime").update({
             "game_data": game_data,
             "current_round": session_data.get("current_round", 0) + 1,
         }).eq("id", req.session_id).execute()
@@ -150,7 +150,7 @@ async def game_action(req: GameActionRequest, user_id: str = Depends(get_current
         bond_points = game_info.get("bond_points_reward", 5)
         xp_reward = game_info.get("xp_reward", 10)
         
-        db.table("game_sessions").update({
+        db.table("game_sessions_realtime").update({
             "status": "completed",
             "completed_at": datetime.utcnow().isoformat(),
             "bond_points_awarded": bond_points,
@@ -158,10 +158,10 @@ async def game_action(req: GameActionRequest, user_id: str = Depends(get_current
         
         # Award bond points to relationship
         if session_data.get("relationship_id"):
-            rel = db.table("relationships").select("bond_points").eq("id", session_data["relationship_id"]).execute()
+            rel = db.table("relationships_realtime").select("bond_points").eq("id", session_data["relationship_id"]).execute()
             if rel.data:
                 new_bp = rel.data[0].get("bond_points", 0) + bond_points
-                db.table("relationships").update({"bond_points": new_bp}).eq("id", session_data["relationship_id"]).execute()
+                db.table("relationships_realtime").update({"bond_points": new_bp}).eq("id", session_data["relationship_id"]).execute()
                 await check_and_level_up(session_data["relationship_id"])
         
         # Award XP to all players
@@ -178,7 +178,7 @@ async def game_action(req: GameActionRequest, user_id: str = Depends(get_current
         return result
     
     # Update game data
-    db.table("game_sessions").update({
+    db.table("game_sessions_realtime").update({
         "game_data": game_data,
     }).eq("id", req.session_id).execute()
     
@@ -190,8 +190,8 @@ async def get_game_session(session_id: str, user_id: str = Depends(get_current_u
     """Get current game session state."""
     db = get_supabase()
     
-    session = db.table("game_sessions") \
-        .select("*, games(*)") \
+    session = db.table("game_sessions_realtime") \
+        .select("*, games_realtime_communication(*)") \
         .eq("id", session_id) \
         .execute()
     
@@ -206,8 +206,8 @@ async def get_game_history(relationship_id: str, user_id: str = Depends(get_curr
     """Get game history for a relationship."""
     db = get_supabase()
     
-    sessions = db.table("game_sessions") \
-        .select("*, games(title, icon_emoji, category)") \
+    sessions = db.table("game_sessions_realtime") \
+        .select("*, games_realtime_communication(title, icon_emoji, category)") \
         .eq("relationship_id", relationship_id) \
         .eq("status", "completed") \
         .order("completed_at", desc=True) \

@@ -1,0 +1,649 @@
+INFO:     Will watch for changes in these directories: ['/Users/likhith./Veliora.AI_backend.']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [63145] using WatchFiles
+INFO:     Started server process [63187]
+INFO:     Waiting for application startup.
+22:13:58 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:13:58 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:13:58 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:13:58 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:13:58 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:13:58 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:14:00 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:14:00 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:14:00 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:14:00 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:14:00 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:14:00 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:14:00 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:14:00 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:14:00 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 26160s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+22:14:07 │ httpx                          │ INFO    │ HTTP Request: POST https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/token?grant_type=password "HTTP/2 200 OK"
+22:14:07 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/users?select=%2A&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:62164 - "POST /api/auth/login HTTP/1.1" 200 OK
+22:14:07 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:     127.0.0.1:62168 - "POST /api/v1/profiles/me/role HTTP/1.1" 400 Bad Request
+22:14:08 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:14:08 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cusername%2Cdisplay_name%2Ccountry%2Ccity%2Ctimezone%2Cbio%2Cvoice_bio_url%2Cprofile_photo_url%2Cavatar_config%2Cis_verified%2Ccare_score%2Creliability_score%2Ctotal_bond_points%2Cstatus%2Ccreated_at&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:14:08 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_languages_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:14:08 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_achievements_realtime?select=%2A%2Cachievements_realtime%28name%2Cicon_emoji%2Crarity%29&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:14:09 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=id&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active "HTTP/2 200 OK"
+INFO:     127.0.0.1:62171 - "GET /api/v1/profiles/me HTTP/1.1" 200 OK
+22:14:09 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:14:09 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/privacy_settings_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:62174 - "GET /api/v1/privacy/settings HTTP/1.1" 200 OK
+22:14:09 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cmatching_preferences%2Coffering_role%2Crole&is_banned=eq.False "HTTP/2 200 OK"
+INFO:     127.0.0.1:62178 - "GET /api/v1/matching/browse-all HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62180 - "GET /api/v1/questions/categories HTTP/1.1" 405 Method Not Allowed
+22:14:10 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:14:10 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/contests_realtime?select=%2A&id=eq.active "HTTP/2 400 Bad Request"
+INFO:     127.0.0.1:62182 - "GET /api/v1/contests/active HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/uvicorn/protocols/http/httptools_impl.py", line 409, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        self.scope, self.receive, self.send
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/fastapi/applications.py", line 1054, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/applications.py", line 113, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 187, in __call__
+    raise exc
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/middleware/errors.py", line 165, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/middleware/cors.py", line 85, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/middleware/exceptions.py", line 62, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/routing.py", line 715, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/routing.py", line 735, in app
+    await route.handle(scope, receive, send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/routing.py", line 288, in handle
+    await self.app(scope, receive, send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/routing.py", line 76, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/starlette/routing.py", line 73, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/fastapi/routing.py", line 301, in app
+    raw_response = await run_endpoint_function(
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<3 lines>...
+    )
+    ^
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/fastapi/routing.py", line 212, in run_endpoint_function
+    return await dependant.call(**values)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/likhith./Veliora.AI_backend./realtime_communication/routers/contests.py", line 73, in get_contest_details
+    contest = db.table("contests_realtime").select("*").eq("id", contest_id).execute()
+  File "/Users/likhith./Veliora.AI_backend./venv/lib/python3.13/site-packages/postgrest/_sync/request_builder.py", line 78, in execute
+    raise APIError(r.json())
+postgrest.exceptions.APIError: {'code': '22P02', 'details': None, 'hint': None, 'message': 'invalid input syntax for type uuid: "active"'}
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/contests.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:14:26 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:14:26 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:14:26 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:14:26 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:14:26 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [63187]
+INFO:     Started server process [63628]
+INFO:     Waiting for application startup.
+22:14:28 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:14:28 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:14:28 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:14:28 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:14:28 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:14:28 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:14:30 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:14:30 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:14:30 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:14:30 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:14:30 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:14:30 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:14:30 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:14:30 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:14:30 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 26130s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+22:14:40 │ httpx                          │ INFO    │ HTTP Request: POST https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/token?grant_type=password "HTTP/2 200 OK"
+22:14:40 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/users?select=%2A&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:62204 - "POST /api/auth/login HTTP/1.1" 200 OK
+22:14:41 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:14:41 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=matching_preferences&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:14:41 │ httpx                          │ INFO    │ HTTP Request: PATCH https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:62208 - "POST /api/v1/profiles/me/role HTTP/1.1" 200 OK
+22:14:41 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:14:41 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cusername%2Cdisplay_name%2Ccountry%2Ccity%2Ctimezone%2Cbio%2Cvoice_bio_url%2Cprofile_photo_url%2Cavatar_config%2Cis_verified%2Ccare_score%2Creliability_score%2Ctotal_bond_points%2Cstatus%2Ccreated_at&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:14:42 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_languages_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:14:42 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_achievements_realtime?select=%2A%2Cachievements_realtime%28name%2Cicon_emoji%2Crarity%29&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:14:42 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=id&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active "HTTP/2 200 OK"
+INFO:     127.0.0.1:62213 - "GET /api/v1/profiles/me HTTP/1.1" 200 OK
+22:14:42 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:14:42 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/privacy_settings_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:62215 - "GET /api/v1/privacy/settings HTTP/1.1" 200 OK
+22:14:43 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cmatching_preferences%2Coffering_role%2Crole&is_banned=eq.False "HTTP/2 200 OK"
+INFO:     127.0.0.1:62218 - "GET /api/v1/matching/browse-all HTTP/1.1" 200 OK
+22:14:43 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:     127.0.0.1:62220 - "GET /api/v1/questions/random HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62222 - "GET /api/v1/contests/schedule/configuration HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/calls.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:18:53 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:18:53 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:18:53 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:18:53 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:18:53 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [63628]
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/calls.py'. Reloading...
+INFO:     Started server process [66299]
+INFO:     Waiting for application startup.
+22:18:55 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:18:55 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:18:55 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:18:55 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:18:55 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:18:55 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:18:56 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:18:56 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:18:56 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:18:56 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:18:56 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:18:56 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:18:56 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:18:56 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:18:56 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 25863s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+INFO:     Started server process [66307]
+INFO:     Waiting for application startup.
+22:18:57 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:18:57 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:18:57 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:18:57 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:18:57 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:18:57 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:18:58 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:18:58 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:18:58 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:18:58 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:18:58 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:18:58 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:18:58 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:18:58 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:18:58 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 25861s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/chat.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:19:24 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:19:24 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:19:24 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:19:24 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:19:24 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [66307]
+INFO:     Started server process [68063]
+INFO:     Waiting for application startup.
+22:19:26 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:19:26 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:19:26 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:19:26 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:19:26 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:19:26 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:19:27 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:19:27 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:19:27 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:19:27 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:19:27 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:19:27 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:19:27 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:19:27 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:19:27 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 25832s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/services/supabase_client.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:19:51 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:19:51 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:19:51 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:19:51 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:19:51 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [68063]
+INFO:     Started server process [68467]
+INFO:     Waiting for application startup.
+22:19:52 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:19:52 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:19:52 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:19:52 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:19:52 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:19:52 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:19:54 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:19:54 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:19:54 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:19:54 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:19:54 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:19:54 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:19:54 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:19:54 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:19:54 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 25806s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/services/supabase_client.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:20:27 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:20:27 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:20:27 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:20:27 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:20:27 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [68467]
+INFO:     Started server process [68783]
+INFO:     Waiting for application startup.
+22:20:28 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:20:28 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:20:28 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:20:28 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:20:28 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:20:28 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:20:30 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:20:30 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:20:30 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:20:30 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:20:30 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:20:30 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:20:30 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:20:30 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:20:30 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 25770s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+22:21:14 │ httpx                          │ INFO    │ HTTP Request: POST https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/token?grant_type=password "HTTP/2 200 OK"
+22:21:15 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/users?select=%2A&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:62464 - "POST /api/auth/login HTTP/1.1" 200 OK
+22:21:15 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:21:15 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=matching_preferences&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:21:16 │ httpx                          │ INFO    │ HTTP Request: PATCH https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:62469 - "POST /api/v1/profiles/me/role HTTP/1.1" 200 OK
+22:21:16 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:21:17 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cusername%2Cdisplay_name%2Ccountry%2Ccity%2Ctimezone%2Cbio%2Cvoice_bio_url%2Cprofile_photo_url%2Cavatar_config%2Cis_verified%2Ccare_score%2Creliability_score%2Ctotal_bond_points%2Cstatus%2Ccreated_at&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:21:17 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_languages_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:21:18 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_achievements_realtime?select=%2A%2Cachievements_realtime%28name%2Cicon_emoji%2Crarity%29&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:21:19 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=id&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active "HTTP/2 200 OK"
+INFO:     127.0.0.1:62473 - "GET /api/v1/profiles/me HTTP/1.1" 200 OK
+22:21:19 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:21:19 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/privacy_settings_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:62475 - "GET /api/v1/privacy/settings HTTP/1.1" 200 OK
+22:21:21 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cmatching_preferences%2Coffering_role%2Crole&is_banned=eq.False "HTTP/2 200 OK"
+INFO:     127.0.0.1:62477 - "GET /api/v1/matching/browse-all HTTP/1.1" 200 OK
+22:21:21 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:     127.0.0.1:62479 - "GET /api/v1/questions/random HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62481 - "GET /api/v1/contests/schedule/configuration HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/calls.py', 'realtime_communication/services/supabase_client.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:26:50 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:26:50 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:26:50 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:26:50 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:26:50 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [68783]
+INFO:     Started server process [70039]
+INFO:     Waiting for application startup.
+22:26:51 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:26:51 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:26:51 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:26:51 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:26:51 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:26:51 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:26:53 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:26:53 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:26:53 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:26:53 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:26:53 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:26:53 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:26:53 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:26:53 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:26:53 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 25387s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'test_supabase_join.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:35:43 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:35:43 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:35:43 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:35:44 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:35:44 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [70039]
+INFO:     Started server process [73680]
+INFO:     Waiting for application startup.
+22:35:45 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:35:45 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:35:45 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:35:45 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:35:45 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:35:45 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:35:47 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:35:47 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:35:47 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:35:47 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:35:47 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:35:47 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:35:47 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:35:47 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:35:47 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 24852s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'test_supabase_join.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:36:20 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:36:20 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:36:20 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:36:21 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:36:21 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [73680]
+INFO:     Started server process [75157]
+INFO:     Waiting for application startup.
+22:36:21 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:36:22 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:36:22 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:36:22 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:36:22 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:36:22 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:36:23 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:36:23 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:36:23 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:36:23 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:36:23 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:36:23 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:36:23 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:36:23 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:36:23 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 24817s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/services/matching_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:36:33 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:36:33 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:36:33 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:36:33 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:36:33 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [75157]
+INFO:     Started server process [75224]
+INFO:     Waiting for application startup.
+22:36:34 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:36:34 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:36:34 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:36:34 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:36:34 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:36:34 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:36:35 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:36:35 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:36:35 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:36:35 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:36:35 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:36:35 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:36:35 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:36:35 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:36:35 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 24804s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/games.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:37:17 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:37:17 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:37:17 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:37:17 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:37:17 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [75224]
+INFO:     Started server process [75857]
+INFO:     Waiting for application startup.
+22:37:19 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:37:19 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:37:19 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:37:19 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:37:19 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:37:19 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:37:20 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:37:20 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:37:20 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:37:20 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:37:20 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:37:20 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:37:20 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:37:20 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:37:20 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 24759s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/games.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:37:23 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:37:23 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:37:23 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:37:23 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:37:23 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [75857]
+INFO:     Started server process [75872]
+INFO:     Waiting for application startup.
+22:37:24 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:37:24 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:37:24 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:37:24 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:37:24 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:37:24 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:37:26 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:37:26 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:37:26 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:37:26 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:37:26 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:37:26 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:37:26 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:37:26 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:37:26 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 24754s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/games.py', 'realtime_communication/services/matching_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:38:29 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:38:29 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:38:29 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:38:29 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:38:29 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [75872]
+INFO:     Started server process [76813]
+INFO:     Waiting for application startup.
+22:38:30 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:38:30 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:38:30 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:38:30 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:38:30 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:38:30 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:38:31 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:38:31 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:38:31 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:38:31 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:38:31 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:38:31 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:38:31 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:38:31 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:38:31 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 24688s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/services/supabase_client.py', 'realtime_communication/routers/chat.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:47:37 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:47:37 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:47:37 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:47:37 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:47:37 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [76813]
+INFO:     Started server process [78362]
+INFO:     Waiting for application startup.
+22:47:39 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:47:39 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:47:39 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:47:39 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:47:39 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:47:39 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:47:40 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:47:40 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:47:40 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:47:40 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:47:40 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:47:40 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:47:40 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:47:40 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:47:40 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 24139s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'realtime_communication/routers/family_rooms.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+22:48:02 │ veliora                        │ INFO    │ 🛑 Veliora.AI shutting down...
+22:48:02 │ services.background_tasks      │ INFO    │ XP flush worker cancelled, performing final flush...
+22:48:02 │ services.background_tasks      │ INFO    │ Diary CRON worker cancelled
+22:48:02 │ services.rabbitmq_service      │ INFO    │ RabbitMQ connection closed
+22:48:02 │ veliora                        │ INFO    │ 👋 Veliora.AI shut down gracefully.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78362]
+INFO:     Started server process [79043]
+INFO:     Waiting for application startup.
+22:48:03 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+22:48:03 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+22:48:03 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+22:48:03 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+22:48:03 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+22:48:03 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+22:48:05 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+22:48:05 │ veliora                        │ INFO    │ ✅ XP flush worker started
+22:48:05 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+22:48:05 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+22:48:05 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+22:48:05 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+22:48:05 │ services.background_tasks      │ INFO    │ XP flush worker started
+22:48:05 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+22:48:05 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 24115s at 2026-04-06 00:00:00+00:00
+INFO:     Application startup complete.
+22:48:17 │ httpx                          │ INFO    │ HTTP Request: POST https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/token?grant_type=password "HTTP/2 200 OK"
+22:48:17 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/users?select=%2A&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63126 - "POST /api/auth/login HTTP/1.1" 200 OK
+22:48:18 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:48:20 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=matching_preferences&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:48:20 │ httpx                          │ INFO    │ HTTP Request: PATCH https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63131 - "POST /api/v1/profiles/me/role HTTP/1.1" 200 OK
+22:48:21 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:48:21 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cusername%2Cdisplay_name%2Ccountry%2Ccity%2Ctimezone%2Cbio%2Cvoice_bio_url%2Cprofile_photo_url%2Cavatar_config%2Cis_verified%2Ccare_score%2Creliability_score%2Ctotal_bond_points%2Cstatus%2Ccreated_at&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:48:21 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_languages_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:48:23 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_achievements_realtime?select=%2A%2Cachievements_realtime%28name%2Cicon_emoji%2Crarity%29&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:48:23 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=id&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active "HTTP/2 200 OK"
+INFO:     127.0.0.1:63135 - "GET /api/v1/profiles/me HTTP/1.1" 200 OK
+22:48:23 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:48:23 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/privacy_settings_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63138 - "GET /api/v1/privacy/settings HTTP/1.1" 200 OK
+22:48:23 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cmatching_preferences%2Coffering_role%2Crole&is_banned=eq.False "HTTP/2 200 OK"
+INFO:     127.0.0.1:63140 - "GET /api/v1/matching/browse-all HTTP/1.1" 200 OK
+22:48:24 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:     127.0.0.1:63142 - "GET /api/v1/questions/random HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63144 - "GET /api/v1/contests/schedule/configuration HTTP/1.1" 200 OK
+22:54:13 │ httpx                          │ INFO    │ HTTP Request: POST https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/token?grant_type=password "HTTP/2 200 OK"
+22:54:13 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/users?select=%2A&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63316 - "POST /api/auth/login HTTP/1.1" 200 OK
+22:54:13 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:54:14 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cusername%2Cdisplay_name%2Ccountry%2Ccity%2Ctimezone%2Cbio%2Cvoice_bio_url%2Cprofile_photo_url%2Cavatar_config%2Cis_verified%2Ccare_score%2Creliability_score%2Ctotal_bond_points%2Cstatus%2Ccreated_at&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:54:14 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_languages_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:54:14 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_achievements_realtime?select=%2A%2Cachievements_realtime%28name%2Cicon_emoji%2Crarity%29&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:54:14 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=id&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active "HTTP/2 200 OK"
+INFO:     127.0.0.1:63323 - "GET /api/v1/profiles/me HTTP/1.1" 200 OK
+22:54:14 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:54:15 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/privacy_settings_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63335 - "GET /api/v1/privacy/settings HTTP/1.1" 200 OK
+22:54:15 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cmatching_preferences%2Coffering_role%2Crole&is_banned=eq.False "HTTP/2 200 OK"
+INFO:     127.0.0.1:63337 - "GET /api/v1/matching/browse-all HTTP/1.1" 200 OK
+22:54:15 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:     127.0.0.1:63339 - "GET /api/v1/questions/random HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63341 - "GET /api/v1/contests/schedule/configuration HTTP/1.1" 200 OK
+22:54:15 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:54:15 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=%2A&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active&order=last_interaction_at.desc "HTTP/2 200 OK"
+INFO:     127.0.0.1:63343 - "GET /api/v1/friends/list HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63345 - "GET /api/v1/games/catalog HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63347 - "GET /api/v1/family-rooms/list HTTP/1.1" 404 Not Found
+22:54:55 │ httpx                          │ INFO    │ HTTP Request: POST https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/token?grant_type=password "HTTP/2 200 OK"
+22:54:55 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/users?select=%2A&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63401 - "POST /api/auth/login HTTP/1.1" 200 OK
+22:54:55 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:54:55 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cusername%2Cdisplay_name%2Ccountry%2Ccity%2Ctimezone%2Cbio%2Cvoice_bio_url%2Cprofile_photo_url%2Cavatar_config%2Cis_verified%2Ccare_score%2Creliability_score%2Ctotal_bond_points%2Cstatus%2Ccreated_at&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:54:56 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_languages_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:54:56 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/user_achievements_realtime?select=%2A%2Cachievements_realtime%28name%2Cicon_emoji%2Crarity%29&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:54:56 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=id&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active "HTTP/2 200 OK"
+INFO:     127.0.0.1:63408 - "GET /api/v1/profiles/me HTTP/1.1" 200 OK
+22:54:56 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:54:56 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/verification_records_realtime?select=verification_type%2Cliveness_score%2Cstatus%2Cis_real_human%2Ccreated_at&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685&order=created_at.desc&limit=1 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63413 - "GET /api/v1/verification/status HTTP/1.1" 200 OK
+22:54:57 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=id%2Cmatching_preferences%2Coffering_role%2Crole&is_banned=eq.False "HTTP/2 200 OK"
+INFO:     127.0.0.1:63415 - "GET /api/v1/matching/browse-all HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63417 - "GET /api/v1/chat/recent HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63419 - "GET /api/v1/calls/history HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63421 - "GET /api/v1/translation/languages HTTP/1.1" 404 Not Found
+22:54:57 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:54:57 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=%2A&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active&order=last_interaction_at.desc "HTTP/2 200 OK"
+INFO:     127.0.0.1:63423 - "GET /api/v1/friends/list HTTP/1.1" 200 OK
+22:54:57 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:54:57 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/relationships_realtime?select=user_a_id%2Cuser_b_id&or=%28user_a_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%2Cuser_b_id.eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685%29&status=eq.active "HTTP/2 200 OK"
+22:54:58 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/realtime_xp_realtime?select=current_xp%2Cgames_won%2Ccontests_won%2Cstreak_days&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+22:54:58 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=display_name%2Cavatar_config%2Ccountry&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63426 - "GET /api/v1/xp/leaderboard HTTP/1.1" 200 OK
+22:54:58 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:54:58 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/privacy_settings_realtime?select=%2A&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63429 - "GET /api/v1/privacy/settings HTTP/1.1" 200 OK
+22:54:58 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+INFO:     127.0.0.1:63432 - "GET /api/v1/questions/random HTTP/1.1" 200 OK
+22:54:58 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/games_realtime_communication?select=%2A&is_active=eq.True&order=category "HTTP/2 200 OK"
+INFO:     127.0.0.1:63434 - "GET /api/v1/games/ HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63437 - "GET /api/v1/live-games/active HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63439 - "GET /api/v1/contests/schedule/configuration HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63441 - "GET /api/v1/family-rooms/ HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:63443 - "GET /api/v1/safety/reports HTTP/1.1" 404 Not Found
+22:55:29 │ httpx                          │ INFO    │ HTTP Request: POST https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/token?grant_type=password "HTTP/2 200 OK"
+22:55:30 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/users?select=%2A&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63469 - "POST /api/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63474 - "GET /api/v1/translate/languages HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63476 - "GET /api/v1/games/live/available HTTP/1.1" 200 OK
+22:55:30 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:55:30 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/family_room_members_realtime?select=%2A%2Cfamily_rooms_realtime%28%2A%29&user_id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685&status=eq.active "HTTP/2 200 OK"
+INFO:     127.0.0.1:63478 - "GET /api/v1/rooms/ HTTP/1.1" 200 OK
+22:55:30 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/auth/v1/user "HTTP/2 200 OK"
+22:55:30 │ httpx                          │ INFO    │ HTTP Request: GET https://qzkduckjxwyoflmsaoms.supabase.co/rest/v1/profiles_realtime?select=reliability_score%2Cstatus%2Cstatus_message%2Clast_active_at%2Cstatus_return_date&id=eq.6dfa0107-6ca0-4c29-a6bc-9b33f4998685 "HTTP/2 200 OK"
+INFO:     127.0.0.1:63482 - "GET /api/v1/safety/reliability/6dfa0107-6ca0-4c29-a6bc-9b33f4998685 HTTP/1.1" 200 OK
+00:03:23 │ aiormq.connection              │ WARNING │ Server connection <Connection: "amqp://guest:******@localhost:5672/" at 0x106ad8f50> was stuck. No frames were received in 183 seconds.
+00:03:23 │ aiormq.connection              │ WARNING │ Server connection <Connection: "amqp://guest:******@localhost:5672/" at 0x150363390> was stuck. No frames were received in 183 seconds.
+00:03:23 │ aio_pika.robust_connection     │ INFO    │ Connection to amqp://guest:******@localhost:5672/ closed. Reconnecting after 5 seconds.
+00:03:23 │ aio_pika.robust_connection     │ INFO    │ Connection to amqp://guest:******@localhost:5672/ closed. Reconnecting after 5 seconds.
+00:08:35 │ aiormq.connection              │ WARNING │ Server connection <Connection: "amqp://guest:******@localhost:5672/" at 0x150362760> was stuck. No frames were received in 183 seconds.
+00:08:35 │ aiormq.connection              │ WARNING │ Server connection <Connection: "amqp://guest:******@localhost:5672/" at 0x150362cb0> was stuck. No frames were received in 183 seconds.
+00:08:35 │ aio_pika.robust_connection     │ INFO    │ Connection to amqp://guest:******@localhost:5672/ closed. Reconnecting after 5 seconds.
+00:08:35 │ aio_pika.robust_connection     │ INFO    │ Connection to amqp://guest:******@localhost:5672/ closed. Reconnecting after 5 seconds.

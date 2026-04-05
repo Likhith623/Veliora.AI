@@ -68,7 +68,7 @@ async def toggle_show_original(
     db = get_supabase()
 
     # O(1) Realtime string mapping via Wrapper
-    update_res = db.table("user_languages") \
+    update_res = db.table("user_languages_realtime") \
         .update({"show_original": req.show_original}) \
         .eq("user_id", user_id) \
         .eq("language_code", language_code) \

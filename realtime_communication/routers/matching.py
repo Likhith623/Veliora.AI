@@ -42,7 +42,7 @@ async def browse_by_role(role: str):
         )
     
     # Get ALL profiles that aren't banned — include top-level offering/role columns
-    profiles = db.table("profiles") \
+    profiles = db.table("profiles_realtime") \
         .select("id, display_name, country, city, avatar_config, is_verified, care_score, bio, matching_preferences, offering_role, role") \
         .eq("is_banned", False) \
         .execute()
@@ -122,8 +122,8 @@ async def connect_with_user(
     db = get_supabase()
 
     # Check both profiles exist and aren't banned
-    my_profile = db.table("profiles").select("id, display_name, is_banned, matching_preferences").eq("id", current_user).execute()
-    target_profile = db.table("profiles").select("id, display_name, country, city, avatar_config, is_verified, care_score, bio, is_banned, matching_preferences").eq("id", target_user_id).execute()
+    my_profile = db.table("profiles_realtime").select("id, display_name, is_banned, matching_preferences").eq("id", current_user).execute()
+    target_profile = db.table("profiles_realtime").select("id, display_name, country, city, avatar_config, is_verified, care_score, bio, is_banned, matching_preferences").eq("id", target_user_id).execute()
 
     if not my_profile.data:
         raise HTTPException(status_code=404, detail="Your profile was not found")
@@ -135,7 +135,7 @@ async def connect_with_user(
         raise HTTPException(status_code=403, detail="This user is no longer available")
 
     # Check if there's already an active relationship between them
-    existing = db.table("relationships") \
+    existing = db.table("relationships_realtime") \
         .select("id, status") \
         .or_(
             f"and(user_a_id.eq.{current_user},user_b_id.eq.{target_user_id}),"
@@ -193,7 +193,7 @@ async def search_for_match(req: MatchRequest, user_id: str = Depends(get_current
     db = get_supabase()
     
     # Check if user is verified
-    profile = db.table("profiles").select("is_verified, is_banned").eq("id", user_id).execute()
+    profile = db.table("profiles_realtime").select("is_verified, is_banned").eq("id", user_id).execute()
     if not profile.data or len(profile.data) == 0:
         raise HTTPException(status_code=404, detail="Profile not found")
     profile_data = profile.data[0]
@@ -201,14 +201,14 @@ async def search_for_match(req: MatchRequest, user_id: str = Depends(get_current
         raise HTTPException(status_code=403, detail="Account is banned")
     
     # Cancel any existing queue entries
-    db.table("matching_queue") \
+    db.table("matching_queue_realtime") \
         .update({"status": "cancelled"}) \
         .eq("user_id", user_id) \
         .eq("status", "searching") \
         .execute()
     
     # Add to matching queue
-    queue_entry = db.table("matching_queue").insert({
+    queue_entry = db.table("matching_queue_realtime").insert({
         "user_id": user_id,
         "seeking_role": req.seeking_role,
         "offering_role": req.offering_role,
@@ -236,20 +236,20 @@ async def search_for_match(req: MatchRequest, user_id: str = Depends(get_current
         )
         
         # Update queue entries
-        db.table("matching_queue") \
+        db.table("matching_queue_realtime") \
             .update({"status": "matched", "matched_with": candidate_id, "matched_at": datetime.utcnow().isoformat()}) \
             .eq("user_id", user_id) \
             .eq("status", "searching") \
             .execute()
         
-        db.table("matching_queue") \
+        db.table("matching_queue_realtime") \
             .update({"status": "matched", "matched_with": user_id, "matched_at": datetime.utcnow().isoformat()}) \
             .eq("user_id", candidate_id) \
             .eq("status", "searching") \
             .execute()
         
         # Get partner profile
-        partner_profile = db.table("profiles") \
+        partner_profile = db.table("profiles_realtime") \
             .select("id, display_name, country, city, avatar_config, is_verified, care_score, bio") \
             .eq("id", candidate_id) \
             .execute()
@@ -262,7 +262,7 @@ async def search_for_match(req: MatchRequest, user_id: str = Depends(get_current
         }
     
     # No immediate match - get queue position
-    queue_count = db.table("matching_queue") \
+    queue_count = db.table("matching_queue_realtime") \
         .select("id", count="exact") \
         .eq("status", "searching") \
         .eq("seeking_role", req.seeking_role) \
@@ -286,7 +286,7 @@ async def check_queue_status(user_id: str, current_user: str = Depends(get_curre
     """Check current matching queue status."""
     db = get_supabase()
     
-    entry = db.table("matching_queue") \
+    entry = db.table("matching_queue_realtime") \
         .select("*") \
         .eq("user_id", user_id) \
         .eq("status", "searching") \
@@ -310,7 +310,7 @@ async def cancel_matching(user_id: str, current_user: str = Depends(get_current_
     """Cancel matching search."""
     db = get_supabase()
     
-    db.table("matching_queue") \
+    db.table("matching_queue_realtime") \
         .update({"status": "cancelled"}) \
         .eq("user_id", user_id) \
         .eq("status", "searching") \
@@ -324,7 +324,7 @@ async def browse_all_roles():
     """Get counts of available profiles per role. Used for the role selection UI."""
     db = get_supabase()
 
-    profiles_result = db.table("profiles") \
+    profiles_result = db.table("profiles_realtime") \
         .select("id, matching_preferences, offering_role, role") \
         .eq("is_banned", False) \
         .execute()

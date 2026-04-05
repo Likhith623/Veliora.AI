@@ -39,7 +39,7 @@ async def update_streaks():
     db = get_supabase()
     yesterday = (datetime.utcnow() - timedelta(days=1)).isoformat()
     
-    rels = db.table("relationships") \
+    rels = db.table("relationships_realtime") \
         .select("id, user_a_id, user_b_id, streak_days, longest_streak, last_interaction_at") \
         .eq("status", "active") \
         .execute()
@@ -51,7 +51,7 @@ async def update_streaks():
             new_streak = rel.get("streak_days", 0) + 1
             longest = max(rel.get("longest_streak", 0), new_streak)
             
-            db.table("relationships").update({
+            db.table("relationships_realtime").update({
                 "streak_days": new_streak,
                 "longest_streak": longest,
                 "updated_at": datetime.utcnow().isoformat(),
@@ -70,7 +70,7 @@ async def update_streaks():
         else:
             # No interaction — reset streak
             if rel.get("streak_days", 0) > 0:
-                db.table("relationships").update({
+                db.table("relationships_realtime").update({
                     "streak_days": 0,
                     "updated_at": datetime.utcnow().isoformat(),
                 }).eq("id", rel["id"]).execute()
@@ -82,7 +82,7 @@ async def decay_care_scores():
     three_days_ago = (datetime.utcnow() - timedelta(days=3)).isoformat()
     
     # Find stale relationships
-    stale = db.table("relationships") \
+    stale = db.table("relationships_realtime") \
         .select("id, user_a_id, user_b_id, care_score") \
         .eq("status", "active") \
         .lt("last_interaction_at", three_days_ago) \
@@ -91,7 +91,7 @@ async def decay_care_scores():
     
     for rel in (stale.data or []):
         new_care = max(0, rel["care_score"] - 2)
-        db.table("relationships").update({
+        db.table("relationships_realtime").update({
             "care_score": new_care,
             "updated_at": datetime.utcnow().isoformat(),
         }).eq("id", rel["id"]).execute()
@@ -101,7 +101,7 @@ async def check_all_level_ups():
     """Periodic task: check all active relationships for level-up opportunities."""
     db = get_supabase()
     
-    rels = db.table("relationships") \
+    rels = db.table("relationships_realtime") \
         .select("id") \
         .eq("status", "active") \
         .execute()
@@ -118,16 +118,16 @@ async def generate_random_questions_for_new_users():
     db = get_supabase()
     
     # Get all users
-    profiles = db.table("profiles").select("id").execute()
+    profiles = db.table("profiles_realtime").select("id").execute()
     
     for p in (profiles.data or []):
         uid = p["id"]
-        existing = db.table("user_questions").select("id").eq("user_id", uid).limit(1).execute()
+        existing = db.table("user_questions_realtime").select("id").eq("user_id", uid).limit(1).execute()
         if not existing.data:
             # Pick 5 random questions
             selected = random.sample(DEFAULT_QUESTIONS, min(5, len(DEFAULT_QUESTIONS)))
             for q_text, cat in selected:
-                db.table("user_questions").insert({
+                db.table("user_questions_realtime").insert({
                     "user_id": uid,
                     "question_text": q_text,
                     "correct_answer": "",  # User needs to answer these later

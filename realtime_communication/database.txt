@@ -676,3 +676,40 @@ CREATE TABLE public.gratitude_entries_realtime (
   CONSTRAINT gratitude_entries_realtime_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.profiles_realtime(id),
   CONSTRAINT gratitude_entries_realtime_about_user_id_fkey FOREIGN KEY (about_user_id) REFERENCES public.profiles_realtime(id)
 );
+
+
+
+-- ─── Call Logs ─────────────────────────────────────────────────────────────
+CREATE TABLE public.call_logs_realtime (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  relationship_id uuid NOT NULL,
+  caller_id uuid NOT NULL,
+  receiver_id uuid NOT NULL,
+  call_type character varying NOT NULL, -- 'audio' | 'video'
+  started_at timestamp with time zone,
+  duration_seconds integer DEFAULT 0,
+  status character varying DEFAULT 'completed'::character varying,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT call_logs_realtime_pkey PRIMARY KEY (id),
+  CONSTRAINT call_logs_realtime_relationship_fkey FOREIGN KEY (relationship_id) REFERENCES public.relationships_realtime(id),
+  CONSTRAINT call_logs_realtime_caller_fkey FOREIGN KEY (caller_id) REFERENCES public.profiles_realtime(id),
+  CONSTRAINT call_logs_realtime_receiver_fkey FOREIGN KEY (receiver_id) REFERENCES public.profiles_realtime(id)
+);
+CREATE INDEX idx_call_logs_realtime_relationship ON public.call_logs_realtime(relationship_id);
+CREATE INDEX idx_call_logs_realtime_created_at ON public.call_logs_realtime(created_at DESC);
+
+-- ─── Contest Leaderboard ───────────────────────────────────────────────────
+CREATE TABLE public.contest_leaderboard_realtime (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid NOT NULL,
+  contest_type character varying NOT NULL,
+  period character varying NOT NULL, -- "daily", "weekly", "monthly"
+  score integer DEFAULT 0,
+  rank integer,
+  created_at timestamp with time zone DEFAULT now(),
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT contest_leaderboard_realtime_pkey PRIMARY KEY (id),
+  CONSTRAINT contest_leaderboard_realtime_user_fkey FOREIGN KEY (user_id) REFERENCES public.profiles_realtime(id)
+);
+CREATE INDEX idx_contest_leaderboard_realtime_period_score ON public.contest_leaderboard_realtime(period, score DESC);
+
