@@ -6,7 +6,7 @@ Ported from image-generation/main.py as an integrated API route.
 Images are served at http://localhost:8000/static/images/
 """
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
 from pydantic import BaseModel, Field
 from typing import Optional, Dict
 import logging
@@ -43,6 +43,7 @@ class ImageGenerationResponse(BaseModel):
 
 @router.post("/generate-selfie", response_model=ImageGenerationResponse)
 async def generate_selfie(
+    http_request: Request,
     request: ImageGenerationRequest,
     background_tasks: BackgroundTasks,
     current_user: dict = Depends(get_current_user),
@@ -78,8 +79,21 @@ async def generate_selfie(
         )
 
     try:
+        user_msg = f"User requested a selfie photo of the bot, saying: {request.message}"
+        from services.llm_engine import generate_embedding
+        from Redis_chat.working_files.memory_functions import get_semantically_similar_memories
+        from services.redis_cache import get_redis_manager
+        manager = get_redis_manager()
+        
+        emb = await generate_embedding(user_msg)
+        semantic_memory = None
+        if emb:
+            sims = await get_semantically_similar_memories(manager.client, user_id, bot_id, emb, k=3, bump_metadata=True)
+            if sims:
+                semantic_memory = [s["text"] for s in sims]
+
         # Step 1: Get emotional reaction from bot
-        bot_reaction = await get_bot_quick_response(bot_id, request.message)
+        bot_reaction = await get_bot_quick_response(bot_id, request.message, semantic_memory=semantic_memory)
 
         # Step 2: Extract emotion context
         context = await extract_emotion_context(bot_reaction)
@@ -91,8 +105,8 @@ async def generate_selfie(
             bot_id, base_image_path, context
         )
 
-        # Step 4: Build full URL (localhost:8000)
-        full_url = f"http://localhost:8000{relative_url}"
+        # Step 4: Build full URL
+        full_url = str(http_request.base_url).rstrip("/") + relative_url
 
         # Step 5: Publish to memory pipeline and cache
         from services.redis_cache import cache_message, has_active_session, load_session_from_supabase

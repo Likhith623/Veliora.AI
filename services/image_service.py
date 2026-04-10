@@ -110,15 +110,20 @@ async def extract_emotion_context(text: str) -> Dict[str, str]:
         return {"emotion": "neutral", "location": "a room", "action": "looking at camera"}
 
 
-async def get_bot_quick_response(bot_id: str, message: str) -> str:
+async def get_bot_quick_response(bot_id: str, message: str, semantic_memory: Optional[list[str]] = None) -> str:
     """Get a quick bot emotional reaction for context extraction."""
     settings = get_settings()
     bot_name = bot_id.replace("_", " ").title()
 
+    memory_clause = ""
+    if semantic_memory:
+        mem_str = "\n".join([f"- {m}" for m in semantic_memory])
+        memory_clause = f"\n\nRelevant Context about user:\n{mem_str}"
+
     url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
     payload = {
         "contents": [
-            {"role": "user", "parts": [{"text": f"You are {bot_name}. React briefly showing emotion to: {message}"}]}
+            {"role": "user", "parts": [{"text": f"You are {bot_name}. React briefly showing emotion to: {message}.{memory_clause}"}]}
         ],
         "generationConfig": {"temperature": 0.8, "maxOutputTokens": 50},
     }

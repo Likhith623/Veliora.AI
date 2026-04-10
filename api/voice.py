@@ -56,6 +56,19 @@ async def generate_voice_note(
         # Get context for response
         from services.redis_cache import get_context
         context = await get_context(user_id, bot_id)
+        
+        # Load Semantic Memory
+        from services.llm_engine import generate_embedding
+        from Redis_chat.working_files.memory_functions import get_semantically_similar_memories
+        from services.redis_cache import get_redis_manager
+        
+        manager = get_redis_manager()
+        emb = await generate_embedding(request.message)
+        semantic_memory = None
+        if emb:
+            sims = await get_semantically_similar_memories(manager.client, user_id, bot_id, emb, k=3, bump_metadata=True)
+            if sims:
+                semantic_memory = [s["text"] for s in sims]
 
         # Generate text response from LLM
         system_prompt = get_bot_prompt(bot_id)
@@ -66,6 +79,7 @@ async def generate_voice_note(
             system_prompt=system_prompt,
             context=context,
             user_message=request.message,
+            semantic_memory=semantic_memory,
             language=request.language,
         )
 
@@ -284,12 +298,26 @@ async def voice_call(websocket: WebSocket):
                 # Add to context
                 call_context.append({"role": "user", "content": transcript})
 
+                # Fetch Semantic Memory
+                from services.llm_engine import generate_embedding
+                from Redis_chat.working_files.memory_functions import get_semantically_similar_memories
+                from services.redis_cache import get_redis_manager
+                manager = get_redis_manager()
+                
+                emb = await generate_embedding(transcript)
+                semantic_memory = None
+                if emb:
+                    sims = await get_semantically_similar_memories(manager.client, user_id, bot_id, emb, k=3, bump_metadata=True)
+                    if sims:
+                        semantic_memory = [s["text"] for s in sims]
+
                 # Generate streaming LLM response
                 try:
                     text_stream = generate_chat_response_stream(
                         system_prompt=system_prompt,
                         context=call_context[-10:],  # Last 10 messages
                         user_message=transcript,
+                        semantic_memory=semantic_memory,
                     )
 
                     # Stream TTS audio
@@ -300,13 +328,12 @@ async def voice_call(websocket: WebSocket):
                         await websocket.send_bytes(audio_chunk)
 
                     # Collect full text from what was streamed
-                    # (The text was already consumed by TTS, so we reconstruct)
-                    # For now, use a separate non-streaming call for text
                     from services.llm_engine import generate_chat_response
                     full_response = await generate_chat_response(
                         system_prompt=system_prompt,
                         context=call_context[-10:],
                         user_message=transcript,
+                        semantic_memory=semantic_memory,
                     )
 
                     call_context.append({"role": "bot", "content": full_response})

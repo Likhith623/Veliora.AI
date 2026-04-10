@@ -241,7 +241,7 @@ async def detect_language(text: str) -> str:
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def generate_scene_description(
-    bot_id: str, context: list[dict]
+    bot_id: str, context: list[dict], semantic_memory: Optional[list[str]] = None
 ) -> str:
     """
     Generate a scene description for selfie compositing based on chat context.
@@ -252,6 +252,11 @@ async def generate_scene_description(
     context_text = "\n".join(
         [f"{msg['role']}: {msg['content']}" for msg in context[-10:]]
     )
+    
+    memory_clause = ""
+    if semantic_memory:
+        mem_str = "\n".join([f"- {m}" for m in semantic_memory])
+        memory_clause = f"\n\n# Relevant Past User Memories:\n{mem_str}"
 
     payload = {
         "contents": [
@@ -264,7 +269,7 @@ async def generate_scene_description(
                             f"(1-2 sentences) for a selfie photo that the bot ({bot_id}) would take. "
                             f"The scene should match the mood and topic of the conversation. "
                             f"Describe the background, lighting, and mood. Do NOT describe the person's face. "
-                            f"Output ONLY the scene description, nothing else.\n\n"
+                            f"Output ONLY the scene description, nothing else.{memory_clause}\n\n"
                             f"Conversation:\n{context_text}"
                         )
                     }
@@ -355,18 +360,23 @@ async def generate_diary_entry(
 # IMAGE DESCRIPTION (Multimodal)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-async def describe_image(image_base64: str, bot_id: str, language: str = "english") -> str:
+async def describe_image(image_base64: str, bot_id: str, language: str = "english", semantic_memory: Optional[list[str]] = None) -> str:
     """
     Use Gemini multimodal to describe an uploaded image in the persona's voice.
     """
     settings = get_settings()
+
+    memory_clause = ""
+    if semantic_memory:
+        mem_str = "\n".join([f"- {m}" for m in semantic_memory])
+        memory_clause = f"\n\n# Relevant Past Context about the user:\n{mem_str}"
 
     payload = {
         "contents": [
             {
                 "role": "user",
                 "parts": [
-                    {"text": f"Describe this image in 2-3 sentences as the persona {bot_id} would, in {language}. Be conversational and in-character."},
+                    {"text": f"Describe this image in 2-3 sentences as the persona {bot_id} would, in {language}. Be conversational and in-character.{memory_clause}"},
                     {"inline_data": {"mime_type": "image/jpeg", "data": image_base64}},
                 ],
             }
@@ -392,13 +402,18 @@ async def describe_image(image_base64: str, bot_id: str, language: str = "englis
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def summarize_url_content(
-    url_content: str, bot_id: str, language: str = "english"
+    url_content: str, bot_id: str, language: str = "english", semantic_memory: Optional[list[str]] = None
 ) -> str:
     """Summarize fetched URL content in the persona's voice."""
     settings = get_settings()
 
     # Truncate content to avoid token limits
     truncated = url_content[:4000]
+
+    memory_clause = ""
+    if semantic_memory:
+        mem_str = "\n".join([f"- {m}" for m in semantic_memory])
+        memory_clause = f"\n\n# Relevant Context to connect this with:\n{mem_str}"
 
     payload = {
         "contents": [
@@ -409,7 +424,7 @@ async def summarize_url_content(
                         "text": (
                             f"Summarize this web content in 3-4 sentences as the persona {bot_id} would, "
                             f"in {language}. Be conversational and in-character. "
-                            f"Add your personal take or opinion.\n\nContent:\n{truncated}"
+                            f"Add your personal take or opinion.{memory_clause}\n\nContent:\n{truncated}"
                         )
                     }
                 ],
@@ -436,12 +451,17 @@ async def summarize_url_content(
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 async def generate_text_meme(
-    bot_id: str, topic: Optional[str] = None, language: str = "english"
+    bot_id: str, topic: Optional[str] = None, language: str = "english", semantic_memory: Optional[list[str]] = None
 ) -> str:
     """Generate a text-based meme in the persona's voice."""
     settings = get_settings()
 
     topic_str = f"about '{topic}'" if topic else "about anything relevant to your personality"
+
+    memory_clause = ""
+    if semantic_memory:
+        mem_str = "\n".join([f"- {m}" for m in semantic_memory])
+        memory_clause = f"\n\n# Context about the user to make the meme personal:\n{mem_str}"
 
     payload = {
         "contents": [
@@ -453,7 +473,7 @@ async def generate_text_meme(
                             f"As the persona {bot_id}, create a funny, witty meme text {topic_str}. "
                             f"Format it as a classic meme with TOP TEXT and BOTTOM TEXT. "
                             f"Be culturally relevant to your persona. "
-                            f"In {language}. Output ONLY the meme text."
+                            f"In {language}. Output ONLY the meme text.{memory_clause}"
                         )
                     }
                 ],

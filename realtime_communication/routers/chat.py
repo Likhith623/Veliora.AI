@@ -242,28 +242,31 @@ async def send_message(req: SendMessageRequest, current_user: str = Depends(get_
 @router.post("/upload-media")
 async def upload_media(
     relationship_id: str = Form(...),
-    media: UploadFile = File(...),
+    file: UploadFile = File(...),
     caption: Optional[str] = Form(None),
+    media_type: Optional[str] = Form(None),
     current_user: str = Depends(get_current_user_id)
 ):
-    """Upload image/video and send as a chat message."""
+    """Upload image/video/voice and send as a chat message."""
     db = get_supabase()
     rel_data = _verify_relationship(db, relationship_id, current_user)
     
-    content = await media.read()
+    content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
     
     # Determine content type
-    mime = media.content_type or "application/octet-stream"
+    mime = file.content_type or "application/octet-stream"
     is_image = mime.startswith("image/")
     is_video = mime.startswith("video/")
+    is_voice = mime.startswith("audio/")
     
-    if not is_image and not is_video:
-        raise HTTPException(status_code=400, detail="Only images and videos are supported")
+    if not is_image and not is_video and not is_voice:
+        raise HTTPException(status_code=400, detail="Only images, videos, and audio are supported")
     
     # Upload to Supabase Storage
-    ext = media.filename.split(".")[-1] if media.filename else ("jpg" if is_image else "mp4")
+    ext_fallback = "jpg" if is_image else ("mp4" if is_video else "webm")
+    ext = file.filename.split(".")[-1] if file.filename else ext_fallback
     file_path = f"chat/{relationship_id}/{current_user}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.{ext}"
     
     try:
@@ -274,13 +277,17 @@ async def upload_media(
         public_url = f"upload://{file_path}"
         print(f"[Chat] Storage upload failed: {e}")
     
+    # Determine content_type string for message
+    resolved_content_type = media_type or ("image" if is_image else ("video" if is_video else "voice"))
+    
     # Send as message
     req = SendMessageRequest(
         relationship_id=relationship_id,
-        content_type="image" if is_image else "video",
+        content_type=resolved_content_type,
         original_text=caption or "",
         image_url=public_url if is_image else None,
         video_url=public_url if is_video else None,
+        voice_url=public_url if is_voice else None,
     )
     
     return await send_message(req, current_user)

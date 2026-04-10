@@ -3,7 +3,7 @@ Veliora.AI — Multimodal Routes
 Image description, URL summarization, weather, meme generation.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form
 import httpx
 import base64
 import logging
@@ -39,10 +39,10 @@ def _safe_format(template: str, **kwargs) -> str:
 
 @router.post("/describe-image", response_model=ImageDescribeResponse)
 async def describe_image(
-    bot_id: str,
     background_tasks: BackgroundTasks,
+    bot_id: str = Form(...),
     file: UploadFile = File(...),
-    language: str = "english",
+    language: str = Form("english"),
     current_user: dict = Depends(get_current_user),
 ):
     """
@@ -61,9 +61,23 @@ async def describe_image(
 
     image_b64 = base64.b64encode(file_bytes).decode("utf-8")
 
-    description = await llm_describe(image_b64, bot_id, language)
-
     user_id = current_user["user_id"]
+    user_msg = f"User uploaded an image for description"
+
+    # Fetch Semantic Memory
+    from services.llm_engine import generate_embedding
+    from Redis_chat.working_files.memory_functions import get_semantically_similar_memories
+    from services.redis_cache import get_redis_manager
+    manager = get_redis_manager()
+    
+    emb = await generate_embedding(user_msg)
+    semantic_memory = None
+    if emb:
+        sims = await get_semantically_similar_memories(manager.client, user_id, bot_id, emb, k=3, bump_metadata=True)
+        if sims:
+            semantic_memory = [s["text"] for s in sims]
+
+    description = await llm_describe(image_b64, bot_id, language, semantic_memory=semantic_memory)
 
     # Publish to memory pipeline
     from services.rabbitmq_service import publish_memory_task, publish_message_log
@@ -136,13 +150,26 @@ async def summarize_url(
     if not content or len(content) < 50:
         raise HTTPException(status_code=400, detail="Could not extract meaningful content from URL")
 
-    summary = await summarize_url_content(content, request.bot_id, request.language)
-
     user_id = current_user["user_id"]
+    user_msg = f"User shared a URL: {request.url}"
+
+    # Fetch Semantic Memory
+    from services.llm_engine import generate_embedding
+    from Redis_chat.working_files.memory_functions import get_semantically_similar_memories
+    from services.redis_cache import get_redis_manager
+    manager = get_redis_manager()
+    
+    emb = await generate_embedding(user_msg)
+    semantic_memory = None
+    if emb:
+        sims = await get_semantically_similar_memories(manager.client, user_id, request.bot_id, emb, k=3, bump_metadata=True)
+        if sims:
+            semantic_memory = [s["text"] for s in sims]
+
+    summary = await summarize_url_content(content, request.bot_id, request.language, semantic_memory=semantic_memory)
 
     # Publish to memory pipeline
     from services.rabbitmq_service import publish_memory_task, publish_message_log
-    user_msg = f"User shared a URL: {request.url}"
     
     from services.redis_cache import cache_message, has_active_session, load_session_from_supabase
     
@@ -244,11 +271,27 @@ async def get_weather(
         await load_session_from_supabase(u_id, bot_id)
         
     chat_context = await get_context(u_id, bot_id)
+    
+    user_msg = f"User asked about weather in {city}"
+    
+    # Fetch Semantic Memory
+    from services.llm_engine import generate_embedding
+    from Redis_chat.working_files.memory_functions import get_semantically_similar_memories
+    from services.redis_cache import get_redis_manager
+    manager = get_redis_manager()
+    
+    emb = await generate_embedding(user_msg)
+    semantic_memory = None
+    if emb:
+        sims = await get_semantically_similar_memories(manager.client, u_id, bot_id, emb, k=3, bump_metadata=True)
+        if sims:
+            semantic_memory = [s["text"] for s in sims]
 
     commentary = await generate_chat_response(
         system_prompt=system_prompt,
         context=chat_context,
         user_message=f"Comment on today's weather: {weather_summary}. Be brief and in-character.",
+        semantic_memory=semantic_memory,
     )
 
     # Publish to memory pipeline
@@ -291,10 +334,25 @@ async def generate_meme(
     """
     from services.llm_engine import generate_text_meme
     from services.background_tasks import award_xp
-    # from services.llm_engine import generate_image_meme_prompt  # Uncomment for image memes
+
+    u_id = current_user["user_id"]
+    user_msg = f"User requested a meme about: {request.topic or 'random topic'}"
+    
+    # Fetch Semantic Memory
+    from services.llm_engine import generate_embedding
+    from Redis_chat.working_files.memory_functions import get_semantically_similar_memories
+    from services.redis_cache import get_redis_manager
+    manager = get_redis_manager()
+    
+    emb = await generate_embedding(user_msg)
+    semantic_memory = None
+    if emb:
+        sims = await get_semantically_similar_memories(manager.client, u_id, request.bot_id, emb, k=3, bump_metadata=True)
+        if sims:
+            semantic_memory = [s["text"] for s in sims]
 
     meme_text = await generate_text_meme(
-        request.bot_id, request.topic, request.language
+        request.bot_id, request.topic, request.language, semantic_memory=semantic_memory
     )
 
     # ─── Image Meme Generation (COMMENTED OUT — uncomment when budget allows) ───
@@ -332,9 +390,6 @@ async def generate_meme(
     # Publish to memory pipeline
     from services.rabbitmq_service import publish_memory_task, publish_message_log
     from services.redis_cache import cache_message, has_active_session, load_session_from_supabase
-    
-    user_msg = f"User requested a meme about: {request.topic or 'random topic'}"
-    u_id = current_user["user_id"]
     
     if not await has_active_session(u_id, request.bot_id):
         await load_session_from_supabase(u_id, request.bot_id)
