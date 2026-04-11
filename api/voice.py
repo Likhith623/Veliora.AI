@@ -271,10 +271,18 @@ async def voice_call(websocket: WebSocket):
                     if msg.get("type") == "end":
                         call_active = False
                         break
-        except WebSocketDisconnect:
+        except WebSocketDisconnect as e:
+            logger.info(f"WebSocket disconnected with code: {e.code}")
             call_active = False
+        except RuntimeError as e:
+            if "disconnect" in str(e).lower():
+                logger.info("Runtime error disconnect caught.")
+                call_active = False
+            else:
+                logger.warning(f"Receive loop runtime error: {e}")
+                call_active = False
         except Exception as e:
-            logger.warning(f"Receive loop error: {e}")
+            logger.warning(f"Receive loop exception: {e}")
             call_active = False
 
     async def process_and_respond():

@@ -239,13 +239,13 @@ class DeepgramSTTStream:
             "?model=nova-2"
             "&language=multi"
             "&smart_format=true"
-            "&interim_results=false"
+            "&interim_results=true"
             "&endpointing=300"
             "&utterance_end_ms=1000"
         )
         headers = {"Authorization": f"Token {settings.DEEPGRAM_API_KEY}"}
 
-        self.ws = await websockets.connect(url, extra_headers=headers)
+        self.ws = await websockets.connect(url, additional_headers=headers)
         self._is_connected = True
         self._listen_task = asyncio.create_task(self._listen_loop())
         logger.info("Deepgram STT WebSocket connected")
