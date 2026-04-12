@@ -164,6 +164,54 @@ async def get_message_history(
     return list(reversed(result.data)) if result.data else []
 
 
+async def get_chat_overview(user_id: str) -> list[dict]:
+    """
+    Fetch the latest single message for every bot the user has interacted with.
+    Uses a custom RPC 'get_user_chat_overview' for optimal performance, ensuring
+    one row per bot without heavy Python-side filtering.
+    """
+    client = get_supabase_admin()
+
+    def _rpc():
+        return client.rpc(
+            "get_user_chat_overview",
+            {"p_user_id": user_id}
+        ).execute()
+
+    try:
+        result = await asyncio.to_thread(_rpc)
+        return result.data if result.data else []
+    except Exception as e:
+        logger.error(f"Error fetching chat overview: {e}")
+        # Fallback if RPC does not exist yet: fetch last 300 messages and group in python
+        # This prevents the endpoint from crashing while the user has not yet created the RPC.
+        def _fallback():
+            return client.table("messages") \
+                .select("bot_id, content, role, created_at") \
+                .eq("user_id", user_id) \
+                .order("created_at", desc=True) \
+                .limit(300) \
+                .execute()
+        
+        fallback_res = await asyncio.to_thread(_fallback)
+        if not fallback_res.data: return []
+        
+        # Group by bot_id, taking the first (which is the most recent due to order)
+        seen_bots = set()
+        overview = []
+        for msg in fallback_res.data:
+            if msg["bot_id"] not in seen_bots:
+                # Format to match RPC output shape
+                overview.append({
+                    "bot_id": msg["bot_id"],
+                    "text": msg["content"],
+                    "role": msg["role"],
+                    "timestamp": msg["created_at"]
+                })
+                seen_bots.add(msg["bot_id"])
+        return overview
+
+
 async def get_all_messages_for_cache(user_id: str, bot_id: str) -> list[dict]:
     """
     Fetch ALL messages for a user-bot pair from Supabase.

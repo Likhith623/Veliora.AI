@@ -145,18 +145,42 @@ async def generate_chat_response_stream(
     url = _get_url(settings.GEMINI_MODEL, "streamGenerateContent")
     url += "&alt=sse"
 
+    success = False
     async with httpx.AsyncClient(timeout=60.0) as client:
-        async with client.stream("POST", url, headers=_get_headers(), json=payload) as response:
-            response.raise_for_status()
-            async for line in response.aiter_lines():
-                if line.startswith("data: "):
-                    try:
-                        chunk_data = json.loads(line[6:])
-                        text = chunk_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                        if text:
-                            yield text
-                    except (json.JSONDecodeError, KeyError, IndexError):
-                        continue
+        try:
+            async with client.stream("POST", url, headers=_get_headers(), json=payload) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if line.startswith("data: "):
+                        try:
+                            chunk_data = json.loads(line[6:])
+                            text = chunk_data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                            if text:
+                                success = True
+                                yield text
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+        except Exception as e:
+            logger.error(f"Gemini streaming failed: {e}. Falling back to OpenAI...")
+            if not success:
+                try:
+                    import os
+                    from openai import AsyncOpenAI
+                    openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+                    
+                    openai_messages = [{"role": "system", "content": system_instruction}] + contents
+                    chat_completion_res = await openai_client.chat.completions.create(
+                        model="gpt-3.5-turbo",
+                        messages=[{"role": "user", "content": m["parts"][0]["text"]} if m["role"] == "user" else {"role": "assistant", "content": m["parts"][0]["text"]} for m in openai_messages],
+                        max_tokens=256,
+                        temperature=0.85
+                    )
+                    fallback_response = chat_completion_res.choices[0].message.content.strip()
+                    logger.info("✅ OpenAI fallback SUCCESS")
+                    yield fallback_response
+                except Exception as e2:
+                    logger.error(f"❌ All LLM APIs failed: {e2}")
+                    yield "I'm having trouble thinking clearly right now. Let's talk later."
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

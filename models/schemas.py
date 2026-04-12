@@ -261,6 +261,11 @@ class MemeResponse(BaseModel):
 # DIARY
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+class DiaryAddRequest(BaseModel):
+    bot_id: str
+    content: str
+    mood: Optional[str] = "neutral"
+
 class DiaryEntry(BaseModel):
     id: str
     bot_id: str
@@ -273,6 +278,32 @@ class DiaryEntry(BaseModel):
 class DiaryResponse(BaseModel):
     entries: list[DiaryEntry]
     xp_earned: int = 30
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# MEMORY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class MemoryEntry(BaseModel):
+    id: Optional[str] = None
+    memory: str
+    category: Optional[str] = None
+    relation_id: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+class MemoryResponse(BaseModel):
+    memories: list[MemoryEntry]
+
+class MemoryAddRequest(BaseModel):
+    bot_id: str
+    memory: str
+    category: Optional[str] = "general"
+    relation_id: Optional[str] = None
+
+class MemoryUpdateRequest(BaseModel):
+    memory: Optional[str] = None
+    category: Optional[str] = None
+    relation_id: Optional[str] = None
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

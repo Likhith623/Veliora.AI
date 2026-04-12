@@ -177,6 +177,9 @@ from api.images import router as images_router
 from api.multimodal import router as multimodal_router
 from api.diary import router as diary_router
 from api.selfie import router as selfie_router
+from api.memory import router as memory_router
+from api.logs import router as logs_router
+from api.voice_ultra import router as voice_ultra_router
 
 app.include_router(auth_router)
 app.include_router(chat_router)
@@ -186,6 +189,9 @@ app.include_router(images_router)
 app.include_router(multimodal_router)
 app.include_router(diary_router)
 app.include_router(selfie_router)
+app.include_router(memory_router)
+app.include_router(logs_router)
+app.include_router(voice_ultra_router)
 
 # -- Realtime Communication APIs (No distinct auth, uses Chatbot Auth) --
 from realtime_communication.routers.profiles import router as rc_profiles

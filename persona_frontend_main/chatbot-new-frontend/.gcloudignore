@@ -1,0 +1,12 @@
+# Ignore development-only files
+.git
+node_modules
+.vscode
+.env
+*.log
+
+# Allow these folders (needed for build)
+!.next
+!public
+!pages
+!package.json

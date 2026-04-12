@@ -1,16 +1,18 @@
 """
 Veliora.AI — Chat Routes
-Handles: send message (with Redis memory system), chat history, end chat (sync to DB).
+Handles: send message (with Redis memory system), chat history, end chat (sync to DB),
+clear chat, and forget friend.
 Integrates Redis_chat memory pipeline: first message loads Supabase→Redis,
 subsequent messages use Redis for context, end-chat syncs Redis→Supabase.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Query
 import logging
 from config.mappings import get_message_xp, validate_language
 from models.schemas import (
-    ChatRequest, ChatResponse, ChatHistoryRequest,
+    ChatRequest, ChatHistoryRequest,
     ChatHistoryResponse, MessageItem,
+    ChatResponse,
 )
 from api.auth import get_current_user
 from datetime import datetime, timezone
@@ -176,3 +178,186 @@ async def get_chat_history(
         page=request.page,
         page_size=request.page_size,
     )
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# CHAT OVERVIEW (Optimized History Preview)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.get("/overview")
+async def get_chat_overview_route(
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Returns a lightweight summary of all bots the user has interacted with, 
+    including only the most recent message for the history UI.
+    Optimizes away N+1 history requests via a single Supabase query.
+    """
+    from services.supabase_client import get_chat_overview
+
+    user_id = current_user["user_id"]
+
+    try:
+        sessions = await get_chat_overview(user_id)
+        
+        # Format explicitly mapping to the user's expected payload
+        formatted_sessions = []
+        for s in sessions:
+            formatted_sessions.append({
+                "bot_id": s["bot_id"],
+                "last_message": {
+                    "text": s["text"],
+                    "role": s["role"],
+                    "timestamp": s["timestamp"]
+                }
+            })
+
+        return {
+            "success": True,
+            "sessions": formatted_sessions
+        }
+    except Exception as e:
+        logger.error(f"Chat overview error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to fetch chat overview: {str(e)}")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# CLEAR CHAT (Delete messages only, keep memories)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.delete("/clear")
+async def clear_chat(
+    bot_id: str = Query(..., description="Bot ID to clear chat for"),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Clear all chat messages for a user-bot pair.
+    - Deletes messages from Supabase.
+    - Clears Redis session context (messages only, memories preserved).
+    - Does NOT delete memories or XP.
+    """
+    from services.supabase_client import get_supabase_admin
+    from services.redis_cache import get_redis_manager
+
+    user_id = current_user["user_id"]
+    client = get_supabase_admin()
+
+    try:
+        # 1. Delete messages from Supabase
+        def _delete_messages():
+            import asyncio
+            return client.table("messages") \
+                .delete() \
+                .eq("user_id", user_id) \
+                .eq("bot_id", bot_id) \
+                .execute()
+
+        import asyncio
+        result = await asyncio.to_thread(_delete_messages)
+        deleted_count = len(result.data) if result.data else 0
+
+        # 2. Clear Redis context cache for this session (fire-and-forget)
+        try:
+            redis_manager = get_redis_manager()
+            session_key = f"session:{user_id}:{bot_id}:messages"
+            context_key = f"session:{user_id}:{bot_id}:context"
+            overview_key = f"overview:{user_id}"
+            await redis_manager.delete(session_key)
+            await redis_manager.delete(context_key)
+            await redis_manager.delete(overview_key)
+        except Exception as redis_err:
+            logger.warning(f"Redis clear warning (non-fatal): {redis_err}")
+
+        return {
+            "status": "success",
+            "message": f"Cleared {deleted_count} messages for bot {bot_id}.",
+            "deleted_count": deleted_count,
+        }
+    except Exception as e:
+        logger.error(f"Clear chat error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Clear chat failed: {str(e)}")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# FORGET FRIEND (Nuclear — delete ALL data for pair)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@router.delete("/forget")
+async def forget_friend(
+    bot_id: str = Query(..., description="Bot ID to forget"),
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Permanently delete ALL data for a user-bot pair.
+    - Deletes all messages from Supabase.
+    - Deletes all memories from Supabase.
+    - Deletes all game sessions from Supabase.
+    - Clears all Redis keys for this pair.
+    This is irreversible.
+    """
+    from services.supabase_client import get_supabase_admin
+    from services.redis_cache import get_redis_manager
+    import asyncio
+
+    user_id = current_user["user_id"]
+    client = get_supabase_admin()
+
+    results = {}
+
+    # 1. Delete messages
+    try:
+        def _del_msgs():
+            return client.table("messages").delete() \
+                .eq("user_id", user_id).eq("bot_id", bot_id).execute()
+        r = await asyncio.to_thread(_del_msgs)
+        results["messages_deleted"] = len(r.data) if r.data else 0
+    except Exception as e:
+        logger.warning(f"forget_friend: message delete warning: {e}")
+        results["messages_deleted"] = 0
+
+    # 2. Delete memories
+    try:
+        def _del_mems():
+            return client.table("memories").delete() \
+                .eq("user_id", user_id).eq("bot_id", bot_id).execute()
+        r = await asyncio.to_thread(_del_mems)
+        results["memories_deleted"] = len(r.data) if r.data else 0
+    except Exception as e:
+        logger.warning(f"forget_friend: memory delete warning: {e}")
+        results["memories_deleted"] = 0
+
+    # 3. Delete game sessions
+    try:
+        def _del_games():
+            return client.table("user_game_sessions").delete() \
+                .eq("user_id", user_id).eq("bot_id", bot_id).execute()
+        r = await asyncio.to_thread(_del_games)
+        results["game_sessions_deleted"] = len(r.data) if r.data else 0
+    except Exception as e:
+        logger.warning(f"forget_friend: game sessions delete warning: {e}")
+        results["game_sessions_deleted"] = 0
+
+    # 4. Nuke all Redis keys for this pair
+    try:
+        redis_manager = get_redis_manager()
+        redis_prefix = f"session:{user_id}:{bot_id}:*"
+        # Use SCAN to find and delete all matching keys
+        keys_to_delete = []
+        async for key in redis_manager.scan_iter(redis_prefix):
+            keys_to_delete.append(key)
+        
+        # Globally invalidate overview cache
+        keys_to_delete.append(f"overview:{user_id}")
+        
+        if keys_to_delete:
+            await redis_manager.delete(*keys_to_delete)
+        results["redis_keys_cleared"] = len(keys_to_delete)
+    except Exception as redis_err:
+        logger.warning(f"forget_friend: Redis clear warning (non-fatal): {redis_err}")
+        results["redis_keys_cleared"] = 0
+
+    return {
+        "status": "success",
+        "message": f"All data for bot {bot_id} has been permanently deleted.",
+        "details": results,
+    }

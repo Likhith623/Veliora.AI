@@ -500,6 +500,44 @@ window.addEventListener("beforeunload", async () => {
 
 ---
 
+### 3.4 Get Chat Overview
+
+**GET** `/api/chat/overview`  
+**Auth**: Required
+
+Returns a highly optimized, lightweight summary of all bots the user has interacted with, including ONLY the absolute most recent message for each bot. Used to efficiently populate the chat history UI without triggering N+1 database or Redis loads.
+
+**Example**: `GET /api/chat/overview`
+
+**Success Response**:
+```json
+{
+  "success": true,
+  "sessions": [
+    {
+      "bot_id": "singapore_friend_female",
+      "last_message": {
+        "text": "You slay lah! Need a meme or a rant?",
+        "role": "bot",
+        "timestamp": "2026-04-12T05:10:00Z"
+      }
+    },
+    {
+      "bot_id": "delhi_mentor_male",
+      "last_message": {
+        "text": "How did your meeting go today?",
+        "role": "bot",
+        "timestamp": "2026-04-11T14:20:00Z"
+      }
+    }
+  ]
+}
+```
+
+> **Developer Note:** Ensure the `get_user_chat_overview` Postgres RPC is executed in the Supabase SQL editor for maximum performance. If not present, the endpoint executes a fallback Python reduction.
+
+---
+
 ## 4. Voice Note (REST — TTS)
 
 > **Router prefix**: `/api/voice`  
@@ -1166,34 +1204,34 @@ Returns games available for the bot's archetype.
 {
   "games": [
     {
-      "id": "mentor_wisdom_quest",
-      "name": "Wisdom Quest",
-      "description": "Answer life's big questions. The mentor poses philosophical dilemmas and you reason through them together.",
+      "id": "mentor_one_minute_advice_column",
+      "name": "One Minute Advice Column",
+      "description": "Be thoughtful, supportive, and culturally reflective. Present with a fictional advice letter (e.g., 'I feel stuck in my job.').",
       "archetype": "mentor",
-      "category": "philosophy",
-      "min_turns": 5,
-      "max_turns": 10,
-      "xp_reward": 250
-    },
-    {
-      "id": "mentor_culture_trivia",
-      "name": "Culture Compass",
-      "description": "Test your knowledge about the mentor's home city and culture.",
-      "archetype": "mentor",
-      "category": "trivia",
-      "min_turns": 5,
-      "max_turns": 12,
+      "category": "simulation",
+      "min_turns": 3,
+      "max_turns": 8,
       "xp_reward": 200
     },
     {
-      "id": "mentor_life_simulator",
-      "name": "Life Crossroads",
-      "description": "Face real-life dilemmas and make choices.",
+      "id": "mentor_word_of_the_day",
+      "name": "Word Of The Day",
+      "description": "Be poetic, educational, and culturally rich. Share a beautiful, rare, or meaningful word from the persona's language.",
       "archetype": "mentor",
       "category": "simulation",
-      "min_turns": 5,
-      "max_turns": 10,
-      "xp_reward": 300
+      "min_turns": 3,
+      "max_turns": 8,
+      "xp_reward": 200
+    },
+    {
+      "id": "mentor_compliment_mirror",
+      "name": "Compliment Mirror",
+      "description": "Speak with sincerity, warmth, and supportive energy. Give three sincere compliments based on what you know about them.",
+      "archetype": "mentor",
+      "category": "simulation",
+      "min_turns": 3,
+      "max_turns": 8,
+      "xp_reward": 200
     }
   ]
 }

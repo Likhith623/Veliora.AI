@@ -293,6 +293,12 @@ async def voice_call(websocket: WebSocket):
                 transcript = await stt.get_transcript(timeout=30.0)
                 if not transcript:
                     continue
+            except asyncio.TimeoutError:
+                # Polling continues over periods of user silence
+                continue
+            except Exception as e:
+                logger.warning(f"Voice call STT receive warning: {e}")
+                continue
 
                 logger.info(f"User said: {transcript}")
 

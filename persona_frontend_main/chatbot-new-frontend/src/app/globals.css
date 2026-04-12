@@ -1,0 +1,231 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96.1%;
+    --secondary-foreground: 222.2 47.4% 11.2%;
+    --muted: 210 40% 96.1%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96.1%;
+    --accent-foreground: 222.2 47.4% 11.2%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --color-1: 0 100% 63%;
+    --color-2: 270 100% 63%;
+    --color-3: 210 100% 63%;
+    --color-4: 195 100% 63%;
+    --color-5: 90 100% 63%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 48%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --color-1: 0 100% 63%;
+    --color-2: 270 100% 63%;
+    --color-3: 210 100% 63%;
+    --color-4: 195 100% 63%;
+    --color-5: 90 100% 63%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground transition-colors duration-200;
+  }
+}
+
+/* Chat specific styles */
+.chat-bubble-bot {
+  @apply bg-white/20 dark:bg-black border border-white/20 dark:border-gray-700/20 backdrop-blur-sm shadow-md rounded-3xl text-gray-900 dark:text-white;
+}
+
+.chat-bubble-user {
+  @apply bg-purple-400/80 dark:bg-purple-600/80 border border-white/20 dark:border-gray-700/20 backdrop-blur-sm shadow-md rounded-3xl text-white;
+}
+
+.chat-bubble-highlight {
+  @apply bg-orange-200/30 dark:bg-orange-900/30;
+}
+
+.chat-bubble-user-highlight {
+  @apply bg-orange-200/90 dark:bg-orange-900/90;
+}
+
+.chat-reaction {
+  @apply bg-white/80 dark:bg-black/80 rounded-full shadow-sm border border-gray-100 dark:border-gray-700 hover:bg-white/90 dark:hover:bg-gray-700/90;
+}
+
+.chat-icon {
+  @apply text-black/30 dark:text-white/30 hover:text-purple-400 dark:hover:text-purple-300;
+}
+
+.chat-timestamp {
+  @apply text-neutral-700 dark:text-neutral-300;
+}
+
+/* Dark mode transitions */
+.dark * {
+  @apply transition-colors duration-200;
+}
+
+/* Dark mode specific styles */
+.dark .sidebar {
+  @apply bg-black text-white;
+}
+
+.dark .sidebar-content {
+  @apply bg-black text-white;
+}
+
+.dark .sidebar-link {
+  @apply text-white hover:text-gray-300;
+}
+
+/* Remove global dark mode styles */
+.dark {
+  @apply text-gray-100;
+}
+
+/* Card styles */
+.card {
+  @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm;
+}
+
+/* Button styles */
+.btn-primary {
+  @apply bg-white dark:bg-gray-800 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200;
+}
+
+.btn-secondary {
+  @apply bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200;
+}
+
+/* Form styles */
+.form-input {
+  @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100;
+}
+
+/* Header styles */
+.header {
+  @apply bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800;
+}
+
+/* Navigation styles */
+.nav-link {
+  @apply text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white;
+}
+
+/* Modal styles */
+.modal {
+  @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700;
+}
+
+/* Tooltip styles */
+.tooltip {
+  @apply bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700;
+}
+
+/* Gradient backgrounds */
+.gradient-bg {
+  @apply bg-gradient-to-br from-white to-gray-100 dark:from-gray-900 dark:to-gray-800;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  @apply w-2;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100 dark:bg-gray-800;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+}
+
+/* Loading spinner */
+.spinner {
+  @apply border-gray-200 dark:border-gray-700 border-t-purple-500 dark:border-t-purple-400;
+}
+
+/* Hide scrollbar for ActivitiesModal */
+.activities-modal {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
+.activities-modal::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Fade animations for chat date chip */
+@keyframes fadeInChip {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeOutChip {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.fade-in-chip {
+  animation: fadeInChip 300ms ease-out forwards;
+  will-change: opacity;
+}
+
+.fade-out-chip {
+  animation: fadeOutChip 600ms ease-in forwards;
+  will-change: opacity;
+}
