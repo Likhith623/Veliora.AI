@@ -564,7 +564,27 @@ const VoiceCallUltra = ({ isOpen, onClose, onMessageReceived, audioContextRef: e
     }
   }, [enableAudioForBrowser, setupMicrophone, processWithBackend, startVoiceActivityDetection]);
 
-  const endCall = useCallback(() => {
+  const endCall = useCallback(async () => {
+    // 1. Log the end of the call to the backend first
+    try {
+      if (isCallActive) {
+        const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+        await fetch(`${BASE_URL}/api/chat/sync`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            bot_id: selectedBotId,
+            user_id: userDetails?.user_id, // Or email if backend uses it
+            content: "[VOICE_CALL_END]",
+            role: "bot",
+            activity_type: "VOICE_CALL_END"
+          })
+        });
+      }
+    } catch (e) {
+      console.warn("Could not log end of call:", e);
+    }
+
     callEndedRef.current = true;
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
@@ -597,7 +617,7 @@ const VoiceCallUltra = ({ isOpen, onClose, onMessageReceived, audioContextRef: e
     }
     requestInProgress.current = false;
     onClose?.();
-  }, [onClose]);
+  }, [onClose, isCallActive, selectedBotId, userDetails]);
 
   useEffect(() => {
     if (isOpen && !isCallActive) startCall();

@@ -9,6 +9,7 @@ import logging
 import asyncio
 import json
 from models.schemas import VoiceNoteRequest, VoiceNoteResponse
+from pydantic import BaseModel
 from api.auth import get_current_user
 from config.mappings import get_voice_id, validate_language
 
@@ -39,9 +40,68 @@ async def generate_voice_note(
     user_id = current_user["user_id"]
     bot_id = request.bot_id
 
-    # Validate voice exists
+# Validate voice exists
     voice_id = get_voice_id(bot_id)
     if not voice_id:
+        raise HTTPException(status_code=400, detail="Unknown bot ID")
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# RAW AUDIO GENERATOR (PlayAudio.jsx Component Support)
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class RawAudioRequest(BaseModel):
+    transcript: str
+    bot_id: str
+    output_format: dict = None
+
+@router.post("/generate-audio")
+async def raw_generate_audio(request: RawAudioRequest):
+    """
+    Stand-alone TTS generator for frontend components.
+    Returns direct base64 audio payload to match CultureVo specs.
+    """
+    from services.voice_service import CARTESIA_API_URL
+    from config.settings import get_settings
+    from config.mappings import get_voice_id
+    import httpx
+    import base64
+
+    settings = get_settings()
+    voice_id = get_voice_id(request.bot_id)
+
+    if not voice_id:
+        raise HTTPException(status_code=400, detail="Unknown bot ID")
+
+    headers = {
+        "X-API-Key": settings.CARTESIA_API_KEY,
+        "Cartesia-Version": "2024-06-10",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "model_id": settings.CARTESIA_MODEL,
+        "transcript": request.transcript,
+        "voice": {"mode": "id", "id": voice_id},
+        "output_format": request.output_format or {
+            "container": "wav",
+            "encoding": "pcm_s16le",
+            "sample_rate": 22050,
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                CARTESIA_API_URL, headers=headers, json=payload
+            )
+            response.raise_for_status()
+            audio_bytes = response.content
+
+        audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
+        return {"audio_base64": audio_b64}
+    except Exception as e:
+        logger.error(f"Raw audio generation failed: {e}")
+        raise HTTPException(status_code=500, detail="TTS Failed")
         raise HTTPException(
             status_code=400,
             detail=f"No voice configured for bot '{bot_id}'. Voice notes are not available for this persona."
@@ -300,6 +360,8 @@ async def voice_call(websocket: WebSocket):
                 logger.warning(f"Voice call STT receive warning: {e}")
                 continue
 
+            # --- Process the transcript (was previously unreachable dead code) ---
+            try:
                 logger.info(f"User said: {transcript}")
 
                 # Notify client of transcript
@@ -317,7 +379,7 @@ async def voice_call(websocket: WebSocket):
                 from Redis_chat.working_files.memory_functions import get_semantically_similar_memories
                 from services.redis_cache import get_redis_manager
                 manager = get_redis_manager()
-                
+
                 emb = await generate_embedding(transcript)
                 semantic_memory = None
                 if emb:
@@ -326,59 +388,56 @@ async def voice_call(websocket: WebSocket):
                         semantic_memory = [s["text"] for s in sims]
 
                 # Generate streaming LLM response
+                text_stream = generate_chat_response_stream(
+                    system_prompt=system_prompt,
+                    context=call_context[-10:],  # Last 10 messages
+                    user_message=transcript,
+                    semantic_memory=semantic_memory,
+                )
+
+                # Stream TTS audio
+                full_response = ""
+                async for audio_chunk in stream_tts_chunks(text_stream, bot_id):
+                    if not call_active:
+                        break
+                    await websocket.send_bytes(audio_chunk)
+
+                # Collect full text from what was streamed
+                from services.llm_engine import generate_chat_response
+                full_response = await generate_chat_response(
+                    system_prompt=system_prompt,
+                    context=call_context[-10:],
+                    user_message=transcript,
+                    semantic_memory=semantic_memory,
+                )
+
+                call_context.append({"role": "bot", "content": full_response})
+
+                # Notify client that response is complete
+                await websocket.send_json({
+                    "type": "response_complete",
+                    "text": full_response,
+                    "role": "bot",
+                })
+
+                # Cache messages
+                await cache_message(user_id, bot_id, "user", transcript)
+                await cache_message(user_id, bot_id, "bot", full_response)
+
+                # Trigger memory storage and message log for DB persistence
+                from services.rabbitmq_service import publish_memory_task, publish_message_log
+                publish_memory_task(user_id, bot_id, transcript, full_response)
+                publish_message_log(user_id, bot_id, transcript, full_response, activity_type="voice_call")
+
+            except Exception as e:
+                logger.error(f"Response generation error: {e}")
                 try:
-                    text_stream = generate_chat_response_stream(
-                        system_prompt=system_prompt,
-                        context=call_context[-10:],  # Last 10 messages
-                        user_message=transcript,
-                        semantic_memory=semantic_memory,
-                    )
-
-                    # Stream TTS audio
-                    full_response = ""
-                    async for audio_chunk in stream_tts_chunks(text_stream, bot_id):
-                        if not call_active:
-                            break
-                        await websocket.send_bytes(audio_chunk)
-
-                    # Collect full text from what was streamed
-                    from services.llm_engine import generate_chat_response
-                    full_response = await generate_chat_response(
-                        system_prompt=system_prompt,
-                        context=call_context[-10:],
-                        user_message=transcript,
-                        semantic_memory=semantic_memory,
-                    )
-
-                    call_context.append({"role": "bot", "content": full_response})
-
-                    # Notify client that response is complete
-                    await websocket.send_json({
-                        "type": "response_complete",
-                        "text": full_response,
-                        "role": "bot",
-                    })
-
-                    # Cache messages
-                    await cache_message(user_id, bot_id, "user", transcript)
-                    await cache_message(user_id, bot_id, "bot", full_response)
-
-                    # Trigger memory storage and message log for DB persistence
-                    from services.rabbitmq_service import publish_memory_task, publish_message_log
-                    publish_memory_task(user_id, bot_id, transcript, full_response)
-                    publish_message_log(user_id, bot_id, transcript, full_response, activity_type="voice_call")
-
-                except Exception as e:
-                    logger.error(f"Response generation error: {e}")
                     await websocket.send_json({
                         "type": "error",
                         "message": "Response generation failed",
                     })
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.warning(f"Process loop error: {e}")
+                except Exception:
+                    pass
                 if not call_active:
                     break
 

@@ -3,10 +3,11 @@ Veliora.AI — Multimodal Routes
 Image description, URL summarization, weather, meme generation.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, UploadFile, File, Form, Request
 import httpx
 import base64
 import logging
+import os
 from typing import Optional
 from models.schemas import (
     ImageDescribeResponse, URLSummarizeRequest, URLSummarizeResponse,
@@ -39,6 +40,7 @@ def _safe_format(template: str, **kwargs) -> str:
 
 @router.post("/describe-image", response_model=ImageDescribeResponse)
 async def describe_image(
+    request: Request,
     background_tasks: BackgroundTasks,
     bot_id: str = Form(...),
     file: UploadFile = File(...),
@@ -63,6 +65,17 @@ async def describe_image(
 
     user_id = current_user["user_id"]
     user_msg = f"User uploaded an image for description"
+
+    import uuid
+    STATIC_IMAGES_DIR = os.path.join(os.getcwd(), "static", "images")
+    os.makedirs(STATIC_IMAGES_DIR, exist_ok=True)
+    unique_filename = f"user_upload_{uuid.uuid4().hex[:8]}.png"
+    output_path = os.path.join(STATIC_IMAGES_DIR, unique_filename)
+    with open(output_path, "wb") as f:
+        f.write(file_bytes)
+        
+    base_url = str(request.base_url).rstrip("/")
+    full_url = f"{base_url}/static/images/{unique_filename}"
 
     # Fetch Semantic Memory
     from services.llm_engine import generate_embedding
@@ -91,8 +104,8 @@ async def describe_image(
     await cache_message(user_id, bot_id, "user", user_msg)
     await cache_message(user_id, bot_id, "bot", description)
 
-    publish_memory_task(user_id, bot_id, user_msg, description)
-    publish_message_log(user_id, bot_id, user_msg, description, activity_type="image_describe")
+    background_tasks.add_task(publish_memory_task, user_id, bot_id, user_msg, description)
+    background_tasks.add_task(publish_message_log, user_id, bot_id, user_msg, description, activity_type="image_describe", media_url=full_url)
 
     # Award XP
     xp_result = await award_xp(user_id, bot_id, "image_describe")
@@ -179,8 +192,8 @@ async def summarize_url(
     await cache_message(user_id, request.bot_id, "user", user_msg)
     await cache_message(user_id, request.bot_id, "bot", summary)
 
-    publish_memory_task(user_id, request.bot_id, user_msg, summary)
-    publish_message_log(user_id, request.bot_id, user_msg, summary, activity_type="url_summary")
+    background_tasks.add_task(publish_memory_task, user_id, request.bot_id, user_msg, summary)
+    background_tasks.add_task(publish_message_log, user_id, request.bot_id, user_msg, summary, activity_type="url_summary")
 
     # Award XP
     xp_result = await award_xp(user_id, request.bot_id, "url_summarize")
@@ -302,8 +315,8 @@ async def get_weather(
     await cache_message(u_id, bot_id, "user", user_msg)
     await cache_message(u_id, bot_id, "bot", commentary)
 
-    publish_memory_task(u_id, bot_id, user_msg, commentary)
-    publish_message_log(u_id, bot_id, user_msg, commentary, activity_type="weather")
+    background_tasks.add_task(publish_memory_task, u_id, bot_id, user_msg, commentary)
+    background_tasks.add_task(publish_message_log, u_id, bot_id, user_msg, commentary, activity_type="weather")
 
     # Award XP
     xp_result = await award_xp(current_user["user_id"], bot_id, "weather_check")
@@ -397,8 +410,8 @@ async def generate_meme(
     await cache_message(u_id, request.bot_id, "user", user_msg)
     await cache_message(u_id, request.bot_id, "bot", meme_text)
 
-    publish_memory_task(u_id, request.bot_id, user_msg, meme_text)
-    publish_message_log(u_id, request.bot_id, user_msg, meme_text, activity_type="meme")
+    background_tasks.add_task(publish_memory_task, u_id, request.bot_id, user_msg, meme_text)
+    background_tasks.add_task(publish_message_log, u_id, request.bot_id, user_msg, meme_text, activity_type="meme")
 
     # Award XP
     xp_result = await award_xp(current_user["user_id"], request.bot_id, "meme_generate")

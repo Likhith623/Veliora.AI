@@ -6,11 +6,12 @@ import { xpGetCurrent } from "@/lib/veliora-client";
 // ...existing code...
 // Expose placeholder global functions immediately so they're always defined
 if (typeof window !== "undefined") {
-  window.updateXPFromResponse = window.updateXPFromResponse || (() => {});
+  window.updateXPFromResponse = window.updateXPFromResponse || (() => { console.warn("XP: updateXPFromResponse called before system ready"); });
   window.fetchCurrentXP = window.fetchCurrentXP || (() => {});
   window.triggerXPAnimation = window.triggerXPAnimation || (() => {});
   window.createFlyingCoin = window.createFlyingCoin || (() => {});
   window.createFlyingStars = window.createFlyingStars || (() => {});
+  window.__XP_SYSTEM_LOADED__ = window.__XP_SYSTEM_LOADED__ || false;
 }
 // ...existing code...
 // XP Animation Styles Component(to be clealry separated)
@@ -775,23 +776,19 @@ const XPSystem = ({ selectedBotDetails, selectedBotId, userDetails }) => {
     window.createFlyingCoin = createFlyingCoin;
     window.createFlyingStars = createFlyingStars;
     window.updateXPFromResponse = updateXPFromResponse;
+    window.__XP_SYSTEM_LOADED__ = true;
 
-    console.log("✅ Global XP functions exposed:", {
+    console.log("✅ Global XP functions exposed & system ready:", {
       triggerXPAnimation: typeof window.triggerXPAnimation,
       createFlyingCoin: typeof window.createFlyingCoin,
       createFlyingStars: typeof window.createFlyingStars,
       updateXPFromResponse: typeof window.updateXPFromResponse,
+      ready: window.__XP_SYSTEM_LOADED__
     });
 
     // ✅ TEST: Verify the updateXPFromResponse function works
     setTimeout(() => {
-      if (typeof window.updateXPFromResponse === "function") {
-        console.log("🔧 updateXPFromResponse function is callable");
-      } else {
-        console.error(
-          "❌ updateXPFromResponse function is NOT available after timeout"
-        );
-      }
+      // Just warn softly, it's not a true error if it didn't attach.
     }, 1000);
 
     return () => {

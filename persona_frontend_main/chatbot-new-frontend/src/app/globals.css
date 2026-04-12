@@ -80,11 +80,11 @@
 
 /* Chat specific styles */
 .chat-bubble-bot {
-  @apply bg-white/20 dark:bg-black border border-white/20 dark:border-gray-700/20 backdrop-blur-sm shadow-md rounded-3xl text-gray-900 dark:text-white;
+  @apply bg-white/20 dark:bg-gray-800/60 border border-white/20 dark:border-gray-700/30 backdrop-blur-sm shadow-md rounded-3xl text-gray-900 dark:text-gray-100;
 }
 
 .chat-bubble-user {
-  @apply bg-purple-400/80 dark:bg-purple-600/80 border border-white/20 dark:border-gray-700/20 backdrop-blur-sm shadow-md rounded-3xl text-white;
+  @apply bg-purple-400/80 dark:bg-purple-600/70 border border-white/20 dark:border-purple-500/20 backdrop-blur-sm shadow-md rounded-3xl text-white;
 }
 
 .chat-bubble-highlight {
@@ -96,7 +96,7 @@
 }
 
 .chat-reaction {
-  @apply bg-white/80 dark:bg-black/80 rounded-full shadow-sm border border-gray-100 dark:border-gray-700 hover:bg-white/90 dark:hover:bg-gray-700/90;
+  @apply bg-white/80 dark:bg-gray-800/80 rounded-full shadow-sm border border-gray-100 dark:border-gray-700 hover:bg-white/90 dark:hover:bg-gray-700/90;
 }
 
 .chat-icon {
@@ -104,25 +104,29 @@
 }
 
 .chat-timestamp {
-  @apply text-neutral-700 dark:text-neutral-300;
+  @apply text-neutral-700 dark:text-neutral-400;
 }
 
-/* Dark mode transitions */
+/* Smooth dark mode transitions */
+html {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
 .dark * {
-  @apply transition-colors duration-200;
+  @apply transition-colors duration-300;
 }
 
 /* Dark mode specific styles */
 .dark .sidebar {
-  @apply bg-black text-white;
+  @apply bg-gray-950 text-white;
 }
 
 .dark .sidebar-content {
-  @apply bg-black text-white;
+  @apply bg-gray-950 text-white;
 }
 
 .dark .sidebar-link {
-  @apply text-white hover:text-gray-300;
+  @apply text-gray-200 hover:text-white;
 }
 
 /* Remove global dark mode styles */
@@ -132,59 +136,59 @@
 
 /* Card styles */
 .card {
-  @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm;
+  @apply bg-white dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700/50 rounded-xl shadow-sm dark:shadow-gray-900/20;
 }
 
 /* Button styles */
 .btn-primary {
-  @apply bg-white dark:bg-gray-800 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors duration-200;
+  @apply bg-white dark:bg-gray-800 text-black dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 active:scale-[0.98];
 }
 
 .btn-secondary {
-  @apply bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200;
+  @apply bg-gray-100 dark:bg-gray-700/80 text-gray-900 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-600 transition-all duration-200;
 }
 
 /* Form styles */
 .form-input {
-  @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-900 dark:text-gray-100;
+  @apply bg-white dark:bg-gray-800/90 border border-gray-200 dark:border-gray-700/60 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-purple-400/50 dark:focus:ring-purple-500/40 transition-all duration-200;
 }
 
 /* Header styles */
 .header {
-  @apply bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800;
+  @apply bg-white/80 dark:bg-gray-900/80 border-b border-gray-200 dark:border-gray-800/60 backdrop-blur-md;
 }
 
 /* Navigation styles */
 .nav-link {
-  @apply text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white;
+  @apply text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-colors duration-200;
 }
 
 /* Modal styles */
 .modal {
-  @apply bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700;
+  @apply bg-white dark:bg-gray-800/95 border border-gray-200 dark:border-gray-700/50 backdrop-blur-lg shadow-xl dark:shadow-black/40;
 }
 
 /* Tooltip styles */
 .tooltip {
-  @apply bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700;
+  @apply bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 border border-gray-200 dark:border-gray-700 shadow-lg;
 }
 
 /* Gradient backgrounds */
 .gradient-bg {
-  @apply bg-gradient-to-br from-white to-gray-100 dark:from-gray-900 dark:to-gray-800;
+  @apply bg-gradient-to-br from-white to-gray-100 dark:from-gray-900 dark:to-gray-950;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  @apply w-2;
+  @apply w-1.5;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-gray-100 dark:bg-gray-800;
+  @apply bg-transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-gray-300 dark:bg-gray-600 rounded-full;
+  @apply bg-gray-300/60 dark:bg-gray-600/40 rounded-full hover:bg-gray-400/80 dark:hover:bg-gray-500/60;
 }
 
 /* Loading spinner */
@@ -205,9 +209,11 @@
 @keyframes fadeInChip {
   from {
     opacity: 0;
+    transform: translateY(-8px);
   }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -222,10 +228,36 @@
 
 .fade-in-chip {
   animation: fadeInChip 300ms ease-out forwards;
-  will-change: opacity;
+  will-change: opacity, transform;
 }
 
 .fade-out-chip {
   animation: fadeOutChip 600ms ease-in forwards;
   will-change: opacity;
+}
+
+/* Message entry animation */
+@keyframes slideInMessage {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.message-enter {
+  animation: slideInMessage 0.3s ease-out forwards;
+}
+
+/* Glassmorphism panel */
+.glass-panel {
+  @apply bg-white/10 dark:bg-gray-900/20 backdrop-blur-xl border border-white/20 dark:border-gray-700/20 shadow-xl;
+}
+
+/* Premium focus ring */
+*:focus-visible {
+  @apply outline-none ring-2 ring-purple-400/60 ring-offset-2 ring-offset-transparent;
 }

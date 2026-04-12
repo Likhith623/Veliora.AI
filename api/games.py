@@ -658,14 +658,60 @@ DEFAULT_GAMES = {
 def _get_game_master_prompt(game: dict, bot_id: str, turn: int, max_turns: int) -> str:
     """Build the Game Master system prompt for Gemini."""
     return (
-        f"You are now the GAME MASTER for the game '{game['name']}'.\n"
+        f"\n\n=======================================================\n"
+        f"🚨 CRITICAL SYSTEM DIRECTIVE: ACTIVE {game['category'].upper()} ACTIVITY 🚨\n"
+        f"You are NOW the GAME MASTER for the activity: '{game['name']}'.\n"
         f"Game Description: {game['description']}\n"
-        f"Current Turn: {turn}/{max_turns}\n"
-        f"Stay in your personality as {bot_id} while facilitating the game.\n"
-        f"Keep responses SHORT (2-3 sentences). Track the game state.\n"
+        f"Current Turn: {turn} of {max_turns}\n"
+        f"=======================================================\n"
+        f"NEVER stray from this topic setup! You MUST stay strictly on the topic of THIS activity. "
+        f"If the user sends irrelevant messages, completely ignores you, off-topic questions, or tries to change the subject, "
+        f"briefly acknowledge it but IMMEDATELY redirect back to the activity '{game['name']}'. "
+        f"Do NOT abandon the activity, do NOT generate new games, and do NOT discuss unrelated topics until this game explicitly ends.\n"
+        f"Keep your responses SHORT, highly engaging, and entirely locked to this activity's context.\n"
         f"If this is the last turn, wrap up the game and declare the result.\n"
-        f"Game Category: {game['category']}\n"
     )
+
+
+
+async def _ensure_game_in_db(game: dict, archetype: str):
+    """
+    Ensure the game exists in the Supabase `games` table.
+    Auto-seeds on first use to prevent FK constraint violations in `user_game_sessions`.
+    Uses upsert to be idempotent.
+    """
+    from services.supabase_client import get_game_by_id, get_supabase_admin
+    import asyncio
+
+    existing = await get_game_by_id(game["id"])
+    if existing:
+        return  # Already in DB
+
+    client = get_supabase_admin()
+    
+    valid_archetypes = {"mentor", "friend", "romantic"}
+    safe_archetype = archetype.lower() if archetype and archetype.lower() in valid_archetypes else "friend"
+
+    data = {
+        "id": game["id"],
+        "name": game["name"],
+        "description": game["description"][:500],
+        "archetype": safe_archetype,
+        "category": game.get("category", "general"),
+        "min_turns": game.get("min_turns", 3),
+        "max_turns": game.get("max_turns", 8),
+        "xp_reward": game.get("xp_reward", 200),
+        "is_active": True,
+    }
+
+    def _upsert():
+        return client.table("games").upsert(data).execute()
+
+    try:
+        await asyncio.to_thread(_upsert)
+        logger.info(f"Auto-seeded game '{game['id']}' into Supabase games table")
+    except Exception as e:
+        logger.warning(f"Auto-seed game '{game['id']}' failed (non-fatal): {e}")
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -722,7 +768,7 @@ async def start_game(
     Gemini generates the opening message as Game Master.
     """
     from services.redis_cache import set_game_state, get_game_state, cache_message, has_active_session, load_session_from_supabase, get_context, clear_game_state
-    from services.supabase_client import create_game_session, get_user_profile, end_game_session
+    from services.supabase_client import create_game_session, get_user_profile, update_game_session
     from services.llm_engine import generate_chat_response
     from services.background_tasks import award_xp
     from bot_prompt import get_bot_prompt
@@ -739,7 +785,11 @@ async def start_game(
     existing_game = await get_game_state(user_id)
     if existing_game:
         # End the old one in database before starting new one
-        await end_game_session(existing_game["session_id"], "abandoned", existing_game["turn_count"], 0)
+        await update_game_session(existing_game["session_id"], {
+            "status": "abandoned",
+            "turn_count": existing_game.get("turn", 0),
+            "xp_earned": 0
+        })
         await clear_game_state(user_id)
 
     # Find the game
@@ -753,6 +803,9 @@ async def start_game(
 
     if not game:
         raise HTTPException(status_code=404, detail=f"Game not found: {request.game_id}")
+
+    # Auto-seed game into Supabase `games` table if it doesn't exist (prevents FK violation)
+    await _ensure_game_in_db(game, archetype)
 
     session_id = uuid.uuid4().hex
 
@@ -845,8 +898,9 @@ async def game_action(
         raise HTTPException(status_code=404, detail="No active game session found")
 
     current_turn = game_state.get("turn", 1) + 1
-    max_turns = game_state.get("max_turns", 10)
-    is_last_turn = current_turn >= max_turns
+    # We remove max_turns check here so game continues indefinitely until user ends it.
+    max_turns = 9999
+    is_last_turn = False
 
     # Update game state
     game_state["turn"] = current_turn
@@ -859,9 +913,6 @@ async def game_action(
         "category": game_state["category"],
     }
     gm_prompt = _get_game_master_prompt(game_info, request.bot_id, current_turn, max_turns)
-
-    if is_last_turn:
-        gm_prompt += "\nThis is the FINAL TURN. Wrap up the game, announce the result, and say goodbye!"
 
     bot_prompt = get_bot_prompt(request.bot_id)
 
@@ -892,24 +943,8 @@ async def game_action(
     game_state["total_xp"] = game_state.get("total_xp", 0) + xp_result.get("total_earned", 25)
 
     result = None
-    if is_last_turn:
-        # Auto-end the game
-        result = "completed"
-        completion_xp = await award_xp(user_id, request.bot_id, "game_complete")
-        game_state["total_xp"] += completion_xp.get("total_earned", 250)
-
-        # Clear game state from Redis
-        from services.redis_cache import clear_game_state
-        await clear_game_state(user_id)
-
-        # Update DB session
-        background_tasks.add_task(
-            update_game_session, request.session_id,
-            {"status": "completed", "turn_count": current_turn, "xp_earned": game_state["total_xp"]}
-        )
-    else:
-        # Update Redis game state
-        await set_game_state(user_id, game_state)
+    # Update Redis game state
+    await set_game_state(user_id, game_state)
 
     return GameActionResponse(
         session_id=request.session_id,

@@ -30,7 +30,11 @@ async def get_memories(
     client = get_supabase_admin()
     
     try:
-        response = client.table("memories").select("*").eq("user_id", user_id).eq("bot_id", bot_id).execute()
+        # Avoid blocking the main thread with synchronous httpx requests
+        import asyncio
+        response = await asyncio.to_thread(
+            client.table("memories").select("*").eq("user_id", user_id).eq("bot_id", bot_id).execute
+        )
         return response.data
     except Exception as e:
         logger.error(f"Error fetching memories: {e}")
@@ -59,7 +63,10 @@ async def add_memory(
     }
     
     try:
-        response = client.table("memories").insert(payload).execute()
+        import asyncio
+        response = await asyncio.to_thread(
+            client.table("memories").insert(payload).execute
+        )
         return {
             "success": True,
             "inserted": response.data
@@ -94,7 +101,10 @@ async def update_memory(
         
     try:
         # Enforce user ownership in update
-        response = client.table("memories").update(payload).eq("id", id).eq("user_id", user_id).execute()
+        import asyncio
+        response = await asyncio.to_thread(
+            client.table("memories").update(payload).eq("id", id).eq("user_id", user_id).execute
+        )
         return {
             "success": True,
             "updated": response.data
@@ -117,7 +127,10 @@ async def delete_memory(
     
     try:
         # Enforce user ownership
-        client.table("memories").delete().eq("id", id).eq("user_id", user_id).execute()
+        import asyncio
+        await asyncio.to_thread(
+            client.table("memories").delete().eq("id", id).eq("user_id", user_id).execute
+        )
         return {"success": True}
     except Exception as e:
         logger.error(f"Error deleting memory: {e}")
@@ -184,15 +197,14 @@ async def extract_memories(
             bot_response=request.bot_response,
         )
 
-        # Call Gemini for extraction
-        import google.generativeai as genai
+        # Call Gemini for extraction using the same SDK as the rest of the codebase
+        from google import genai
         from config.settings import get_settings
         settings = get_settings()
-        genai.configure(api_key=settings.GEMINI_API_KEY)
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        client = genai.Client(api_key=settings.effective_google_api_key)
 
         def _call_gemini():
-            return model.generate_content(prompt)
+            return client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
 
         gemini_response = await asyncio.to_thread(_call_gemini)
         raw_text = gemini_response.text.strip()

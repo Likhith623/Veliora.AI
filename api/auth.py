@@ -278,11 +278,17 @@ async def login(request: LoginRequest):
 @router.get("/profile", response_model=UserProfileResponse)
 async def get_profile(current_user: dict = Depends(get_current_user)):
     """Get the current user's profile."""
-    from services.supabase_client import get_user_profile
+    from services.supabase_client import get_user_profile, create_user_profile
 
     profile = await get_user_profile(current_user["user_id"])
     if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+        profile_data = {
+            "email": current_user.get("email", ""),
+            "name": current_user.get("email", "").split("@")[0] if current_user.get("email") else "User"
+        }
+        profile = await create_user_profile(current_user["user_id"], profile_data)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
 
     return UserProfileResponse(
         id=current_user["user_id"],
@@ -363,11 +369,17 @@ async def upload_avatar(
 @router.get("/xp", response_model=XPStatusResponse)
 async def get_xp_status(current_user: dict = Depends(get_current_user)):
     """Get the user's XP status, level, and streak info."""
-    from services.supabase_client import get_user_profile
+    from services.supabase_client import get_user_profile, create_user_profile
 
     profile = await get_user_profile(current_user["user_id"])
     if not profile:
-        raise HTTPException(status_code=404, detail="Profile not found")
+        profile_data = {
+            "email": current_user.get("email", ""),
+            "name": current_user.get("email", "").split("@")[0] if current_user.get("email") else "User"
+        }
+        profile = await create_user_profile(current_user["user_id"], profile_data)
+        if not profile:
+            raise HTTPException(status_code=404, detail="Profile not found")
 
     total_xp = profile.get("total_xp", 0)
     level = calculate_level(total_xp)

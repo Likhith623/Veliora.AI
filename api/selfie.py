@@ -92,11 +92,11 @@ async def generate_selfie(
     await cache_message(user_id, bot_id, "user", user_msg)
     await cache_message(user_id, bot_id, "bot", scene)
 
-    # Publish to memory pipeline
+    # Publish to memory pipeline via background tasks (pika is synchronous, so must not block)
     from services.rabbitmq_service import publish_memory_task, publish_message_log
-    publish_memory_task(user_id, bot_id, user_msg, scene)
-    publish_message_log(
-        user_id, bot_id, user_msg, scene,
+    background_tasks.add_task(publish_memory_task, user_id, bot_id, user_msg, scene)
+    background_tasks.add_task(
+        publish_message_log, user_id, bot_id, user_msg, scene,
         activity_type="selfie", media_url=result.get("image_url")
     )
 

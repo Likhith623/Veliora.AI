@@ -1,8 +1,3 @@
-// PlayAudio.jsx
-// This component provides a play button to generate and play a bot's voice for a given message.
-// TTS is now sourced from the new backend: POST /api/voice/note
-import { voiceGenerateNote } from "@/lib/veliora-client";
-
 import React, { useRef, useEffect, useState } from "react";
 import WaveSurfer from "wavesurfer.js";
 import { motion, AnimatePresence } from "framer-motion";
@@ -214,11 +209,11 @@ const LoadingDots = () => {
 };
 
 // PlayAudio component: Plays the bot's voice for a given message
-const PlayAudio = ({ text, bot_id,isWhiteIcon, minimal = false }) => {
+const PlayAudio = ({ text, bot_id,isWhiteIcon, minimal = false, audioSrcUrl = null }) => {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [audioUrl, setAudioUrl] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(audioSrcUrl);
   const [duration, setDuration] = useState("0:00");
   const [progress, setProgress] = useState(0);
   const audioElement = useRef(null);
@@ -226,6 +221,11 @@ const PlayAudio = ({ text, bot_id,isWhiteIcon, minimal = false }) => {
   const [currentTime, setCurrentTime] = useState(0);
   const waveformRef = useRef(null);
   const wavesurfer = useRef(null);
+
+  // Update if prop changes
+  useEffect(() => {
+    if (audioSrcUrl && !audioUrl) setAudioUrl(audioSrcUrl);
+  }, [audioSrcUrl]);
 
   // Get the correct avatar image for the bot_id, or fallback to default
   const avatarSrc = avatarMap[bot_id] || defaultAvatar;
@@ -255,26 +255,31 @@ const PlayAudio = ({ text, bot_id,isWhiteIcon, minimal = false }) => {
       if (!audioUrl) {
         setIsLoading(true);
         setShouldAutoPlay(true); // Set flag to auto-play after load
-
-        // ── New backend: POST /api/voice/note ──────────────────────────────
-        // Returns { audio_url, audio_base64, text_response, duration_seconds }
-        const voiceData = await voiceGenerateNote(bot_id, text);
-
-        let audioSrc;
-        if (voiceData.audio_url) {
-          // Prefer URL — no base64 decoding overhead
-          audioSrc = voiceData.audio_url;
-        } else if (voiceData.audio_base64) {
-          // Fallback: base64 → blob URL
-          const audioBuffer = base64ToArrayBuffer(voiceData.audio_base64);
-          const audioBlob = new Blob([audioBuffer], { type: "audio/wav" });
-          audioSrc = URL.createObjectURL(audioBlob);
-        } else {
-          throw new Error("No audio returned from voice/note endpoint");
-        }
-
+        // Always fetch new audio for each click
+        const response = await fetch('http://localhost:8000/api/voice/generate-audio', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            transcript: text,
+            bot_id: bot_id,
+            output_format: {
+              container: "wav",
+              encoding: "pcm_s16le",
+              sample_rate: 22050
+            }
+          })
+        });
+        if (!response.ok) throw new Error('Failed to generate audio');
+        const data = await response.json();
+        const { audio_base64 } = data;
+        // Convert base64 to Blob and create Object URL
+        const audioBuffer = base64ToArrayBuffer(audio_base64);
+        const audioBlob = new Blob([audioBuffer], { type: 'audio/wav' });
+        const audioSrc = URL.createObjectURL(audioBlob);
         setAudioUrl(audioSrc);
-        console.log("Set audioUrl:", audioSrc);
+        console.log('Set audioUrl:', audioSrc);
         setIsLoading(false);
 
         // For minimal mode, play as soon as audio is loaded
@@ -325,13 +330,13 @@ const PlayAudio = ({ text, bot_id,isWhiteIcon, minimal = false }) => {
       }
       wavesurfer.current = WaveSurfer.create({
         container: waveformRef.current,
-        waveColor: "rgba(255, 255, 255, 0.3)",
-        progressColor: "#c084fc",
-        height: 40,
-        barWidth: 2,
-        barGap: 2,
-        barRadius: 3,
-        barHeight: 1,
+        waveColor: "rgba(192, 132, 252, 0.2)",
+        progressColor: "#a855f7",
+        height: 50,
+        barWidth: 3,
+        barGap: 3,
+        barRadius: 4,
+        barHeight: 0.8,
         minPxPerBar: 1,
         fillParent: true,
         responsive: true,
@@ -440,7 +445,7 @@ const PlayAudio = ({ text, bot_id,isWhiteIcon, minimal = false }) => {
          {isLoading ? (
             <IconLoader 
               size={36} 
-              className="text-'white', mt-[-2px] animate-spin"
+              className="text-white mt-[-2px] animate-spin"
             />
           ) : isPlaying ? (
             <IconPlayerPauseFilled 
@@ -483,8 +488,6 @@ const PlayAudio = ({ text, bot_id,isWhiteIcon, minimal = false }) => {
         boxShadow: '0 8px 32px -4px rgba(0,0,0,0.1)',
         background: 'white',
         width: '100%',
-        maxWidth: '620px',
-        minWidth: '280px',
         borderRadius: 24,
         padding: '0.3rem 0.7rem',
       }}
@@ -685,4 +688,3 @@ const PlayAudio = ({ text, bot_id,isWhiteIcon, minimal = false }) => {
   );
   }
   export default PlayAudio;
-  

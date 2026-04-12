@@ -105,7 +105,7 @@ def serialize_chat_to_messages(chat: dict, embedding: list = None) -> list[dict]
             "content": chat["bot_response"],
             "created_at": timestamp,
             "activity_type": activity_type,
-            "media_url": media_url,
+            "media_url": None, # Bot responses shouldn't blindly inherit user's uploaded media
         })
 
     return rows

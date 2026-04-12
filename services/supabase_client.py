@@ -115,6 +115,7 @@ async def insert_message(
     language: Optional[str] = None,
     activity_type: str = "chat",
     media_url: Optional[str] = None,
+    created_at: Optional[str] = None,
 ) -> dict:
     """Insert a message (user or bot) into the messages table."""
     client = get_supabase_admin()
@@ -132,6 +133,8 @@ async def insert_message(
     }
     if embedding:
         data["embedding"] = embedding
+    if created_at:
+        data["created_at"] = created_at
 
     def _insert():
         return client.table("messages").insert(data).execute()
@@ -152,16 +155,16 @@ async def get_message_history(
     def _select():
         return (
             client.table("messages")
-            .select("id, role, content, bot_id, created_at")
+            .select("id, role, content, bot_id, created_at, activity_type, media_url")
             .eq("user_id", user_id)
             .eq("bot_id", bot_id)
-            .order("created_at", desc=True)
+            .order("created_at", desc=False)   # ✅ ASC = chronological order
             .range(offset, offset + limit - 1)
             .execute()
         )
 
     result = await asyncio.to_thread(_select)
-    return list(reversed(result.data)) if result.data else []
+    return result.data if result.data else []  # ✅ No reversal needed
 
 
 async def get_chat_overview(user_id: str) -> list[dict]:

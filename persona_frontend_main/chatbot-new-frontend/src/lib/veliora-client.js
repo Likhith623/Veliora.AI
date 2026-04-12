@@ -219,20 +219,55 @@ export async function chatGetHistory(botId, page = 1, pageSize = 50) {
       page_size: pageSize,
     });
 
-    const adapted = (data.messages || []).map((msg) => ({
-      id: msg.id,
-      text: msg.content,
-      sender: msg.role === "bot" ? "bot" : "user",
-      timestamp: msg.created_at ? new Date(msg.created_at) : new Date(),
-      bot_id: msg.bot_id || botId,
-      feedback: "",
-      reaction: "",
-      isActivityMessage:
-        msg.platform === "game_activity" ||
-        !!msg.activity_name ||
-        msg.isActivityMessage === true,
-      activityId: msg.activity_name || msg.activityId || null,
-    }));
+    const adapted = (data.messages || []).map((msg) => {
+      // ── The backend now sends clean content + parsed flags ───────────
+      const text = (msg.content || "").trim();
+
+      // Trust server flags where available; fall back gracefully for legacy messages
+      const isVoiceNote    = msg.is_voice_note    || false;
+      const isImageMessage = msg.is_image_message || false;
+      const isActivityStart = msg.is_activity_start || false;
+      const isActivityEnd   = msg.is_activity_end   || false;
+      const isVoiceCallStart = msg.is_voice_call_start || false;
+      const isVoiceCallEnd   = msg.is_voice_call_end   || false;
+      const isSystemMessage  = msg.is_system_message   ||
+        isActivityStart || isActivityEnd || isVoiceCallStart || isVoiceCallEnd;
+
+      const isActivityMessage = !!(
+        msg.activity_type && msg.activity_type !== "chat" || isActivityStart || isActivityEnd
+      );
+
+      // Resolved media URLs — server already extracted these from content
+      const audioUrl = msg.audio_url || (isVoiceNote ? msg.media_url : null) || null;
+      const imageUrl = msg.image_url || (isImageMessage ? msg.media_url : null) || null;
+
+      // Derive special activity_type for voice call banners
+      let activity_type = msg.activity_type || null;
+      if (isVoiceCallStart) activity_type = "VOICE_CALL_START";
+      if (isVoiceCallEnd)   activity_type = "VOICE_CALL_END";
+
+      return {
+        id: msg.id,
+        text,
+        sender: msg.role === "bot" ? "bot" : "user",
+        timestamp: msg.created_at ? new Date(msg.created_at) : new Date(),
+        bot_id: msg.bot_id || botId,
+        feedback: "",
+        reaction: "",
+        isImageMessage,
+        imageUrl,
+        audioUrl,
+        isVoiceNote,
+        isSystemMessage,
+        isActivityMessage,
+        activityId: msg.activity_type || null,
+        isActivityStart,
+        isActivityEnd,
+        isVoiceCallStart,
+        isVoiceCallEnd,
+        activity_type,
+      };
+    });
 
     return { response: adapted, total: data.total };
   } catch (error) {
@@ -291,7 +326,7 @@ export function chatEndSession(botId) {
  */
 export function chatInitSession(_email, _botId) {
   // New backend auto-initialises session on first send; nothing to do.
-  return Promise.resolve({ status: "auto-init" });
+  return apiGet(`/api/chat/init/${encodeURIComponent(_botId)}`);
 }
 
 /**

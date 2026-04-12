@@ -231,18 +231,19 @@ async def get_highest_rfm_memories(redis_client, user_id: str, bot_id: str, k: i
 
 async def generate_candidate_memories(
     user_id: str, user_msg: str, bot_resp: str
-) -> list[str]:
-    """Extract 0-2 new memories from a conversation exchange."""
+) -> list[dict]:
+    """Extract new memories from a conversation exchange as JSON."""
+    import json
     prompt = f"""
 You are a **Memory Extraction Engine**.
 
-TASK — Identify **0-2 NEW** user memories found *only* in the exchange below.
+TASK — Identify **ALL significant NEW** user memories found *only* in the exchange below (up to 5).
 
 RULES
-• Start each memory with "- ".
-• Around **15 words** per memory, third-person, about the *user*.
-• Include specific nouns, verbs, and context words for better retrieval.
-• Skip if nothing new → output single line: **- None**
+• Output a single JSON array of objects.
+• Each object must have "memory" (Around **15 words** per memory, third-person, about the *user*, including specific nouns/verbs).
+• Each object must have "category" chosen from exactly this list: [background, favorites, hopes_and_goals, opinions, personality, relationships, routines, fears, general]
+• Skip if nothing new → output single line array: []
 
 CURRENT EXCHANGE
 User: {user_msg}
@@ -253,24 +254,46 @@ OUTPUT:
     try:
         resp = _client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
         text = resp.text.strip()
-        if "none" in text.lower() and len(text) < 20:
+        if text.startswith("```"):
+            text = text.split("```")[1]
+            if text.lower().startswith("json"):
+                text = text[4:]
+        text = text.strip()
+        
+        extracted = json.loads(text)
+        if not isinstance(extracted, list):
             return []
-        return [line.strip("- ").strip() for line in text.split("\n") if line.strip() and line.strip() != "-"]
+        return [cand for cand in extracted if isinstance(cand, dict) and "memory" in cand]
     except Exception as e:
         logger.error(f"Memory extraction failed: {e}")
         return []
 
-
 async def update_user_memory(
-    redis_manager, candidate: str, user_id: str, user_msg: str,
+    redis_manager, candidate, user_id: str, user_msg: str,
     bot_resp: str, bot_id: str
 ) -> str:
     """
-    Decide add/merge/override for a candidate memory and update Redis.
+    Decide add/merge/override for a candidate memory and update Redis and Supabase.
     """
+    from services.supabase_client import get_supabase_admin
+    client = get_supabase_admin()
+
+    category = "general"
+    if isinstance(candidate, dict):
+        category = candidate.get("category", "general")
+        candidate_text = candidate.get("memory", candidate.get("memory_text", ""))
+        if candidate_text is None:
+            candidate_text = ""
+        candidate_text = str(candidate_text)
+    else:
+        candidate_text = str(candidate) if candidate else ""
+
+    if not candidate_text:
+        return "Empty memory candidate."
+
     context_pair = f"User: {user_msg}\nBot: {bot_resp}"
     now = datetime.now(timezone.utc).isoformat()
-    emb = await get_embedding(candidate)
+    emb = await get_embedding(candidate_text)
     if not emb:
         return "Embedding generation failed, skipping."
 
@@ -292,7 +315,7 @@ CURRENT EXCHANGE:
 {context_pair}
 
 INPUTS:
-• Candidate memory: "{candidate}"
+• Candidate memory: "{candidate_text}"
 • Existing similar memories:
 {sim_text if sims else "No existing memories found."}
 
@@ -321,14 +344,14 @@ none
         return "Redundant, no memory update."
 
     elif dec == "add":
-        magnitude = await get_magnitude_for_query(candidate)
+        magnitude = await get_magnitude_for_query(candidate_text)
         rfm = get_rfm_score(now, frequency=1, magnitude=magnitude)
         mem_id = str(uuid.uuid4())
         memory_dict = {
             "id": mem_id,
             "user_id": user_id,
             "bot_id": bot_id,
-            "memory_text": candidate,
+            "memory_text": candidate_text,
             "embedding": emb,
             "magnitude": str(magnitude),
             "last_used": now,
@@ -337,6 +360,17 @@ none
             "created_at": now,
         }
         redis_manager.store_memory(user_id, bot_id, mem_id, memory_dict)
+        try:
+            client.table("memories").insert({
+                "id": mem_id,
+                "user_id": user_id,
+                "bot_id": bot_id,
+                "memory": candidate_text,
+                "category": category,
+                "rfm_magnitude": int(magnitude)
+            }).execute()
+        except Exception as se:
+            logger.error(f"Supabase add memory error: {se}")
         return "Memory added."
 
     elif dec.startswith("merge:"):
@@ -351,7 +385,7 @@ none
                 current_text = current_mem.get(b'memory_text', b'').decode('utf-8')
                 current_freq = int(current_mem.get(b'frequency', b'1').decode('utf-8'))
 
-                merged_text = await llm_consolidate(current_text, candidate)
+                merged_text = await llm_consolidate(current_text, candidate_text)
                 emb_new = await get_embedding(merged_text)
                 magnitude = await get_magnitude_for_query(merged_text)
                 rfm = get_rfm_score(now, frequency=current_freq + 1, magnitude=magnitude)
@@ -369,6 +403,13 @@ none
                     "rfm_score": str(rfm),
                 }
                 redis_manager.store_memory(user_id, bot_id, clean_id, memory_dict)
+                try:
+                    client.table("memories").update({
+                        "memory": merged_text,
+                        "rfm_magnitude": int(magnitude)
+                    }).eq("id", clean_id).execute()
+                except Exception as se:
+                    logger.error(f"Supabase update memory error: {se}")
                 merged_log += f"Merged: {current_text[:20]}→{merged_text[:20]}\n"
             except Exception as e:
                 logger.error(f"Merge failed for idx {idx}: {e}")
@@ -392,7 +433,7 @@ none
                     "id": clean_id,
                     "user_id": user_id,
                     "bot_id": bot_id,
-                    "memory_text": candidate,
+                    "memory_text": candidate_text,
                     "embedding": emb,
                     "magnitude": str(magnitude),
                     "last_used": now,
@@ -400,7 +441,14 @@ none
                     "rfm_score": str(rfm),
                 }
                 redis_manager.store_memory(user_id, bot_id, clean_id, memory_dict)
-                override_log += f"Overridden: {candidate[:20]}\n"
+                try:
+                    client.table("memories").update({
+                        "memory": candidate_text,
+                        "rfm_magnitude": int(magnitude)
+                    }).eq("id", clean_id).execute()
+                except Exception as se:
+                    logger.error(f"Supabase update memory error: {se}")
+                override_log += f"Overridden: {candidate_text[:20]}\n"
             except Exception as e:
                 logger.error(f"Override failed for idx {idx}: {e}")
         return f"Overridden {len(idxs)} memories.\n{override_log}"
@@ -424,7 +472,6 @@ Include all important keywords. Output only the merged memory.
     except Exception as e:
         logger.error(f"Memory consolidation failed: {e}")
         return candidate  # Fallback to the new candidate
-
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CHAT LOGGING

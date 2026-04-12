@@ -70,7 +70,7 @@ async def send_message(
         user_name = current_user.get("name", "Friend")
 
         result = await get_bot_response_combined(
-            redis_manager, user_id, bot_id, request.message, user_name
+            redis_manager, user_id, bot_id, request.message, user_name, request.traits
         )
         bot_response = result["response"]
 
@@ -140,6 +140,123 @@ async def end_chat(
         raise HTTPException(status_code=500, detail=f"End chat failed: {str(e)}")
 
 
+def _parse_message_content(m: dict, bot_id: str) -> MessageItem:
+    """Helper to standardize parsing of tags and media from message content."""
+    import re
+    content = m.get("content", "")
+    role = m.get("role", "user")
+    activity_type = m.get("activity_type", "chat")
+    media_url = m.get("media_url")
+
+    MEDIA_PATTERN = re.compile(r"\(Media:\s*(https?://[^\)]+)\)")
+    ALL_BRACKET_TAGS = re.compile(r"\[([A-Z_]+)\]")
+
+    # ── Parse flags from bracket tags ──────────────────────────────
+    tags = set(ALL_BRACKET_TAGS.findall(content))
+    # Expand tags to include all common variations
+    is_voice_note   = any(t in tags for t in ["VOICE_NOTE", "VOICE_CALL", "VOICE_NOTE_SENT"])
+    is_image_msg    = any(t in tags for t in ["IMAGE_GEN", "SELFIE", "IMAGE_DESCRIBE"])
+    is_activity_start = any(t in tags for t in ["ACTIVITY_START", "GAME_START"])
+    is_activity_end   = any(t in tags for t in ["ACTIVITY_END", "GAME_END"])
+    is_voice_call_start = "VOICE_CALL_START" in tags
+    is_voice_call_end   = "VOICE_CALL_END"   in tags
+    is_system = is_activity_start or is_activity_end or is_voice_call_start or is_voice_call_end
+
+    # ── Strip all bracket tags from visible content ─────────────────
+    clean_content = ALL_BRACKET_TAGS.sub("", content).strip()
+
+    # ── Extract embedded media URLs e.g. "(Media: https://...)" ─────
+    audio_url = None
+    image_url = None
+
+    media_match = MEDIA_PATTERN.search(clean_content)
+    if media_match:
+        url = media_match.group(1).strip()
+        clean_content = MEDIA_PATTERN.sub("", clean_content).strip()
+        ext_lower = url.lower()
+        if any(ext_lower.endswith(e) for e in (".mp3", ".wav", ".ogg")) or "audio" in ext_lower:
+            audio_url = url
+            is_voice_note = True
+        elif any(ext_lower.endswith(e) for e in (".png", ".jpg", ".jpeg", ".webp", ".gif")) or "image" in ext_lower:
+            image_url = url
+            is_image_msg = True
+
+    # Fall back to media_url column if not found in content
+    if media_url and not audio_url and not image_url:
+        ml = media_url.lower()
+        if any(ml.endswith(e) for e in (".mp3", ".wav", ".ogg")) or "audio" in ml:
+            audio_url = media_url
+            is_voice_note = True
+        elif any(ml.endswith(e) for e in (".png", ".jpg", ".jpeg", ".webp", ".gif")) or "image" in ml:
+            image_url = media_url
+            is_image_msg = True
+
+    # ── Force activity type overrides ─────────────────────────────
+    if activity_type == "voice_note":
+        is_voice_note = True
+        audio_url = media_url or audio_url
+    if activity_type == "voice_call":
+        audio_url = media_url or audio_url
+    if activity_type == "image_gen" or activity_type == "image_describe":
+        is_image_msg = True
+        image_url = media_url or image_url
+        
+    if role == "user" and clean_content == "User uploaded an image for description":
+        clean_content = ""
+
+    return MessageItem(
+        id=m.get("id"),
+        role=role,
+        content=clean_content,
+        bot_id=m.get("bot_id", bot_id),
+        activity_type=activity_type,
+        media_url=media_url,
+        created_at=m.get("created_at"),
+        is_voice_note=is_voice_note,
+        is_image_message=is_image_msg,
+        is_activity_start=is_activity_start,
+        is_activity_end=is_activity_end,
+        is_voice_call_start=is_voice_call_start,
+        is_voice_call_end=is_voice_call_end,
+        is_system_message=is_system,
+        audio_url=audio_url,
+        image_url=image_url,
+    )
+
+
+@router.get("/init/{bot_id}")
+async def init_chat_session(
+    bot_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Eagerly loads the session into Redis from Supabase.
+    Fetches chronological message history and parses media tags.
+    """
+    from services.redis_cache import load_session_from_supabase
+    from services.supabase_client import get_supabase_admin
+    
+    user_id = current_user["user_id"]
+    await load_session_from_supabase(user_id, bot_id)
+    
+    client = get_supabase_admin()
+    response = client.table("messages") \
+        .select("id, role, content, bot_id, created_at, activity_type, media_url") \
+        .eq("user_id", user_id) \
+        .eq("bot_id", bot_id) \
+        .order("created_at", desc=False) \
+        .execute()
+        
+    messages = response.data or []
+    parsed_history = [_parse_message_content(m, bot_id) for m in messages]
+        
+    return {
+        "status": "success",
+        "bot_id": bot_id,
+        "history": parsed_history
+    }
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # CHAT HISTORY (From Supabase)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -151,29 +268,21 @@ async def get_chat_history(
 ):
     """
     Get paginated chat history from Supabase.
-    This is for the chat history UI — not memory retrieval.
+    Standardized parsing shared with /init.
     """
     from services.supabase_client import get_message_history, get_message_count
 
     user_id = current_user["user_id"]
-
     offset = (request.page - 1) * request.page_size
-    messages = await get_message_history(
+    raw_messages = await get_message_history(
         user_id, request.bot_id, limit=request.page_size, offset=offset
     )
     total = await get_message_count(user_id, request.bot_id)
 
+    parsed_items = [_parse_message_content(m, request.bot_id) for m in raw_messages]
+
     return ChatHistoryResponse(
-        messages=[
-            MessageItem(
-                id=m.get("id"),
-                role=m.get("role", "user"),
-                content=m.get("content", ""),
-                bot_id=m.get("bot_id", request.bot_id),
-                created_at=m.get("created_at"),
-            )
-            for m in messages
-        ],
+        messages=parsed_items,
         total=total,
         page=request.page,
         page_size=request.page_size,
@@ -206,9 +315,9 @@ async def get_chat_overview_route(
             formatted_sessions.append({
                 "bot_id": s["bot_id"],
                 "last_message": {
-                    "text": s["text"],
-                    "role": s["role"],
-                    "timestamp": s["timestamp"]
+                    "text": s.get("text") or s.get("content") or "",
+                    "role": s.get("role") or "bot",
+                    "timestamp": s.get("timestamp") or s.get("created_at")
                 }
             })
 

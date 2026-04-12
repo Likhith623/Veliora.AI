@@ -173,6 +173,7 @@ async def end_session_and_sync(user_id: str, bot_id: str) -> dict:
                     embedding=embedding if embedding else None,
                     activity_type=row.get("activity_type", "chat"),
                     media_url=row.get("media_url"),
+                    created_at=row.get("timestamp"),
                 )
                 synced_count += 1
             except Exception as e:

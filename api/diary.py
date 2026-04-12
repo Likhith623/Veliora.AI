@@ -21,10 +21,11 @@ async def add_diary(
     Manually add a diary entry from the UI.
     Usually, diaries are generated via CRON, but this handles manual submissions.
     """
-    from services.supabase_client import get_supabase
+    from services.supabase_client import get_supabase_admin
+    import asyncio
     
     user_id = current_user["user_id"]
-    client = get_supabase()
+    client = get_supabase_admin()
     
     payload = {
         "user_id": user_id,
@@ -35,7 +36,9 @@ async def add_diary(
     }
     
     try:
-        response = client.table("diary").insert(payload).execute()
+        def _insert():
+            return client.table("diaries").insert(payload).execute()
+        response = await asyncio.to_thread(_insert)
         return {"success": True, "inserted": response.data}
     except Exception as e:
         logger.error(f"Error adding diary: {e}")

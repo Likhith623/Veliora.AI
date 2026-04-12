@@ -290,7 +290,7 @@ class RedisManager:
                 decoded[k] = v.decode() if isinstance(v, bytes) else v
             decoded["__redis_key__"] = key.decode() if isinstance(key, bytes) else key
             chats.append(decoded)
-        return chats
+        return sorted(chats, key=lambda x: x.get("timestamp", ""))
 
     def get_context_messages(self, user_id: str, bot_id: str, limit: int = 50) -> list[dict]:
         """

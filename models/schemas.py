@@ -109,7 +109,19 @@ class MessageItem(BaseModel):
     role: MessageRole
     content: str
     bot_id: str
+    activity_type: Optional[str] = None
+    media_url: Optional[str] = None
     created_at: Optional[datetime] = None
+    # ── Parsed flags (populated by /history endpoint) ──────────────────
+    is_voice_note: bool = False
+    is_image_message: bool = False
+    is_activity_start: bool = False
+    is_activity_end: bool = False
+    is_voice_call_start: bool = False
+    is_voice_call_end: bool = False
+    is_system_message: bool = False
+    audio_url: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class ChatHistoryResponse(BaseModel):
