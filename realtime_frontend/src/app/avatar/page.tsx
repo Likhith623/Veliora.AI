@@ -477,7 +477,7 @@ export default function AvatarPage() {
     if (!user) { toast.error("Please log in to save your avatar"); return; }
     setSaving(true);
     try {
-      await api.updateAvatar(user.id, config);
+      await api.updateAvatar(user.id, { avatar_config: config });
       localStorage.setItem("familia_avatar", JSON.stringify(config));
       setSaved(true);
       toast.success("Avatar saved! ✨");

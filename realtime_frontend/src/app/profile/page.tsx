@@ -9,7 +9,7 @@ import {
   Sparkles, Users, Award, Zap, Loader2, X, Plus, Trash2, Bell,
   BellOff, Eye, EyeOff, Lock, Volume2, VolumeX, Check, Moon, Sun
 } from "lucide-react";
-import { LEVEL_NAMES } from "@/types";
+import { LEVEL_NAMES, type XPInfo, type PrivacySettings } from "@/types";
 import { useAuth } from "@/lib/AuthContext";
 import { useTheme } from "@/lib/ThemeContext";
 import { api } from "@/lib/api";
@@ -45,7 +45,7 @@ const AVAILABLE_LANGUAGES = [
 type SettingsPanel = null | "language" | "privacy" | "notifications" | "translation";
 
 export default function ProfilePage() {
-  const { user, relationships, logout, refreshUser } = useAuth();
+  const { user, relationships, logout, refreshUser, xp, refreshXP } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [achievements, setAchievements] = useState<any[]>(DEFAULT_ACHIEVEMENTS);
   const [isLoading, setIsLoading] = useState(true);
@@ -57,7 +57,7 @@ export default function ProfilePage() {
   const [langSearch, setLangSearch] = useState("");
   const [savingLang, setSavingLang] = useState(false);
 
-  // Privacy settings (local state, synced to profile)
+  // Privacy settings — synced to API
   const [privacySettings, setPrivacySettings] = useState({
     showOnlineStatus: true,
     showLocation: true,
@@ -87,14 +87,32 @@ export default function ProfilePage() {
       if (!user?.id) { setIsLoading(false); return; }
       try {
         await refreshUser();
-        setUserLanguages(user.languages || []);
-        // Load saved settings from localStorage
-        const savedPrivacy = localStorage.getItem("familia_privacy");
-        if (savedPrivacy) setPrivacySettings(JSON.parse(savedPrivacy));
+        setUserLanguages((user.languages || []).map((l: any) => typeof l === 'string' ? l : l.language_name || l.language_code));
+
+        // Load privacy from API (GET /privacy/settings)
+        try {
+          const privData = await api.getPrivacySettings();
+          if (privData) {
+            setPrivacySettings({
+              showOnlineStatus: privData.show_online_status ?? true,
+              showLocation: privData.show_last_seen ?? true,
+              allowMatching: true,
+              profileVisibility: "public",
+            });
+          }
+        } catch (e) {
+          // Fallback to localStorage
+          const savedPrivacy = localStorage.getItem("familia_privacy");
+          if (savedPrivacy) setPrivacySettings(JSON.parse(savedPrivacy));
+        }
+
+        // Load notification settings from localStorage (no api endpoint)
         const savedNotif = localStorage.getItem("familia_notif_settings");
         if (savedNotif) setNotifSettings(JSON.parse(savedNotif));
         const savedTranslation = localStorage.getItem("familia_translation");
         if (savedTranslation) setTranslationSettings(JSON.parse(savedTranslation));
+
+        await refreshXP();
       } catch (err) {
         console.error("Failed to load profile:", err);
       } finally {
@@ -105,7 +123,7 @@ export default function ProfilePage() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (user?.languages) setUserLanguages(user.languages);
+    if (user?.languages) setUserLanguages(user.languages.map((l: any) => typeof l === 'string' ? l : l.language_name || l.language_code));
   }, [user?.languages]);
 
   const handleLogout = () => {
@@ -142,10 +160,18 @@ export default function ProfilePage() {
     }
   };
 
-  const savePrivacySettings = (settings: typeof privacySettings) => {
+  const savePrivacySettings = async (settings: typeof privacySettings) => {
     setPrivacySettings(settings);
     localStorage.setItem("familia_privacy", JSON.stringify(settings));
-    toast.success("Privacy settings saved");
+    try {
+      await api.updatePrivacySettings({
+        show_online_status: settings.showOnlineStatus,
+        show_last_seen: settings.showLocation,
+      });
+      toast.success("Privacy settings saved");
+    } catch (e) {
+      toast.success("Privacy settings saved locally");
+    }
   };
 
   const saveNotifSettings = (settings: typeof notifSettings) => {
@@ -270,9 +296,9 @@ export default function ProfilePage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           {[
             { label: "Care Score", value: user.care_score ?? 0, icon: <Heart className="w-4 h-4" />, color: "text-heart-400", bg: "bg-heart-500/10", border: "border-heart-500/10" },
-            { label: "Bond Points", value: user.total_bond_points ?? 0, icon: <Zap className="w-4 h-4" />, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/10" },
-            { label: "Reliability", value: `${user.reliability_score ?? 100}%`, icon: <Shield className="w-4 h-4" />, color: "text-green-400", bg: "bg-green-500/10", border: "border-green-500/10" },
-            { label: "Best Streak", value: `${relationships.reduce((max, r) => Math.max(max, r.streak_days || 0), 0)} days`, icon: <Flame className="w-4 h-4" />, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/10" },
+            { label: "Total XP", value: xp?.total_xp ?? user.total_xp ?? 0, icon: <Zap className="w-4 h-4" />, color: "text-amber-400", bg: "bg-amber-500/10", border: "border-amber-500/10" },
+            { label: "Level", value: `${xp?.level ?? user.level ?? 1}`, icon: <Star className="w-4 h-4" />, color: "text-purple-400", bg: "bg-purple-500/10", border: "border-purple-500/10" },
+            { label: "Best Streak", value: `${xp?.streak_days || relationships.reduce((max, r) => Math.max(max, r.streak_days || 0), 0)} days`, icon: <Flame className="w-4 h-4" />, color: "text-orange-400", bg: "bg-orange-500/10", border: "border-orange-500/10" },
           ].map((stat, i) => (
             <motion.div key={stat.label} className={`glass-card !p-4 text-center border ${stat.border}`} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.08 }} whileHover={{ y: -2, transition: { duration: 0.2 } }}>
               <div className={`w-10 h-10 mx-auto mb-2 rounded-xl ${stat.bg} flex items-center justify-center ${stat.color}`}>{stat.icon}</div>

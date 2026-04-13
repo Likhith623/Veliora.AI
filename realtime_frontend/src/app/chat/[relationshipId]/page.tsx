@@ -2,24 +2,43 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import {
   ArrowLeft, Send, Heart, Smile, Gamepad2, Trophy, Info,
-  Sparkles, Flame, Gift, Loader2, X, CheckCheck
+  Sparkles, Flame, Gift, Loader2, X, CheckCheck, Phone, Video,
+  Image as ImageIcon, Mic, MoreHorizontal, Reply, Forward, Trash2,
+  BarChart3
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { createChatWS, type ManagedWebSocket } from '@/lib/websocket';
 import { useAuth } from '@/lib/AuthContext';
-import { ROLE_EMOJIS, LEVEL_NAMES, LEVEL_FEATURES, Message, Relationship, Profile } from '@/types';
+import { ROLE_EMOJIS, LEVEL_NAMES, type Message } from '@/types';
 import toast from 'react-hot-toast';
 
 interface ChatData {
-  relationship: Relationship;
-  partner: Profile;
-  my_role: string;
-  partner_role: string;
-  features_unlocked: Record<string, boolean>;
+  id: string;
+  user_a_id: string;
+  user_b_id: string;
+  status: string;
+  level: number;
+  level_label: string;
+  shared_xp: number;
+  created_at: string;
+  // Enriched
+  partner?: any;
+  my_role?: string;
+  partner_role?: string;
+  relationship?: any;
+  care_score?: number;
+  bond_points?: number;
+  streak_days?: number;
+  messages_exchanged?: number;
+  matched_at?: string;
+  features_unlocked?: Record<string, boolean>;
 }
+
+const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
 
 export default function ChatPage() {
   const params = useParams();
@@ -33,23 +52,32 @@ export default function ChatPage() {
   const [chatData, setChatData] = useState<ChatData | null>(null);
   const [showCulturalNote, setShowCulturalNote] = useState<string | null>(null);
   const [showInfo, setShowInfo] = useState(false);
+  const [showReactions, setShowReactions] = useState<string | null>(null);
+  const [showMessageMenu, setShowMessageMenu] = useState<string | null>(null);
+  const [showGiftXP, setShowGiftXP] = useState(false);
+  const [giftAmount, setGiftAmount] = useState(50);
+  const [giftMessage, setGiftMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const wsRef = useRef<ManagedWebSocket | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // ── Load chat data ──
   useEffect(() => {
     const loadChat = async () => {
       try {
         setIsLoading(true);
         const [relData, msgData] = await Promise.all([
           api.getRelationship(relationshipId),
-          api.getMessages(relationshipId, 50)
+          api.getMessages(relationshipId, 50),
         ]);
-        setChatData(relData);
-        setMessages(msgData.messages || []);
+        setChatData(relData.relationship || relData);
+        const msgs = Array.isArray(msgData) ? msgData : msgData.messages || [];
+        setMessages(msgs);
       } catch (err: any) {
         console.error('Failed to load chat:', err);
         toast.error(err.message || 'Failed to load chat');
@@ -60,36 +88,65 @@ export default function ChatPage() {
     if (relationshipId && user) loadChat();
   }, [relationshipId, user]);
 
+  // ── WebSocket connection ──
   useEffect(() => {
-    if (!relationshipId || !user || isLoading) return;
-    const poll = async () => {
-      try {
-        const msgData = await api.getMessages(relationshipId, 50);
-        const fresh = msgData.messages || [];
+    if (!relationshipId || !user?.id || isLoading) return;
+
+    const ws = createChatWS(relationshipId, user.id, {
+      onNewMessage: (message) => {
         setMessages(prev => {
-          if (fresh.length !== prev.length ||
-              (fresh.length > 0 && prev.length > 0 &&
-               fresh[fresh.length - 1]?.id !== prev[prev.length - 1]?.id)) {
-            return fresh;
-          }
-          return prev;
+          if (prev.some(m => m.id === message.id)) return prev;
+          return [...prev, message];
         });
-      } catch { /* silent */ }
-    };
-    const id = setInterval(poll, 3000);
-    return () => clearInterval(id);
-  }, [relationshipId, user, isLoading]);
+        scrollToBottom();
+      },
+      onTyping: () => setIsTyping(true),
+      onStoppedTyping: () => setIsTyping(false),
+      onReadReceipt: (messageId) => {
+        setMessages(prev =>
+          prev.map(m => m.id === messageId ? { ...m, is_read: true } : m)
+        );
+      },
+      onReaction: (messageId, emoji) => {
+        setMessages(prev =>
+          prev.map(m => {
+            if (m.id !== messageId) return m;
+            const reactions = { ...(m.reactions || {}) };
+            reactions[emoji] = (reactions[emoji] || 0) + 1;
+            return { ...m, reactions };
+          })
+        );
+      },
+      onOpen: () => console.log('[Chat WS] Connected'),
+      onClose: () => console.log('[Chat WS] Disconnected'),
+    });
+
+    wsRef.current = ws;
+    return () => { ws.close(); wsRef.current = null; };
+  }, [relationshipId, user?.id, isLoading]);
 
   useEffect(() => { scrollToBottom(); }, [messages]);
   useEffect(() => { if (!isLoading) inputRef.current?.focus(); }, [isLoading]);
 
-  // (translation feature removed from chat page)
+  // ── Send typing indicator ──
+  const handleInputChange = useCallback((text: string) => {
+    setInput(text);
+    if (text.trim() && wsRef.current) {
+      wsRef.current.send({ type: 'typing' });
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        wsRef.current?.send({ type: 'stopped_typing' });
+      }, 2000);
+    }
+  }, []);
 
+  // ── Send message ──
   const sendMessage = async () => {
     if (!input.trim() || isSending || !user) return;
     const text = input.trim();
     setInput('');
     setIsSending(true);
+    wsRef.current?.send({ type: 'stopped_typing' });
 
     const temp: Message = {
       id: `temp-${Date.now()}`,
@@ -100,6 +157,7 @@ export default function ChatPage() {
       original_language: 'en',
       has_idiom: false,
       is_read: false,
+      is_deleted: false,
       created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, temp]);
@@ -110,7 +168,8 @@ export default function ChatPage() {
         original_text: text,
         content_type: 'text',
       });
-      setMessages(prev => prev.map(m => m.id === temp.id ? res.message : m));
+      const newMsg = res.message || res;
+      setMessages(prev => prev.map(m => m.id === temp.id ? newMsg : m));
     } catch (err: any) {
       toast.error(err.message || 'Failed to send');
       setMessages(prev => prev.filter(m => m.id !== temp.id));
@@ -121,7 +180,77 @@ export default function ChatPage() {
     }
   };
 
-  // (translation functions removed)
+  // ── Upload media ──
+  const handleMediaUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    const mediaType = file.type.startsWith('image/') ? 'image' as const :
+                      file.type.startsWith('video/') ? 'video' as const : 'voice' as const;
+
+    try {
+      toast.loading('Uploading...', { id: 'upload' });
+      const uploadRes = await api.uploadMedia(file, relationshipId, mediaType);
+      await api.sendMessage({
+        relationship_id: relationshipId,
+        original_text: '',
+        content_type: mediaType,
+        ...(mediaType === 'image' ? { image_url: uploadRes.url } :
+            mediaType === 'video' ? { video_url: uploadRes.url } :
+            { voice_url: uploadRes.url }),
+      });
+      toast.success('Sent!', { id: 'upload' });
+    } catch (err: any) {
+      toast.error(err.message || 'Upload failed', { id: 'upload' });
+    }
+  };
+
+  // ── React to message ──
+  const handleReaction = async (messageId: string, emoji: string) => {
+    setShowReactions(null);
+    try {
+      await api.reactToMessage(messageId, emoji);
+      setMessages(prev =>
+        prev.map(m => {
+          if (m.id !== messageId) return m;
+          const reactions = { ...(m.reactions || {}) };
+          reactions[emoji] = (reactions[emoji] || 0) + 1;
+          return { ...m, reactions };
+        })
+      );
+    } catch (err: any) {
+      toast.error('Failed to react');
+    }
+  };
+
+  // ── Delete message ──
+  const handleDeleteMessage = async (messageId: string) => {
+    setShowMessageMenu(null);
+    try {
+      await api.deleteMessage(messageId);
+      setMessages(prev => prev.map(m => m.id === messageId ? { ...m, is_deleted: true } : m));
+    } catch (err: any) {
+      toast.error('Failed to delete');
+    }
+  };
+
+  // ── Gift XP ──
+  const handleGiftXP = async () => {
+    if (!giftAmount || giftAmount < 1) return;
+    try {
+      await api.giftXPInChat({
+        relationship_id: relationshipId,
+        amount: giftAmount,
+        message: giftMessage || undefined,
+      });
+      toast.success(`🎁 Gifted ${giftAmount} XP!`);
+      setShowGiftXP(false);
+      setGiftAmount(50);
+      setGiftMessage('');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to gift XP');
+    }
+  };
 
   const fmtTime = (s: string) => new Date(s).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const fmtDate = (s: string) => {
@@ -160,7 +289,10 @@ export default function ChatPage() {
     );
   }
 
-  const { relationship, partner, my_role, partner_role } = chatData;
+  const partner = chatData.partner || {};
+  const my_role = chatData.my_role || '';
+  const partner_role = chatData.partner_role || '';
+  const level = chatData.level || 1;
 
   const isConsecutive = (i: number) => {
     if (i === 0) return false;
@@ -185,7 +317,7 @@ export default function ChatPage() {
                 {ROLE_EMOJIS[partner_role] || '\u{1F91D}'}
               </div>
               <div className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[var(--bg-primary)] ${
-                partner?.status === 'active' ? 'bg-green-500' : 'bg-gray-500'
+                partner?.status === 'online' ? 'bg-green-500' : 'bg-gray-500'
               }`} />
             </div>
 
@@ -196,26 +328,42 @@ export default function ChatPage() {
               </div>
               <div className="text-[11px] text-muted flex items-center gap-1.5">
                 <span className="flex items-center gap-1">
-                  <span className={`w-1.5 h-1.5 rounded-full ${partner?.status === 'active' ? 'bg-green-400' : 'bg-gray-400'}`} />
-                  {partner?.status === 'active' ? 'Online' : 'Offline'}
+                  <span className={`w-1.5 h-1.5 rounded-full ${partner?.status === 'online' ? 'bg-green-400' : 'bg-gray-400'}`} />
+                  {partner?.status === 'online' ? 'Online' : 'Offline'}
                 </span>
-                <span className="opacity-40">&middot;</span>
-                <span>Your {partner_role}</span>
+                {partner_role && (<><span className="opacity-40">&middot;</span><span>Your {partner_role}</span></>)}
                 <span className="opacity-40">&middot;</span>
                 <span className="badge-level !text-[9px] !px-1.5 !py-0">
-                  Lv.{relationship.level} {LEVEL_NAMES[relationship.level]}
+                  Lv.{level} {LEVEL_NAMES[level] || ''}
                 </span>
               </div>
             </div>
           </div>
 
-          <motion.button
-            className="p-2 rounded-lg hover:bg-white/5 transition text-muted"
-            whileTap={{ scale: 0.9 }}
-            onClick={() => setShowInfo(!showInfo)}
-          >
-            {showInfo ? <X className="w-5 h-5" /> : <Info className="w-5 h-5" />}
-          </motion.button>
+          {/* Call buttons (Level 3+ for audio, 4+ for video) */}
+          <div className="flex items-center gap-1">
+            {level >= 3 && (
+              <Link href={`/calls?rel=${relationshipId}&type=audio`}>
+                <motion.button className="p-2 rounded-lg hover:bg-white/5 transition text-green-400" whileTap={{ scale: 0.9 }}>
+                  <Phone className="w-4.5 h-4.5" />
+                </motion.button>
+              </Link>
+            )}
+            {level >= 4 && (
+              <Link href={`/calls?rel=${relationshipId}&type=video`}>
+                <motion.button className="p-2 rounded-lg hover:bg-white/5 transition text-blue-400" whileTap={{ scale: 0.9 }}>
+                  <Video className="w-4.5 h-4.5" />
+                </motion.button>
+              </Link>
+            )}
+            <motion.button
+              className="p-2 rounded-lg hover:bg-white/5 transition text-muted"
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setShowInfo(!showInfo)}
+            >
+              {showInfo ? <X className="w-5 h-5" /> : <Info className="w-5 h-5" />}
+            </motion.button>
+          </div>
 
           <AnimatePresence>
             {showInfo && (
@@ -227,21 +375,21 @@ export default function ChatPage() {
               >
                 <div className="grid grid-cols-4 gap-3 px-4 py-3 text-center">
                   <div>
-                    <div className="text-base font-bold text-familia-400">{relationship.care_score || 0}</div>
+                    <div className="text-base font-bold text-familia-400">{chatData.care_score || 0}</div>
                     <div className="text-[9px] text-muted">Care</div>
                   </div>
                   <div>
-                    <div className="text-base font-bold text-bond-400">{relationship.bond_points || 0}</div>
-                    <div className="text-[9px] text-muted">Bond</div>
+                    <div className="text-base font-bold text-bond-400">{chatData.shared_xp || chatData.bond_points || 0}</div>
+                    <div className="text-[9px] text-muted">XP</div>
                   </div>
                   <div>
                     <div className="text-base font-bold text-orange-400 flex items-center justify-center gap-1">
-                      <Flame className="w-3.5 h-3.5" /> {relationship.streak_days || 0}
+                      <Flame className="w-3.5 h-3.5" /> {chatData.streak_days || 0}
                     </div>
                     <div className="text-[9px] text-muted">Streak</div>
                   </div>
                   <div>
-                    <div className="text-base font-bold text-muted">{relationship.messages_exchanged || messages.length}</div>
+                    <div className="text-base font-bold text-muted">{chatData.messages_exchanged || messages.length}</div>
                     <div className="text-[9px] text-muted">Msgs</div>
                   </div>
                 </div>
@@ -252,11 +400,11 @@ export default function ChatPage() {
 
         {/* ── Messages ── */}
         <div className="chat-messages-area">
-          {relationship.matched_at && (
+          {chatData.matched_at && (
             <div className="text-center py-3">
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] text-[10px] text-muted">
                 <Heart className="w-3 h-3 text-heart-400" />
-                Bond started {fmtDate(relationship.matched_at)} &middot; {ROLE_EMOJIS[my_role]} {my_role} & {ROLE_EMOJIS[partner_role]} {partner_role}
+                Bond started {fmtDate(chatData.matched_at || chatData.created_at)}
               </span>
             </div>
           )}
@@ -272,6 +420,16 @@ export default function ChatPage() {
           )}
 
           {messages.map((msg, i) => {
+            if (msg.is_deleted) {
+              return (
+                <div key={msg.id} className="flex justify-center my-2">
+                  <span className="text-[11px] text-muted italic px-3 py-1 bg-[var(--bg-card)] rounded-full border border-[var(--border-color)]">
+                    🚫 Message deleted
+                  </span>
+                </div>
+              );
+            }
+
             const isMe = msg.sender_id === user?.id;
             const consecutive = isConsecutive(i);
             const prevMsg = i > 0 ? messages[i - 1] : null;
@@ -287,14 +445,33 @@ export default function ChatPage() {
                   </div>
                 )}
 
-                <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} ${consecutive ? 'mt-[3px]' : 'mt-3'}`}>
+                <div className={`flex ${isMe ? 'justify-end' : 'justify-start'} ${consecutive ? 'mt-[3px]' : 'mt-3'} group relative`}>
                   <div className="max-w-[80%]">
-                    <div className={`relative px-3 py-[7px] ${
-                      isMe
-                        ? 'message-sent rounded-2xl rounded-br-[5px]'
-                        : 'message-received rounded-2xl rounded-bl-[5px]'
-                    }`}>
-                      <p className="text-[13.5px] leading-[1.4] pr-14">{msg.original_text}</p>
+                    <div
+                      className={`relative px-3 py-[7px] ${
+                        isMe
+                          ? 'message-sent rounded-2xl rounded-br-[5px]'
+                          : 'message-received rounded-2xl rounded-bl-[5px]'
+                      }`}
+                      onDoubleClick={() => setShowReactions(showReactions === msg.id ? null : msg.id)}
+                    >
+                      {/* Media content */}
+                      {msg.content_type === 'image' && msg.image_url && (
+                        <img src={msg.image_url} alt="Shared image" className="rounded-xl max-w-full mb-1" />
+                      )}
+                      {msg.content_type === 'voice' && msg.voice_url && (
+                        <audio controls src={msg.voice_url} className="max-w-full mb-1" />
+                      )}
+
+                      {/* Text */}
+                      {msg.original_text && (
+                        <p className="text-[13.5px] leading-[1.4] pr-14">{msg.original_text}</p>
+                      )}
+
+                      {/* Translation preview */}
+                      {msg.translated_text && msg.translated_text !== msg.original_text && (
+                        <p className="text-[12px] leading-[1.3] text-muted mt-1 italic">{msg.translated_text}</p>
+                      )}
 
                       <span className={`absolute bottom-[5px] right-2.5 flex items-center gap-0.5 text-[10px] leading-none ${
                         isMe ? 'text-white/35' : 'text-[var(--text-muted)]'
@@ -305,7 +482,13 @@ export default function ChatPage() {
                         )}
                       </span>
 
-                                {/* translation removed from message UI */}
+                      {/* Message action button */}
+                      <button
+                        onClick={() => setShowMessageMenu(showMessageMenu === msg.id ? null : msg.id)}
+                        className="absolute -top-1 right-0 opacity-0 group-hover:opacity-100 transition p-1 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] shadow-sm"
+                      >
+                        <MoreHorizontal className="w-3 h-3 text-muted" />
+                      </button>
 
                       {msg.cultural_note && (
                         <button
@@ -317,6 +500,69 @@ export default function ChatPage() {
                       )}
                     </div>
 
+                    {/* Reactions display */}
+                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                      <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                        {Object.entries(msg.reactions).map(([emoji, count]) => (
+                          <span key={emoji} className="px-1.5 py-0.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] text-[10px]">
+                            {emoji} {count as number > 1 ? count : ''}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Reaction picker */}
+                    <AnimatePresence>
+                      {showReactions === msg.id && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.8, y: 5 }}
+                          animate={{ opacity: 1, scale: 1, y: 0 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className={`flex gap-1 mt-1 p-1.5 rounded-full bg-[var(--bg-card)] border border-[var(--border-color)] shadow-lg w-fit ${isMe ? 'ml-auto' : ''}`}
+                        >
+                          {REACTION_EMOJIS.map(emoji => (
+                            <button
+                              key={emoji}
+                              onClick={() => handleReaction(msg.id, emoji)}
+                              className="w-7 h-7 rounded-full hover:bg-white/10 flex items-center justify-center text-sm transition hover:scale-125"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Message context menu */}
+                    <AnimatePresence>
+                      {showMessageMenu === msg.id && (
+                        <motion.div
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.9 }}
+                          className={`flex gap-1 mt-1 p-1 rounded-xl bg-[var(--bg-card)] border border-[var(--border-color)] shadow-lg w-fit ${isMe ? 'ml-auto' : ''}`}
+                        >
+                          <button
+                            onClick={() => { setShowReactions(msg.id); setShowMessageMenu(null); }}
+                            className="p-1.5 rounded-lg hover:bg-white/5 text-muted hover:text-amber-400 transition"
+                            title="React"
+                          >
+                            <Smile className="w-3.5 h-3.5" />
+                          </button>
+                          {isMe && (
+                            <button
+                              onClick={() => handleDeleteMessage(msg.id)}
+                              className="p-1.5 rounded-lg hover:bg-red-500/10 text-muted hover:text-red-400 transition"
+                              title="Delete"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+
+                    {/* Cultural note */}
                     <AnimatePresence>
                       {showCulturalNote === msg.id && msg.cultural_note && (
                         <motion.div
@@ -362,6 +608,51 @@ export default function ChatPage() {
           <div ref={messagesEndRef} className="h-1" />
         </div>
 
+        {/* ── Gift XP Modal ── */}
+        <AnimatePresence>
+          {showGiftXP && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="absolute bottom-28 left-4 right-4 glass-card z-30 !p-4"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <Gift className="w-4 h-4 text-heart-400" /> Gift XP
+                </h3>
+                <button onClick={() => setShowGiftXP(false)} className="p-1 rounded hover:bg-white/5">
+                  <X className="w-4 h-4 text-muted" />
+                </button>
+              </div>
+              <div className="flex gap-2 mb-3">
+                {[25, 50, 100, 200].map(amt => (
+                  <button
+                    key={amt}
+                    onClick={() => setGiftAmount(amt)}
+                    className={`flex-1 py-2 rounded-xl text-sm font-medium transition ${
+                      giftAmount === amt
+                        ? 'bg-gradient-to-br from-familia-500 to-heart-500 text-white'
+                        : 'bg-[var(--bg-card)] border border-[var(--border-color)] text-muted hover:text-[var(--text-primary)]'
+                    }`}
+                  >
+                    {amt}
+                  </button>
+                ))}
+              </div>
+              <input
+                value={giftMessage}
+                onChange={(e) => setGiftMessage(e.target.value)}
+                placeholder="Add a message (optional)..."
+                className="w-full px-3 py-2 rounded-xl bg-[var(--bg-primary)] border border-[var(--border-color)] text-sm mb-3 outline-none focus:border-familia-500/40"
+              />
+              <button onClick={handleGiftXP} className="btn-primary w-full text-sm">
+                🎁 Gift {giftAmount} XP
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* ── Footer ── */}
         <footer className="chat-footer">
           <div className="chat-actions-bar">
@@ -370,21 +661,38 @@ export default function ChatPage() {
                 <Trophy className="w-3 h-3" /> Challenge
               </button>
             </Link>
-            <Link href="/games">
+            <Link href={`/games?rel=${relationshipId}`}>
               <button className="chat-action-pill bg-purple-500/10 text-purple-400 hover:bg-purple-500/20">
                 <Gamepad2 className="w-3 h-3" /> Game
               </button>
             </Link>
             <button
               className="chat-action-pill bg-heart-500/10 text-heart-400 hover:bg-heart-500/20"
-              onClick={() => toast('Coming soon!', { icon: '\u{1F381}' })}
+              onClick={() => setShowGiftXP(!showGiftXP)}
             >
-              <Gift className="w-3 h-3" /> Gift
+              <Gift className="w-3 h-3" /> Gift XP
             </button>
-            {/* translation feature removed from actions */}
+            {level >= 3 && (
+              <Link href={`/live-games?rel=${relationshipId}`}>
+                <button className="chat-action-pill bg-green-500/10 text-green-400 hover:bg-green-500/20">
+                  <Gamepad2 className="w-3 h-3" /> Live Game
+                </button>
+              </Link>
+            )}
           </div>
 
           <div className="chat-input-bar">
+            {/* Media upload */}
+            <label className="p-1.5 text-muted hover:text-[var(--text-primary)] transition cursor-pointer">
+              <ImageIcon className="w-5 h-5" />
+              <input
+                type="file"
+                accept="image/*,video/*,audio/*"
+                className="hidden"
+                onChange={handleMediaUpload}
+              />
+            </label>
+
             <motion.button className="p-1.5 text-muted hover:text-[var(--text-primary)] transition" whileTap={{ scale: 0.9 }}>
               <Smile className="w-5 h-5" />
             </motion.button>
@@ -393,13 +701,12 @@ export default function ChatPage() {
               <input
                 ref={inputRef}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => handleInputChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
                 placeholder="Type a message..."
                 className="chat-text-input"
                 disabled={isSending}
               />
-              {/* translation indicator removed */}
             </div>
 
             <motion.button

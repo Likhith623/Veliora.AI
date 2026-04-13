@@ -227,11 +227,10 @@ export default function ContestsPage() {
                 {MOCK_QUESTIONS.map((_, i) => (
                   <motion.div
                     key={i}
-                    className={`flex-1 h-2 rounded-full transition-all ${
-                      i < currentQ ? 'bg-gradient-to-r from-familia-500 to-bond-500' :
-                      i === currentQ ? 'bg-familia-400 shadow-[0_0_8px_rgba(168,85,247,0.5)]' :
-                      'bg-[var(--border-color)]'
-                    }`}
+                    className={`flex-1 h-2 rounded-full transition-all ${i < currentQ ? 'bg-gradient-to-r from-familia-500 to-bond-500' :
+                        i === currentQ ? 'bg-familia-400 shadow-[0_0_8px_rgba(168,85,247,0.5)]' :
+                          'bg-[var(--border-color)]'
+                      }`}
                     initial={i <= currentQ ? { scaleX: 0 } : {}}
                     animate={{ scaleX: 1 }}
                     transition={{ duration: 0.3, delay: i * 0.05 }}
@@ -282,12 +281,11 @@ export default function ContestsPage() {
                         key={i}
                         onClick={() => handleAnswer(i)}
                         disabled={showResult}
-                        className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 ${
-                          showCorrect ? 'border-green-500/60 bg-green-500/10 shadow-[0_0_20px_-5px_rgba(34,197,94,0.3)]' :
-                          showWrong ? 'border-red-500/60 bg-red-500/10 shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)]' :
-                          isSelected ? 'border-familia-500/50 bg-familia-500/10' :
-                          'border-[var(--border-color)] bg-[var(--bg-card)] hover:border-familia-500/30 hover:bg-[var(--bg-card-hover)] hover:shadow-lg hover:shadow-familia-500/5'
-                        }`}
+                        className={`w-full text-left p-4 rounded-xl border-2 transition-all duration-200 ${showCorrect ? 'border-green-500/60 bg-green-500/10 shadow-[0_0_20px_-5px_rgba(34,197,94,0.3)]' :
+                            showWrong ? 'border-red-500/60 bg-red-500/10 shadow-[0_0_20px_-5px_rgba(239,68,68,0.3)]' :
+                              isSelected ? 'border-familia-500/50 bg-familia-500/10' :
+                                'border-[var(--border-color)] bg-[var(--bg-card)] hover:border-familia-500/30 hover:bg-[var(--bg-card-hover)] hover:shadow-lg hover:shadow-familia-500/5'
+                          }`}
                         whileHover={!showResult ? { scale: 1.02, x: 4 } : {}}
                         whileTap={!showResult ? { scale: 0.98 } : {}}
                         initial={{ opacity: 0, x: -10 }}
@@ -295,11 +293,10 @@ export default function ContestsPage() {
                         transition={{ delay: i * 0.08 }}
                       >
                         <div className="flex items-center gap-3">
-                          <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-colors ${
-                            showCorrect ? 'bg-green-500/20 text-green-400' :
-                            showWrong ? 'bg-red-500/20 text-red-400' :
-                            'bg-[var(--bg-card-hover)] text-muted'
-                          }`}>
+                          <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold transition-colors ${showCorrect ? 'bg-green-500/20 text-green-400' :
+                              showWrong ? 'bg-red-500/20 text-red-400' :
+                                'bg-[var(--bg-card-hover)] text-muted'
+                            }`}>
                             {String.fromCharCode(65 + i)}
                           </span>
                           <span className="text-sm font-medium">{opt}</span>

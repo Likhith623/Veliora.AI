@@ -140,10 +140,10 @@ export default function ChatListPage() {
                       {/* Avatar */}
                       <div className="relative">
                         <div className="w-14 h-14 rounded-full bg-gradient-to-br from-familia-500 to-bond-500 flex items-center justify-center text-2xl">
-                          {ROLE_EMOJIS[rel.partner_role] || '🤝'}
+                          {ROLE_EMOJIS[rel.partner_role || ''] || '🤝'}
                         </div>
                         <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[var(--bg-primary)] ${
-                          rel.partner?.status === 'active' ? 'bg-green-500' : 
+                          rel.partner?.status === 'online' ? 'bg-green-500' : 
                           rel.partner?.status === 'busy' ? 'bg-yellow-500' : 'bg-gray-500'
                         }`} />
                       </div>
@@ -159,7 +159,7 @@ export default function ChatListPage() {
                           </div>
                           <span className="text-xs text-muted flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            {formatTime(rel.last_interaction_at)}
+                            {formatTime(rel.last_interaction_at || '')}
                           </span>
                         </div>
                         <div className="flex items-center justify-between">
@@ -169,7 +169,7 @@ export default function ChatListPage() {
                             <span>{rel.partner?.country}</span>
                           </div>
                           <div className="flex items-center gap-2">
-                            {rel.streak_days > 0 && (
+                            {(rel.streak_days || 0) > 0 && (
                               <span className="text-xs flex items-center gap-1 text-orange-400">
                                 <Flame className="w-3 h-3" />
                                 {rel.streak_days}

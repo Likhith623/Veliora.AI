@@ -107,21 +107,18 @@ export default function MatchingPage() {
 
   useEffect(() => { loadRoleCounts(); }, []);
 
-  // Load user's offered roles from Supabase when authenticated
+  // Load user's offered roles from profile matching_preferences
   useEffect(() => {
-    const load = async () => {
-      if (!user) return;
-      try {
-        setOfferedLoading(true);
-        const roles = await api.getMyOfferedRoles(user.id);
-        setOfferedRoles(Array.isArray(roles) ? roles : []);
-      } catch (e) {
-        console.error('Failed to load offered roles', e);
-      } finally {
-        setOfferedLoading(false);
+    if (!user) return;
+    try {
+      const prefs = user.matching_preferences;
+      if (prefs?.preferred_roles) {
+        setOfferedRoles(prefs.preferred_roles);
       }
-    };
-    load();
+      if (prefs?.offering_role) setMyRole(prefs.offering_role);
+    } catch (e) {
+      console.error('Failed to load offered roles', e);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -132,9 +129,15 @@ export default function MatchingPage() {
 
   const loadRoleCounts = async () => {
     try {
-      const result = await api.browseAllRoles();
-      setRoleCounts(result.role_counts || {});
-      setTotalProfiles(result.total_profiles || 0);
+      const result = await api.browseAll();
+      const profiles = result.profiles || [];
+      const counts: Record<string, number> = {};
+      profiles.forEach((p: any) => {
+        const role = p.offering_role || p.matching_preferences?.offering_role;
+        if (role) counts[role] = (counts[role] || 0) + 1;
+      });
+      setRoleCounts(counts);
+      setTotalProfiles(profiles.length);
     } catch (err) { console.error('Failed to load role counts:', err); }
   };
 
@@ -148,7 +151,6 @@ export default function MatchingPage() {
     let attempts = 0;
 
     const callApi = async () => {
-      if (auth) return await api.browseByRoleAuth(roleId);
       return await api.browseByRole(roleId);
     };
 
@@ -359,12 +361,15 @@ export default function MatchingPage() {
                       if (!user) { toast.error('Please log in'); return; }
                       try {
                         setOfferedLoading(true);
-                        await api.setMyOfferedRoles(user.id, offeredRoles);
+                        await api.updateMyProfile({
+                          matching_preferences: {
+                            offering_role: offeredRoles[0] || '',
+                            preferred_roles: offeredRoles,
+                            seeking_role: user.matching_preferences?.seeking_role || '',
+                          },
+                        });
                         toast.success('Saved offered roles');
-                        // Refresh counts, reload roles from backend and refresh local profile
                         await loadRoleCounts();
-                        const roles = await api.getMyOfferedRoles(user.id);
-                        setOfferedRoles(Array.isArray(roles) ? roles : []);
                         try { await refreshUser(); } catch (e) { /* ignore */ }
                       } catch (e: any) {
                         console.error(e);
@@ -384,17 +389,21 @@ export default function MatchingPage() {
                           <div className="font-medium text-sm">{role?.label || r}</div>
                           <button onClick={async () => {
                             if (!user) { toast.error('Please log in'); return; }
-                            // Optimistic UI update
                             const next = offeredRoles.filter(x => x !== r);
                             setOfferedRoles(next);
                             setOfferedLoading(true);
                             try {
-                              await api.setMyOfferedRoles(user.id, next);
+                              await api.updateMyProfile({
+                                matching_preferences: {
+                                  offering_role: next[0] || '',
+                                  preferred_roles: next,
+                                  seeking_role: user.matching_preferences?.seeking_role || '',
+                                },
+                              });
                               toast.success('Removed role');
                               await loadRoleCounts();
                               try { await refreshUser(); } catch {}
                             } catch (e: any) {
-                              // revert UI on failure
                               setOfferedRoles(offeredRoles);
                               console.error(e);
                               toast.error(e?.message || 'Failed to remove role');
@@ -559,7 +568,10 @@ export default function MatchingPage() {
                           if (!user) { toast.error('Please log in'); return; }
                           setConnectingId(profile.id);
                           try {
-                            const result = await api.connectWithUser(profile.id, selectedRole);
+                            const result = await api.connectWithUser(profile.id, {
+                              seeking_role: selectedRole,
+                              offering_role: myRole || user.matching_preferences?.offering_role || selectedRole,
+                            });
                             await refreshRelationships();
                             const relId = result.relationship?.id;
                             if (relId) {
@@ -613,7 +625,7 @@ export default function MatchingPage() {
 
                             // Persist to server (preferred_roles)
                             try {
-                              await api.setMyRole({ preferred_roles: updated });
+                              await api.updateMyProfile({ matching_preferences: { offering_role: updated[0] || '', preferred_roles: updated, seeking_role: user.matching_preferences?.seeking_role || '' } });
                               // update primary myRole to first selected
                               if (updated.length > 0) setMyRole(updated[0]);
                               // Refresh role counts so tiles show current numbers

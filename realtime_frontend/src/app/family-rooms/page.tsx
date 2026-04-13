@@ -5,9 +5,10 @@ import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft, Users, Globe, Heart, Plus, MessageCircle, Loader2,
-  Sparkles, Crown, Send
+  Sparkles, Crown, Send, Wifi
 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { createRoomWS, type ManagedWebSocket } from '@/lib/websocket';
 import { useAuth } from '@/lib/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -30,10 +31,11 @@ interface RoomMessage {
   room_id: string;
   sender_id: string;
   content_type: string;
-  original_text: string;
-  original_language: string;
-  translations: Record<string, string>;
+  content: string;
+  translated_content?: string;
+  media_url?: string | null;
   created_at: string;
+  sender_name?: string;
   profiles?: {
     display_name: string;
     avatar_config: any;
@@ -62,6 +64,8 @@ export default function FamilyRoomsPage() {
   const [isSending, setIsSending] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const roomWsRef = useRef<ManagedWebSocket | null>(null);
+  const [isWsConnected, setIsWsConnected] = useState(false);
   
   const [newRoomName, setNewRoomName] = useState('');
   const [newRoomDesc, setNewRoomDesc] = useState('');
@@ -95,9 +99,8 @@ export default function FamilyRoomsPage() {
     if (!code.trim()) return;
     setIsJoiningCode(true);
     try {
-      const resp = await api.joinWithCode(code.trim());
+      await api.joinByCode(code.trim());
       toast.success('Joined room successfully');
-      // Refresh rooms list
       const data = await api.getRooms();
       setRooms(data.rooms || []);
       setJoinCodeInput('');
@@ -113,7 +116,7 @@ export default function FamilyRoomsPage() {
     setSelectedRoom(room);
     setShowCodesModal(true);
     try {
-      const res = await api.listJoinCodes(room.id);
+      const res = await api.getJoinCodes(room.id);
       setRoomCodes(res.codes || []);
     } catch (err: any) {
       console.error('Failed to load join codes:', err);
@@ -127,8 +130,8 @@ export default function FamilyRoomsPage() {
     try {
       const payload: any = {};
       if (newCodeMaxUses) payload.max_uses = newCodeMaxUses;
-      if (newCodeExpiresAt) payload.expires_at = newCodeExpiresAt;
-      const res = await api.createJoinCode(selectedRoom.id, payload);
+      if (newCodeExpiresAt) payload.expires_in_hours = 24;
+      const res = await api.generateJoinCode(selectedRoom.id, payload);
       toast.success('Join code created');
       setRoomCodes(prev => [res.join_code, ...prev]);
       setNewCodeMaxUses(null);
@@ -150,20 +153,39 @@ export default function FamilyRoomsPage() {
     }
   };
 
+  // Load messages + connect WebSocket when chatting
   useEffect(() => {
     const loadMessages = async () => {
-      if (!selectedRoom) return;
+      if (!selectedRoom || !user?.id) return;
       try {
         const data = await api.getRoomMessages(selectedRoom.id);
         setMessages(data.messages || []);
       } catch (err: any) {
         console.error('Failed to load messages:', err);
       }
+
+      // Connect Room WebSocket
+      const ws = createRoomWS(selectedRoom.id, user.id, {
+        onNewMessage: (message) => {
+          setMessages(prev => {
+            if (prev.some(m => m.id === message.id)) return prev;
+            return [...prev, message];
+          });
+        },
+        onOpen: () => setIsWsConnected(true),
+        onClose: () => setIsWsConnected(false),
+      });
+      roomWsRef.current = ws;
     };
     if (view === 'chat' && selectedRoom) {
       loadMessages();
     }
-  }, [view, selectedRoom]);
+    return () => {
+      roomWsRef.current?.close();
+      roomWsRef.current = null;
+      setIsWsConnected(false);
+    };
+  }, [view, selectedRoom, user?.id]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -210,9 +232,7 @@ export default function FamilyRoomsPage() {
       room_id: selectedRoom.id,
       sender_id: user?.id || '',
       content_type: 'text',
-      original_text: messageText,
-      original_language: 'en',
-      translations: { en: messageText },
+      content: messageText,
       created_at: new Date().toISOString(),
       profiles: {
         display_name: user?.display_name || 'You',
@@ -224,7 +244,7 @@ export default function FamilyRoomsPage() {
     
     try {
       const result = await api.sendRoomMessage(selectedRoom.id, {
-        original_text: messageText,
+        content: messageText,
         content_type: 'text',
       });
       setMessages(prev => 
@@ -497,7 +517,7 @@ export default function FamilyRoomsPage() {
                               ? 'bg-gradient-to-br from-familia-500/80 to-bond-500/80 text-white rounded-br-md'
                               : 'bg-[var(--bg-card)] border border-themed rounded-bl-md'
                           }`}>
-                            <p className="text-sm">{msg.original_text}</p>
+                            <p className="text-sm">{msg.content}</p>
                           </div>
                           <div className={`text-[10px] text-muted mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
                             {formatTime(msg.created_at)}

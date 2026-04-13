@@ -3,13 +3,13 @@
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Home, Users, MessageCircle, Gamepad2, User, Bell } from 'lucide-react';
+import { Home, Users, MessageCircle, Gamepad2, User, Zap } from 'lucide-react';
 import { useAuth } from '@/lib/AuthContext';
 
 const NAV_ITEMS = [
   { href: '/dashboard', icon: Home, label: 'Home' },
-  { href: '/matching', icon: Users, label: 'Match' },
-  { href: '/family-rooms', icon: MessageCircle, label: 'Rooms' },
+  { href: '/friends', icon: Users, label: 'Friends' },
+  { href: '/chat', icon: MessageCircle, label: 'Chat' },
   { href: '/games', icon: Gamepad2, label: 'Games' },
   { href: '/profile', icon: User, label: 'Profile' },
 ];

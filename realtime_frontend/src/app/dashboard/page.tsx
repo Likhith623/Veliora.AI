@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react';
 import {
   Globe, Heart, Users, Trophy, Gamepad2, MessageCircle, Bell, Settings,
   Search, Star, Flame, Shield, Sparkles, ChevronRight, Home, User, LogOut,
-  Sun, Moon, X
+  Sun, Moon, X, Phone, Zap, HelpCircle
 } from 'lucide-react';
 import { useTheme } from '@/lib/ThemeContext';
 import { useAuth } from '@/lib/AuthContext';
@@ -172,12 +172,12 @@ export default function DashboardPage() {
               </div>
               <div className="flex items-center gap-4 sm:gap-6">
                 <div className="text-center">
-                  <div className="text-xl sm:text-2xl font-bold text-familia-400">{user.care_score || 0}</div>
+                  <div className="text-xl sm:text-2xl font-bold text-familia-400">{user?.care_score || 0}</div>
                   <div className="text-[10px] text-muted">Care Score</div>
                 </div>
                 <div className="w-px h-8 bg-[var(--border-color)] hidden sm:block" />
                 <div className="text-center">
-                  <div className="text-xl sm:text-2xl font-bold text-bond-400">{user.total_bond_points || 0}</div>
+                  <div className="text-xl sm:text-2xl font-bold text-bond-400">{user?.total_bond_points || 0}</div>
                   <div className="text-[10px] text-muted">Bond Points</div>
                 </div>
                 <div className="w-px h-8 bg-[var(--border-color)] hidden sm:block" />
@@ -193,18 +193,22 @@ export default function DashboardPage() {
           </div>
         </motion.div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-4 gap-3 mb-8">
           {[
-            { icon: <Search className="w-6 h-6" />, label: 'Find Match', href: '/matching', color: 'from-familia-500 to-heart-500' },
-            { icon: <Trophy className="w-6 h-6" />, label: 'Contests', href: '/contests', color: 'from-amber-500 to-orange-500' },
-            { icon: <Gamepad2 className="w-6 h-6" />, label: 'Games', href: '/games', color: 'from-purple-500 to-violet-500' },
-            { icon: <Users className="w-6 h-6" />, label: 'Family Rooms', href: '/family-rooms', color: 'from-bond-500 to-cyan-500' },
+            { icon: <Search className="w-5 h-5" />, label: 'Find Match', href: '/matching', color: 'from-familia-500 to-heart-500' },
+            { icon: <Trophy className="w-5 h-5" />, label: 'Contests', href: '/contests', color: 'from-amber-500 to-orange-500' },
+            { icon: <Gamepad2 className="w-5 h-5" />, label: 'Games', href: '/games', color: 'from-purple-500 to-violet-500' },
+            { icon: <Users className="w-5 h-5" />, label: 'Rooms', href: '/family-rooms', color: 'from-bond-500 to-cyan-500' },
+            { icon: <Gamepad2 className="w-5 h-5" />, label: 'Live Games', href: '/live-games', color: 'from-pink-500 to-rose-500' },
+            { icon: <Phone className="w-5 h-5" />, label: 'Calls', href: '/calls', color: 'from-green-500 to-emerald-500' },
+            { icon: <Zap className="w-5 h-5" />, label: 'XP', href: '/xp', color: 'from-amber-400 to-yellow-500' },
+            { icon: <HelpCircle className="w-5 h-5" />, label: 'Questions', href: '/questions', color: 'from-indigo-500 to-blue-500' },
           ].map((action, i) => (
-            <motion.div key={action.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}>
+            <motion.div key={action.label} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
               <Link href={action.href}>
-                <div className="glass-card !p-4 text-center card-hover cursor-pointer group">
-                  <div className={`w-12 h-12 mx-auto mb-3 rounded-xl bg-gradient-to-br ${action.color} flex items-center justify-center group-hover:scale-110 transition-transform text-white`}>{action.icon}</div>
-                  <div className="font-medium text-sm">{action.label}</div>
+                <div className="glass-card !p-3 text-center card-hover cursor-pointer group">
+                  <div className={`w-10 h-10 mx-auto mb-2 rounded-xl bg-gradient-to-br ${action.color} flex items-center justify-center group-hover:scale-110 transition-transform text-white`}>{action.icon}</div>
+                  <div className="font-medium text-xs">{action.label}</div>
                 </div>
               </Link>
             </motion.div>
@@ -232,8 +236,8 @@ export default function DashboardPage() {
                     <div className="glass-card card-hover cursor-pointer">
                       <div className="flex items-center gap-4">
                         <div className="relative">
-                          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-familia-500 to-bond-500 flex items-center justify-center text-2xl">{ROLE_EMOJIS[rel.partner_role] || '🤝'}</div>
-                          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[var(--bg-primary)] ${rel.partner?.status === 'active' ? 'bg-green-500' : 'bg-yellow-500'}`} />
+                          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-familia-500 to-bond-500 flex items-center justify-center text-2xl">{ROLE_EMOJIS[rel.partner_role || ''] || '🤝'}</div>
+                          <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-[var(--bg-primary)] ${(rel.partner?.status) === 'online' ? 'bg-green-500' : 'bg-yellow-500'}`} />
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
@@ -245,14 +249,14 @@ export default function DashboardPage() {
                           </div>
                           <div className="flex items-center gap-3 mt-1">
                             <span className="badge-level text-[10px]">Lv.{rel.level} {LEVEL_NAMES[rel.level]}</span>
-                            {rel.streak_days > 0 && <span className="text-xs text-muted flex items-center gap-1"><Flame className="w-3 h-3 text-orange-400" />{rel.streak_days}d</span>}
+                            {(rel.streak_days || 0) > 0 && <span className="text-xs text-muted flex items-center gap-1"><Flame className="w-3 h-3 text-orange-400" />{rel.streak_days}d</span>}
                           </div>
                         </div>
                         <div className="text-center">
                           <div className="relative w-12 h-12">
                             <svg className="w-12 h-12 progress-ring" viewBox="0 0 44 44">
                               <circle cx="22" cy="22" r="18" fill="none" stroke="var(--border-color)" strokeWidth="3" />
-                              <circle cx="22" cy="22" r="18" fill="none" stroke={`url(#care-grad-${i})`} strokeWidth="3" strokeDasharray={`${(rel.care_score / 100) * 113} 113`} strokeLinecap="round" className="progress-ring__circle" />
+                              <circle cx="22" cy="22" r="18" fill="none" stroke={`url(#care-grad-${i})`} strokeWidth="3" strokeDasharray={`${((rel.care_score || 0) / 100) * 113} 113`} strokeLinecap="round" className="progress-ring__circle" />
                               <defs><linearGradient id={`care-grad-${i}`}><stop offset="0%" stopColor="#FF6B35" /><stop offset="100%" stopColor="#F43F5E" /></linearGradient></defs>
                             </svg>
                             <div className="absolute inset-0 flex items-center justify-center text-xs font-bold">{rel.care_score}</div>
