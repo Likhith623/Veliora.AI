@@ -4365,27 +4365,56 @@ const Dashboard = ({
           };
         });
 
-        // Ensure activities only show one START and one END flag per contiguous block
+        // Reconstruct contiguous activity blocks based on start/end flags or activity_type
+        let currentActiveGame = null;
+        
         for (let i = 0; i < formattedMessages.length; i++) {
-          // Keep explicit API logic (like voice note, image_gen overrides)
-          if (formattedMessages[i].isActivityStart || formattedMessages[i].isActivityEnd) {
-            continue;
+          const msg = formattedMessages[i];
+          const hasExplicitStart = msg.isActivityStart;
+          const hasExplicitEnd = msg.isActivityEnd;
+          const currentActivity = msg.activity_type;
+          
+          const isGameOrActivity = (currentActivity && currentActivity !== 'chat' && currentActivity !== 'voice_note' && currentActivity !== 'image_gen' && currentActivity !== 'image_describe' && currentActivity !== 'voice_call');
+
+          if (hasExplicitStart || isGameOrActivity) {
+            // If we're not already in an activity block, start one!
+            if (!currentActiveGame) {
+              msg.isActivityStart = true;
+              currentActiveGame = isGameOrActivity ? currentActivity : 'game';
+            } else if (msg.isActivityStart) {
+              // It's explicitly starting a NEW activity while one was already running?? 
+               // Finish the old one on the previous message
+              if (i > 0) formattedMessages[i - 1].isActivityEnd = true;
+              msg.isActivityStart = true;
+              currentActiveGame = isGameOrActivity ? currentActivity : 'game';
+            } else {
+               // We are inside an activity block. Suppress any spurious starts
+               msg.isActivityStart = false;
+            }
+          } else if (currentActiveGame) {
+             // We are inside a game, but the DB says 'chat'. Keep it inside the game!
+             msg.isActivityStart = false; // it's not the start
+          } else {
+             // Normal chat outside of any games
+             msg.isActivityStart = false;
           }
 
-          const currentActivity = formattedMessages[i].activity_type;
-          // Skip tracking for non-game activities like system messages or media tags
-          if (currentActivity && currentActivity !== 'chat' && currentActivity !== 'voice_note' && currentActivity !== 'image_gen' && currentActivity !== 'image_describe' && currentActivity !== 'voice_call') {
-            const prevMessage = formattedMessages[i - 1];
-            const nextMessage = formattedMessages[i + 1];
-            
-            // Only strictly start if the previous message wasn't the same activity
-            formattedMessages[i].isActivityStart = (!prevMessage || prevMessage.activity_type !== currentActivity);
-            // Only strictly end if the next message isn't the same activity
-            formattedMessages[i].isActivityEnd = (!nextMessage || nextMessage.activity_type !== currentActivity);
+          // Handle explicitly ending or implicitly ending
+          if (hasExplicitEnd) {
+            msg.isActivityEnd = true;
+            currentActiveGame = null;
+          } else if (currentActiveGame && isGameOrActivity && msg.activity_type !== currentActiveGame) {
+            // The activity_type changed? It ended.
+             msg.isActivityEnd = true;
+             currentActiveGame = null;
           } else {
-            formattedMessages[i].isActivityStart = false;
-            formattedMessages[i].isActivityEnd = false;
+             msg.isActivityEnd = false;
           }
+        }
+        
+        // If an activity was active but the chat history ended, artificially cap it
+        if (currentActiveGame && formattedMessages.length > 0 && !formattedMessages[formattedMessages.length - 1].isActivityEnd) {
+           formattedMessages[formattedMessages.length - 1].isActivityEnd = true;
         }
 
         // Filter empty messages

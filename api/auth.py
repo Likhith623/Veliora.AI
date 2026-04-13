@@ -280,18 +280,23 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
     """Get the current user's profile."""
     from services.supabase_client import get_user_profile, create_user_profile
 
-    profile = await get_user_profile(current_user["user_id"])
+    profile = await get_user_profile(current_user['user_id'])
     if not profile:
+        base_name = current_user.get("email", "").split("@")[0] if current_user.get("email") else "User"
+        base_username = f"{base_name}_{current_user['user_id'][:4]}"
         profile_data = {
             "email": current_user.get("email", ""),
-            "name": current_user.get("email", "").split("@")[0] if current_user.get("email") else "User"
+            "name": base_name,
+            "username": base_username,
+            "age": 18,
+            "gender": "unspecified"
         }
-        profile = await create_user_profile(current_user["user_id"], profile_data)
+        profile = await create_user_profile(current_user['user_id'], profile_data)
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
     return UserProfileResponse(
-        id=current_user["user_id"],
+        id=current_user['user_id'],
         email=profile.get("email", ""),
         name=profile.get("name", ""),
         username=profile.get("username", ""),
@@ -319,11 +324,11 @@ async def update_profile(
     if not update_data:
         raise HTTPException(status_code=400, detail="No fields to update")
 
-    await update_user_profile(current_user["user_id"], update_data)
-    profile = await get_user_profile(current_user["user_id"])
+    await update_user_profile(current_user['user_id'], update_data)
+    profile = await get_user_profile(current_user['user_id'])
 
     return UserProfileResponse(
-        id=current_user["user_id"],
+        id=current_user['user_id'],
         email=profile.get("email", ""),
         name=profile.get("name", ""),
         username=profile.get("username", ""),
@@ -354,10 +359,10 @@ async def upload_avatar(
     if len(file_bytes) > 5 * 1024 * 1024:  # 5MB limit
         raise HTTPException(status_code=400, detail="Image must be under 5MB")
 
-    url = await upload_avatar(current_user["user_id"], file_bytes, file.content_type)
+    url = await upload_avatar(current_user['user_id'], file_bytes, file.content_type)
 
     # Award XP for profile photo upload
-    await award_xp(current_user["user_id"], "system", "profile_photo_upload")
+    await award_xp(current_user['user_id'], "system", "profile_photo_upload")
 
     return {"avatar_url": url, "message": "Avatar uploaded successfully"}
 
@@ -371,13 +376,18 @@ async def get_xp_status(current_user: dict = Depends(get_current_user)):
     """Get the user's XP status, level, and streak info."""
     from services.supabase_client import get_user_profile, create_user_profile
 
-    profile = await get_user_profile(current_user["user_id"])
+    profile = await get_user_profile(current_user['user_id'])
     if not profile:
+        base_name = current_user.get("email", "").split("@")[0] if current_user.get("email") else "User"
+        base_username = f"{base_name}_{current_user['user_id'][:4]}"
         profile_data = {
             "email": current_user.get("email", ""),
-            "name": current_user.get("email", "").split("@")[0] if current_user.get("email") else "User"
+            "name": base_name,
+            "username": base_username,
+            "age": 18,
+            "gender": "unspecified"
         }
-        profile = await create_user_profile(current_user["user_id"], profile_data)
+        profile = await create_user_profile(current_user['user_id'], profile_data)
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
 
@@ -389,7 +399,7 @@ async def get_xp_status(current_user: dict = Depends(get_current_user)):
     xp_to_next = max(0, next_level_xp - total_xp)
 
     return XPStatusResponse(
-        user_id=current_user["user_id"],
+        user_id=current_user['user_id'],
         total_xp=total_xp,
         level=level,
         streak_days=streak_days,

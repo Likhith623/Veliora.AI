@@ -90,7 +90,7 @@ async def generate_chat_response(
 
     url = _get_url(settings.GEMINI_MODEL)
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         data = response.json()
@@ -200,7 +200,7 @@ async def generate_embedding(text: str) -> list[float]:
         "outputDimensionality": settings.GEMINI_EMBEDDING_DIMENSIONS,
     }
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         data = response.json()
@@ -247,7 +247,7 @@ async def detect_language(text: str) -> str:
     url = _get_url(settings.GEMINI_MODEL)
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, headers=_get_headers(), json=payload)
             response.raise_for_status()
             data = response.json()
@@ -305,7 +305,7 @@ async def generate_scene_description(
 
     url = _get_url(settings.GEMINI_MODEL)
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         data = response.json()
@@ -356,7 +356,7 @@ async def generate_diary_entry(
 
     url = _get_url(settings.GEMINI_MODEL)
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         data = response.json()
@@ -410,7 +410,7 @@ async def describe_image(image_base64: str, bot_id: str, language: str = "englis
 
     url = _get_url(settings.GEMINI_MODEL)
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         data = response.json()
@@ -459,7 +459,7 @@ async def summarize_url_content(
 
     url = _get_url(settings.GEMINI_MODEL)
 
-    async with httpx.AsyncClient(timeout=20.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         data = response.json()
@@ -508,7 +508,7 @@ async def generate_text_meme(
 
     url = _get_url(settings.GEMINI_MODEL)
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=60.0) as client:
         response = await client.post(url, headers=_get_headers(), json=payload)
         response.raise_for_status()
         data = response.json()
@@ -551,7 +551,7 @@ async def generate_text_meme(
 #     }
 #
 #     url = _get_url(settings.GEMINI_MODEL)
-#     async with httpx.AsyncClient(timeout=15.0) as client:
+#     async with httpx.AsyncClient(timeout=60.0) as client:
 #         response = await client.post(url, headers=_get_headers(), json=payload)
 #         response.raise_for_status()
 #         data = response.json()
