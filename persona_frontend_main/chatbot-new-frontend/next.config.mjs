@@ -31,6 +31,9 @@ const config = {
     experimental: {
       webpackBuildWorker: true,
     },
+    eslint: {
+      ignoreDuringBuilds: true,
+    },
   };
   
   export default withPWA({

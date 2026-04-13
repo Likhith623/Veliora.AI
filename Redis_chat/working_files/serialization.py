@@ -86,6 +86,20 @@ def serialize_chat_to_messages(chat: dict, embedding: list = None) -> list[dict]
     media_url = chat.get("media_url")
     rows = []
 
+    # Determine which role 'owns' the media_url based on activity_type
+    user_media = None
+    bot_media = None
+    
+    if media_url:
+        if activity_type in ["image_describe"]:
+            user_media = media_url
+        elif activity_type in ["voice_note", "voice_call", "image_gen", "selfie"]:
+            bot_media = media_url
+        else:
+            # Fallback if unhandled
+            user_media = media_url
+            bot_media = media_url
+
     if chat.get("user_message"):
         rows.append({
             "user_id": user_id,
@@ -94,7 +108,7 @@ def serialize_chat_to_messages(chat: dict, embedding: list = None) -> list[dict]
             "content": chat["user_message"],
             "created_at": timestamp,
             "activity_type": activity_type,
-            "media_url": media_url,
+            "media_url": user_media,
         })
 
     if chat.get("bot_response"):
@@ -105,7 +119,7 @@ def serialize_chat_to_messages(chat: dict, embedding: list = None) -> list[dict]
             "content": chat["bot_response"],
             "created_at": timestamp,
             "activity_type": activity_type,
-            "media_url": None, # Bot responses shouldn't blindly inherit user's uploaded media
+            "media_url": bot_media,
         })
 
     return rows

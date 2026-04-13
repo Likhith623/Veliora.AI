@@ -4328,14 +4328,34 @@ const Dashboard = ({
         const rawHistory = syncData.history || [];
 
         // Adapt to frontend structure
-        let formattedMessages = rawHistory.map((msg) => {
+        let formattedMessages = rawHistory.map((msg, idx) => {
+          let _isVoiceNote = msg.isVoiceNote || msg.is_voice_note || false;
+
+          // Infer voice note explicitly if prior user message matched the voice note pattern
+          if (!_isVoiceNote && msg.role === "bot" && idx > 0) {
+            const prevMsg = rawHistory[idx - 1];
+            if (prevMsg.role === "user") {
+              const prevText = prevMsg.text || prevMsg.content || "";
+              const voiceNotePatterns = [
+                /\b(voice\s*note|voice\s*memo|audio\s*msg|v\s*msg|voice\s*msg|send\s*audio|record\s*something|say\s*it|say\s*out\s*loud|read\s*it\s*out)\b/i,
+                /\b(bol|kaho|sunao|bol\s*ke|gao)\b/i,
+                /\b(audio|voice)\b/i,
+                /\b(record\s*kar)\b/i,
+                /\b(awaz)\b/i,
+              ];
+              if (voiceNotePatterns.some((pattern) => pattern.test(prevText))) {
+                _isVoiceNote = true;
+              }
+            }
+          }
+
           return {
             id: msg.id || Math.random().toString(36).substr(2, 9),
             text: msg.text || msg.content || "",
             sender: msg.role === "user" ? "user" : "bot",
             timestamp: new Date(msg.created_at || new Date()),
             bot_id: selectedBotId,
-            isVoiceNote: msg.isVoiceNote || msg.is_voice_note || false,
+            isVoiceNote: _isVoiceNote,
             isUserImage: msg.isUserImage || msg.is_image_message || false,
             isActivityStart: msg.isActivityStart || msg.is_activity_start || false,
             isActivityEnd: msg.isActivityEnd || msg.is_activity_end || false,
@@ -5336,12 +5356,29 @@ const shouldSendWeeklyVoice = () => {
                       msg.isImageMessage = true;
                   }
 
-                  const hasContent = cleanedMsgText.length > 0 || inlineImageUrl || inlineAudioUrl || msg.isImageMessage || msg.isVoiceNote;
+                  const hasContent = cleanedMsgText.length > 0 || inlineImageUrl || inlineAudioUrl || msg.isImageMessage || msg.isVoiceNote || isActivityStart || isActivityEnd;
 
                   return (
                     hasContent && (
+                      <React.Fragment key={msg.id ? `${msg.id}-${index}` : `msg-${index}`}>
+                        {/* Optional Banners Rendered Above the Message (OUTSIDE message view width limit) */}
+                        {isActivityStart && (
+                          <div className="flex justify-center my-6 w-full">
+                            <div className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-violet-500/90 to-purple-600/90 backdrop-blur-md border border-purple-300/40 shadow-lg text-white text-sm font-bold uppercase tracking-wider">
+                              <span>🎮</span>
+                              <span>Activity Started</span>
+                            </div>
+                          </div>
+                        )}
+                        {msg.isSystemMessage && msg.activity_type === "VOICE_CALL_START" && (
+                          <div className="flex justify-center my-6 w-full">
+                            <div className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-green-500/90 to-emerald-600/90 backdrop-blur-md border border-green-300/40 shadow-lg text-white text-sm font-bold uppercase tracking-wider">
+                              <span>📞</span>
+                              <span>Voice Call Started</span>
+                            </div>
+                          </div>
+                        )}
                       <div
-                        key={msg.id ? `${msg.id}-${index}` : `msg-${index}`}
                         className={`flex flex-col max-w-[85%] sm:max-w-[75%] ${
                           msg.sender === "local-temp"
                             ? "self-end"
@@ -5352,40 +5389,6 @@ const shouldSendWeeklyVoice = () => {
                           msg.sender === "bot" ? "ml-9 sm:ml-12" : ""
                         }`}
                       >
-                    {/* Optional Banners Rendered Above the Message */}
-                      {isActivityStart && (
-                        <div className="flex justify-center my-3 w-full">
-                          <div className="flex items-center gap-2 px-5 py-2 rounded-full bg-gradient-to-r from-violet-500/80 to-purple-600/80 backdrop-blur-sm border border-purple-300/30 shadow-md text-white text-sm font-semibold">
-                            <span>🎮</span>
-                            <span>Activity Started</span>
-                          </div>
-                        </div>
-                      )}
-                      {isActivityEnd && (
-                        <div className="flex justify-center my-3 w-full">
-                          <div className="flex items-center gap-2 px-5 py-2 rounded-full bg-gradient-to-r from-gray-500/80 to-gray-600/80 backdrop-blur-sm border border-gray-300/30 shadow-md text-white text-sm font-semibold">
-                            <span>🏁</span>
-                            <span>Activity Ended</span>
-                          </div>
-                        </div>
-                      )}
-                      {msg.isSystemMessage && msg.activity_type === "VOICE_CALL_START" && (
-                        <div className="flex justify-center my-3 w-full">
-                          <div className="flex items-center gap-2 px-5 py-2 rounded-full bg-gradient-to-r from-green-500/80 to-emerald-600/80 backdrop-blur-sm border border-green-300/30 shadow-md text-white text-sm font-semibold">
-                            <span>📞</span>
-                            <span>Voice Call Started</span>
-                          </div>
-                        </div>
-                      )}
-                      {msg.isSystemMessage && msg.activity_type === "VOICE_CALL_END" && (
-                        <div className="flex justify-center my-3 w-full">
-                          <div className="flex items-center gap-2 px-5 py-2 rounded-full bg-gradient-to-r from-red-500/80 to-rose-600/80 backdrop-blur-sm border border-red-300/30 shadow-md text-white text-sm font-semibold">
-                            <span>📵</span>
-                            <span>Voice Call Ended</span>
-                          </div>
-                        </div>
-                      )}
-
                       {/* Determine if we even have text to show (e.g., if message was purely a tag) */}
                       {(cleanedMsgText ||
                         msg.isImageMessage ||
@@ -5413,22 +5416,13 @@ const shouldSendWeeklyVoice = () => {
                             <div className="flex flex-row items-center gap-2">
                               {msg.sender === "bot" ? (
                                 (msg.voice_only && msg.isVoiceRequested) || msg.isVoiceNote ? ( // ✅ FIXED: Fallback to isVoiceNote if it was explicitly flagged by the backend (like from voice_note activity)
-                                  <div className="px-4 py-3 rounded-3xl bg-white/20 border border-white/20 backdrop-blur-sm shadow-md text-left flex flex-col gap-2 relative z-10 w-full min-w-[300px] sm:min-w-[400px]">
-                                    <div className="flex items-center gap-2 mb-1">
-                                      <span className="text-xl">🎙️</span>
-                                      <span className="text-sm font-bold opacity-80">Voice Note</span>
-                                    </div>
+                                  <div className="text-left flex flex-col gap-2 w-full min-w-[300px] sm:min-w-[400px]">
                                     <PlayAudio
                                       text={cleanedMsgText}
                                       bot_id={msg.bot_id || selectedBotId}
                                       minimal={false}
                                       audioSrcUrl={inlineAudioUrl}
                                     />
-                                    {cleanedMsgText && (
-                                      <span className="text-sm border-t border-white/10 pt-2 mt-1">
-                                        "{cleanedMsgText}"
-                                      </span>
-                                    )}
                                   </div>
                                 ) : (
                                   <>
@@ -5668,7 +5662,6 @@ const shouldSendWeeklyVoice = () => {
                                         minimal={false}
                                         audioSrcUrl={inlineAudioUrl}
                                       />
-                                      <span className="text-sm">🎤 Voice Note</span>
                                     </div>
                                   ) : (
                                     msg.text
@@ -5825,7 +5818,27 @@ const shouldSendWeeklyVoice = () => {
                           </div>
                         </div>
                       )}
-                    </div>
+                      </div>
+                      
+                      {/* Optional Banners Rendered AFTER the Message */}
+                      {isActivityEnd && (
+                        <div className="flex justify-center my-6 w-full">
+                          <div className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-gray-500/90 to-gray-600/90 backdrop-blur-md border border-gray-300/40 shadow-lg text-white text-sm font-bold uppercase tracking-wider">
+                            <span>🏁</span>
+                            <span>Activity Ended</span>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {msg.isSystemMessage && msg.activity_type === "VOICE_CALL_END" && (
+                        <div className="flex justify-center my-6 w-full">
+                          <div className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-gradient-to-r from-red-500/90 to-rose-600/90 backdrop-blur-md border border-red-300/40 shadow-lg text-white text-sm font-bold uppercase tracking-wider">
+                            <span>📵</span>
+                            <span>Voice Call Ended</span>
+                          </div>
+                        </div>
+                      )}
+                    </React.Fragment>
                   )
                   );
                 })}
