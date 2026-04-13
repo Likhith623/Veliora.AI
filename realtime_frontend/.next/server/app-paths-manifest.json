@@ -1,0 +1,7 @@
+{
+  "/chat/[relationshipId]/page": "app/chat/[relationshipId]/page.js",
+  "/profile/page": "app/profile/page.js",
+  "/contests/page": "app/contests/page.js",
+  "/chat/page": "app/chat/page.js",
+  "/family-rooms/page": "app/family-rooms/page.js"
+}

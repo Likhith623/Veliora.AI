@@ -1,0 +1,27 @@
+# ============================================================
+# Familia — Cloud Build config for frontend
+# Passes build args for NEXT_PUBLIC_* env vars
+# ============================================================
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SUPABASE_URL=${_NEXT_PUBLIC_SUPABASE_URL}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_SUPABASE_ANON_KEY=${_NEXT_PUBLIC_SUPABASE_ANON_KEY}'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_API_URL=${_NEXT_PUBLIC_API_URL}'
+      - '-t'
+      - '${_IMAGE_TAG}'
+      - '.'
+
+images:
+  - '${_IMAGE_TAG}'
+
+substitutions:
+  _NEXT_PUBLIC_SUPABASE_URL: ''
+  _NEXT_PUBLIC_SUPABASE_ANON_KEY: ''
+  _NEXT_PUBLIC_API_URL: ''
+  _IMAGE_TAG: 'gcr.io/${PROJECT_ID}/familia-web:latest'
