@@ -162,17 +162,30 @@ export default function Home() {
             />
 
             {/* Button to signup page */}
-            <Link href="/signup">
-              <button
-                className={`mt-20 sm:mt-20 px-6 py-3 rounded-full text-white text-sm sm:text-base transition-all backdrop-blur-md border ${
-                  theme === "dark"
-                    ? "bg-gradient-to-r from-purple-400/40 via-pink-400/40 to-orange-400/40 border-gray-700/20 hover:from-purple-400/60 hover:via-pink-400/60 hover:to-orange-400/60"
-                    : "bg-[#242124] hover:bg-gradient-to-r from-pink-400 to-orange-400"
-                }`}
-              >
-                Start Chatting
-              </button>
-            </Link>
+            <div className="flex flex-row items-center justify-center gap-4 mt-20 sm:mt-20">
+              <Link href="/signup">
+                <button
+                  className={`px-6 py-3 rounded-full text-white text-sm sm:text-base transition-all backdrop-blur-md border ${
+                    theme === "dark"
+                      ? "bg-gradient-to-r from-purple-400/40 via-pink-400/40 to-orange-400/40 border-gray-700/20 hover:from-purple-400/60 hover:via-pink-400/60 hover:to-orange-400/60"
+                      : "bg-[#242124] hover:bg-gradient-to-r from-pink-400 to-orange-400"
+                  }`}
+                >
+                  PERSONA.AI
+                </button>
+              </Link>
+              <Link href="/realtime">
+                <button
+                  className={`px-6 py-3 rounded-full text-white text-sm sm:text-base transition-all backdrop-blur-md border ${
+                    theme === "dark"
+                      ? "bg-gradient-to-r from-blue-400/40 via-cyan-400/40 to-teal-400/40 border-gray-700/20 hover:from-blue-400/60 hover:via-cyan-400/60 hover:to-teal-400/60"
+                      : "bg-[#242124] hover:bg-gradient-to-r from-blue-400 to-cyan-400"
+                  }`}
+                >
+                  REALTIME.AI
+                </button>
+              </Link>
+            </div>
           </div>
         </section>
 
