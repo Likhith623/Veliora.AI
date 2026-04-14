@@ -59,7 +59,8 @@ export function createWsWithReconnect(
     };
 
     ws.onerror = (error: Event) => {
-      // Native WebSocket errors yield empty Event objects, so we provide context mapping.
+      // Ignore errors if we intentionally closed it (e.g. React StrictMode unmount during connecting)
+      if (intentionalClose) return;
       console.error(`[WS] Connection error for url: ${url.split('?')[0]}`);
       handlers.onError?.(error);
     };

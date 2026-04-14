@@ -51,15 +51,14 @@ export default function LiveBondGame() {
       onOpponentDisconnected: () => {
         toast.error("Your partner disconnected.");
         router.back();
+      },
+      onOpen: () => {
+        // Auto-ready exactly when the socket connects!
+        socket.send({ type: "ready" });
       }
     });
 
     setWs(socket);
-    
-    // Auto-ready once connected
-    setTimeout(() => {
-      socket.send({ type: "ready" });
-    }, 500);
 
     return () => socket.close();
   }, [user?.id, session_id, router]);
