@@ -1,16 +1,19 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Video, VideoOff, Mic, MicOff, PhoneOff, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { Device } from 'mediasoup-client';
+import { io, Socket } from 'socket.io-client';
 
 interface GroupCallProps {
   roomId: string;
   userId: string;
-  ws: any; // Room WebSocket instance
+  ws: any; // Kept for interface compatibility, but we use standalone Socket.io for mediasoup 
   onLeave: () => void;
   members: any[];
 }
 
-export function GroupCall({ roomId, userId, ws, onLeave, members }: GroupCallProps) {
+export function GroupCall({ roomId, userId, onLeave, members }: GroupCallProps) {
+  // MEDIASOUP LOGIC HERE
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
@@ -18,23 +21,129 @@ export function GroupCall({ roomId, userId, ws, onLeave, members }: GroupCallPro
   
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
-  const pcs = useRef<Record<string, RTCPeerConnection>>({});
-  const pendingCandidates = useRef<Record<string, RTCIceCandidateInit[]>>({});
+  const streamRef = useRef<MediaStream | null>(null);
+  
+  const deviceRef = useRef<Device | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const sendTransportRef = useRef<any>(null);
+  const recvTransportRef = useRef<any>(null);
+  const consumersRef = useRef<Map<string, any>>(new Map());
 
-  const iceServers = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-    ],
+  // Connect to Mediasoup specific signaling server
+  useEffect(() => {
+    const MEDIASOUP_SERVER = process.env.NEXT_PUBLIC_MEDIASOUP_URL || 'http://localhost:3016';
+    const socket = io(MEDIASOUP_SERVER);
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      console.log('Connected to Mediasoup SFU');
+      socket.emit('joinRoom', { roomId, userId }, async ({ rtpCapabilities }: any) => {
+        try {
+          const device = new Device();
+          await device.load({ routerRtpCapabilities: rtpCapabilities });
+          deviceRef.current = device;
+
+          socket.emit('createWebRtcTransport', { sender: true }, async (params: any) => {
+            if (params.error) return console.error(params.error);
+            const transport = device.createSendTransport(params);
+            sendTransportRef.current = transport;
+
+            transport.on('connect', ({ dtlsParameters }, callback, errback) => {
+              socket.emit('connectWebRtcTransport', { transportId: transport.id, dtlsParameters }, (res: any) => {
+                if (res?.error) errback(res.error); else callback();
+              });
+            });
+
+            transport.on('produce', ({ kind, rtpParameters, appData }, callback, errback) => {
+              socket.emit('produce', { transportId: transport.id, kind, rtpParameters, appData }, (id: any) => {
+                if (id?.error) errback(id.error); else callback({ id: id.id });
+              });
+            });
+
+            initMediaAndProduce(transport);
+          });
+
+          socket.emit('createWebRtcTransport', { sender: false }, async (params: any) => {
+            if (params.error) return console.error(params.error);
+            const transport = device.createRecvTransport(params);
+            recvTransportRef.current = transport;
+
+            transport.on('connect', ({ dtlsParameters }, callback, errback) => {
+              socket.emit('connectWebRtcTransport', { transportId: transport.id, dtlsParameters }, (res: any) => {
+                if (res?.error) errback(res.error); else callback();
+              });
+            });
+          });
+
+        } catch (error) {
+          console.error('Mediasoup error:', error);
+        }
+      });
+    });
+
+    socket.on('newProducer', async ({ producerId, peerId }: any) => {
+      const device = deviceRef.current;
+      const transport = recvTransportRef.current;
+      if (!device || !transport) return;
+
+      socket.emit('consume', { producerId, rtpCapabilities: device.rtpCapabilities }, async (params: any) => {
+        if (params.error) return console.error(params.error);
+        const consumer = await transport.consume({ ...params });
+        consumersRef.current.set(consumer.id, consumer);
+
+        const { track } = consumer;
+        setRemoteStreams(prev => {
+          const newStream = prev[peerId] ? prev[peerId].clone() : new MediaStream();
+          newStream.addTrack(track);
+          return { ...prev, [peerId]: newStream };
+        });
+
+        socket.emit('resumeConsumer', { consumerId: consumer.id });
+      });
+    });
+
+    socket.on('userLeft', ({ peerId }: any) => {
+      setRemoteStreams(prev => {
+        const next = { ...prev };
+        delete next[peerId];
+        return next;
+      });
+    });
+
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+      }
+      if (sendTransportRef.current) sendTransportRef.current.close();
+      if (recvTransportRef.current) recvTransportRef.current.close();
+      socket.disconnect();
+      deviceRef.current = null;
+    };
+  }, [roomId, userId]);
+
+  const initMediaAndProduce = async (transport: any) => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      setLocalStream(stream);
+      streamRef.current = stream;
+
+      const videoTrack = stream.getVideoTracks()[0];
+      const audioTrack = stream.getAudioTracks()[0];
+
+      const encodings = [
+        { maxBitrate: 100000, scaleResolutionDownBy: 4 }, // low
+        { maxBitrate: 300000, scaleResolutionDownBy: 2 }, // medium
+        { maxBitrate: 900000, scaleResolutionDownBy: 1 }, // high
+      ];
+
+      await transport.produce({ track: videoTrack, encodings, codecOptions: { videoGoogleStartBitrate: 1000 } });
+      await transport.produce({ track: audioTrack });
+
+    } catch (err) {
+      console.error('Failed to get media:', err);
+    }
   };
 
-  const getMemberConfig = (id: string) => {
-    const member = members.find(m => m.user_id === id);
-    if (!member?.profiles_realtime) return { display_name: 'Unknown User' };
-    return member.profiles_realtime;
-  };
-
-  // Attach streams to video elements
   useEffect(() => {
     if (localVideoRef.current && localStream) {
       localVideoRef.current.srcObject = localStream;
@@ -50,160 +159,21 @@ export function GroupCall({ roomId, userId, ws, onLeave, members }: GroupCallPro
     });
   }, [remoteStreams]);
 
-  // Clean up a specific peer
-  const closePeer = useCallback((id: string) => {
-    if (pcs.current[id]) {
-      pcs.current[id].close();
-      delete pcs.current[id];
+  const getMemberConfig = (id: string) => {
+    const member = members.find(m => m.user_id === id);
+    if (!member?.profiles_realtime) return { display_name: 'Unknown User' };
+    return member.profiles_realtime;
+  };
+
+  const cleanup = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
     }
-    setRemoteStreams(prev => {
-      const next = { ...prev };
-      delete next[id];
-      return next;
-    });
-  }, []);
-
-  const createPeerConnection = useCallback((targetId: string, stream: MediaStream) => {
-    if (pcs.current[targetId]) return pcs.current[targetId];
-
-    const pc = new RTCPeerConnection(iceServers);
-    pcs.current[targetId] = pc;
-
-    stream.getTracks().forEach(track => pc.addTrack(track, stream));
-
-    pc.ontrack = (event) => {
-      setRemoteStreams(prev => ({
-        ...prev,
-        [targetId]: event.streams[0]
-      }));
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate) {
-        ws.send({
-          type: 'webrtc_ice_candidate',
-          target_user_id: targetId,
-          candidate: event.candidate,
-        });
-      }
-    };
-
-    // If we have pending candidates, add them now
-    if (pendingCandidates.current[targetId]) {
-      pendingCandidates.current[targetId].forEach(c => pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {}));
-      delete pendingCandidates.current[targetId];
-    }
-
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
-        closePeer(targetId);
-      }
-    };
-
-    return pc;
-  }, [ws, closePeer]);
-
-  // Handle incoming WS messages for WebRTC
-  useEffect(() => {
-    if (!ws) return;
-    
-    // Save original handler to restore later or chain
-    const originalOnMessage = ws._originalOnMessage || ws.onMessage;
-    // Note: To cleanly hook into the managed websocket, the parent should pass down a callback. 
-    // For simplicity, we assume the parent exposes a way to register or we listen.
-    // Instead of hacking the WS, we'll build an event system or just use the generic event listener if we could.
-  }, [ws]);
-
-  // Initialize Media
-  useEffect(() => {
-    let stream: MediaStream | null = null;
-    
-    const initCall = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setLocalStream(stream);
-        
-        // Announce readiness
-        ws?.send({ type: 'call_join' });
-        
-        // Hook WS handler
-      } catch (err) {
-        console.error('Failed to get media:', err);
-      }
-    };
-    
-    initCall();
-    
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach(t => t.stop());
-      }
-      ws?.send({ type: 'call_leave' });
-      Object.keys(pcs.current).forEach(closePeer);
-    };
-  }, []);
-
-  // Handle signaling inside a ref to avoid stale closures
-  const handleSignaling = useCallback(async (msg: any) => {
-    if (!localStream) return;
-    
-    const fromId = msg.from_user_id;
-    if (!fromId || fromId === userId) return;
-    
-    // If it's targeted at someone else, ignore
-    if (msg.target_user_id && msg.target_user_id !== userId) return;
-
-    if (msg.type === 'call_join') {
-      // New user joined, we create an offer
-      const pc = createPeerConnection(fromId, localStream);
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
-      ws.send({
-        type: 'webrtc_offer',
-        target_user_id: fromId,
-        sdp: offer
-      });
-    } 
-    else if (msg.type === 'call_leave') {
-      closePeer(fromId);
-    }
-    else if (msg.type === 'webrtc_offer') {
-      const pc = createPeerConnection(fromId, localStream);
-      await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      ws.send({
-        type: 'webrtc_answer',
-        target_user_id: fromId,
-        sdp: answer
-      });
-    }
-    else if (msg.type === 'webrtc_answer') {
-      const pc = pcs.current[fromId];
-      if (pc) {
-        await pc.setRemoteDescription(new RTCSessionDescription(msg.sdp));
-      }
-    }
-    else if (msg.type === 'webrtc_ice_candidate') {
-      const pc = pcs.current[fromId];
-      if (pc) {
-        await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)).catch(console.error);
-      } else {
-        if (!pendingCandidates.current[fromId]) pendingCandidates.current[fromId] = [];
-        pendingCandidates.current[fromId].push(msg.candidate);
-      }
-    }
-  }, [localStream, userId, ws, createPeerConnection, closePeer]);
-
-  // Expose signaling to parent via useEffect passing
-  useEffect(() => {
-    // In our architecture, the parent receives the message and triggers this
-    // We attach it to the window or a global ref for the parent to call
-    (window as any)._handleRoomWebRTC = handleSignaling;
-    return () => {
-      delete (window as any)._handleRoomWebRTC;
-    };
-  }, [handleSignaling]);
+    if (sendTransportRef.current) sendTransportRef.current.close();
+    if (recvTransportRef.current) recvTransportRef.current.close();
+    socketRef.current?.disconnect();
+    onLeave();
+  };
 
   const toggleVideo = () => {
     if (localStream) {
@@ -231,9 +201,9 @@ export function GroupCall({ roomId, userId, ws, onLeave, members }: GroupCallPro
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-sm font-semibold flex items-center gap-2">
           <Video className="w-4 h-4 text-green-400" />
-          Live Room Call
+          Live Room Call (SFU)
         </h3>
-        <button onClick={onLeave} className="text-xs flex items-center gap-1 bg-red-500/10 text-red-400 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition">
+        <button onClick={cleanup} className="text-xs flex items-center gap-1 bg-red-500/10 text-red-400 hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition">
           <PhoneOff className="w-3 h-3" /> Leave Call
         </button>
       </div>
@@ -264,7 +234,7 @@ export function GroupCall({ roomId, userId, ws, onLeave, members }: GroupCallPro
               className="relative aspect-video bg-[#1a1d2d] rounded-xl overflow-hidden shadow-lg border border-white/5"
             >
               <video
-                ref={el => { remoteVideoRefs.current[pid] = el; }}
+                ref={el => { if (el) remoteVideoRefs.current[pid] = el; }}
                 autoPlay
                 playsInline
                 className="w-full h-full object-cover transform scale-x-[-1]"
