@@ -148,7 +148,21 @@ function LiveGamesPageContent() {
         setSelectedGameType(state.type);
         setView('playing');
       },
-      onState: (state) => setGameState(state),
+      onState: (state) => {
+        gameStateRef.current = state;
+        if (state.type === 'tic_tac_toe') {
+          setGameState(state);
+        } else {
+          setGameState((prev) => {
+            if (!prev) return state;
+            if (prev.status !== state.status) return state;
+            const prevScores = JSON.stringify((prev as any).scores);
+            const newScores = JSON.stringify((state as any).scores);
+            if (prevScores !== newScores) return state;
+            return prev;
+          });
+        }
+      },
       onGameOver: (w, scores, xp) => {
         setWinner(w);
         setFinalScores(scores);
@@ -203,15 +217,24 @@ function LiveGamesPageContent() {
   }, []);
 
   // ═══════════════════════════════════════════════
-  // PONG Canvas Renderer — with neon glow effects
+  // 🚀 PERFECT SYNC: requestAnimationFrame Renderer
   // ═══════════════════════════════════════════════
   useEffect(() => {
-    if (!gameState || gameState.type !== 'pong' || view !== 'playing') return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const state = gameState as PongState;
+    if (view !== 'playing') return;
+    
+    let isActive = true;
+    
+    const renderLoop = () => {
+      if (!isActive) return;
+      
+      const state_any = gameStateRef.current;
+      const canvas = canvasRef.current;
+      
+      if (state_any && canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          if (state_any.type === 'pong') {
+            const state = state_any as PongState;
 
     const scaleX = canvas.width / state.canvas.width;
     const scaleY = canvas.height / state.canvas.height;
@@ -306,52 +329,9 @@ function LiveGamesPageContent() {
     ctx.fillText(String(state.scores[playerIds[0]] || 0), canvas.width * 0.25, canvas.height / 2);
     ctx.fillStyle = 'rgba(59,130,246,0.12)';
     ctx.fillText(String(state.scores[playerIds[1]] || 0), canvas.width * 0.75, canvas.height / 2);
-  }, [gameState, view, user?.id]);
-
-  // ── Pong mouse/touch input (uses ref for latest state) ──
-  useEffect(() => {
-    if (!gameState || gameState.type !== 'pong' || view !== 'playing') return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const handleMove = (clientY: number) => {
-      const state = gameStateRef.current as PongState | null;
-      if (!state || state.type !== 'pong') return;
-      const scaleY = canvas.height / state.canvas.height;
-      const rect = canvas.getBoundingClientRect();
-      const y = (clientY - rect.top) / scaleY;
-      const paddle = state.paddles[user?.id || ''];
-      if (paddle) {
-        const clampedY = Math.max(0, Math.min(state.canvas.height - paddle.height, y - paddle.height / 2));
-        sendMove({ y: clampedY });
-      }
-    };
-
-    const onMouseMove = (e: MouseEvent) => handleMove(e.clientY);
-    const onTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
-      handleMove(e.touches[0].clientY);
-    };
-
-    canvas.addEventListener('mousemove', onMouseMove);
-    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-
-    return () => {
-      canvas.removeEventListener('mousemove', onMouseMove);
-      canvas.removeEventListener('touchmove', onTouchMove);
-    };
-  }, [gameState?.type, view, user?.id, sendMove]);
-
-  // ═══════════════════════════════════════════════
-  // AIR HOCKEY Canvas Renderer — with neon effects
-  // ═══════════════════════════════════════════════
-  useEffect(() => {
-    if (!gameState || gameState.type !== 'air_hockey' || view !== 'playing') return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const state = gameState as AirHockeyState;
+  
+          } else if (state_any.type === 'air_hockey') {
+            const state = state_any as AirHockeyState;
 
     const scaleX = canvas.width / state.canvas.width;
     const scaleY = canvas.height / state.canvas.height;
@@ -475,7 +455,21 @@ function LiveGamesPageContent() {
     ctx.fillText(String(state.scores[pids[0]] || 0), 30, canvas.height / 2 - 15);
     ctx.fillStyle = 'rgba(59,130,246,0.15)';
     ctx.fillText(String(state.scores[pids[1]] || 0), 30, canvas.height / 2 + 30);
-  }, [gameState, view, user?.id]);
+  
+          }
+        }
+      }
+      
+      animFrameRef.current = requestAnimationFrame(renderLoop);
+    };
+    
+    animFrameRef.current = requestAnimationFrame(renderLoop);
+    return () => {
+      isActive = false;
+      cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [view, user?.id]);
+
 
   // ── Air Hockey mouse/touch input (uses ref for latest state) ──
   useEffect(() => {

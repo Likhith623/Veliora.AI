@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from '@/lib/ThemeContext';
 import { AuthProvider } from '@/lib/AuthContext';
 import BottomNav from '@/components/BottomNav';
+import GlobalPresence from '@/components/GlobalPresence';
 
 export const metadata: Metadata = {
   title: 'Familia — Real People. Real Bonds. No Borders.',
@@ -59,6 +60,7 @@ export default function RootLayout({
             </main>
 
             <BottomNav />
+            <GlobalPresence />
 
             <Toaster
               position="bottom-right"

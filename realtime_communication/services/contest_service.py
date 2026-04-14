@@ -78,8 +78,8 @@ async def update_user_streak(db, user_id: str, contest_type: str) -> dict:
     return {"current_streak": current_streak, "streak_awarded": streak_awarded}
 
 
-async def generate_contest(relationship_id: str, contest_type: str = "weekly") -> dict:
-    """Generate a bonding contest integrating historical facts."""
+async def generate_contest(relationship_id: str, contest_type: str = "weekly", target_user_id: str = None) -> dict:
+    """Generate a bonding contest integrating historical facts or custom user questions."""
     db = get_supabase()
     
     rel = db.table("relationships_realtime").select("*").eq("id", relationship_id).execute()
@@ -93,17 +93,16 @@ async def generate_contest(relationship_id: str, contest_type: str = "weekly") -
     name_a = user_a.data[0]["display_name"] if user_a.data else "Partner A"
     name_b = user_b.data[0]["display_name"] if user_b.data else "Partner B"
     
-    facts_a = db.table("chat_facts_realtime").select("*").eq("user_id", rel_data["user_a_id"]).eq("relationship_id", relationship_id).eq("used_in_contest", False).execute()
-    facts_b = db.table("chat_facts_realtime").select("*").eq("user_id", rel_data["user_b_id"]).eq("relationship_id", relationship_id).eq("used_in_contest", False).execute()
-    
-    num_questions = {"daily": 3, "weekly": 5, "monthly": 10}.get(contest_type, 5)
-    time_limit = {"daily": 5, "weekly": 10, "monthly": 20}.get(contest_type, 10)
+    num_questions = 5 if contest_type == "custom" else {"daily": 3, "weekly": 5, "monthly": 10}.get(contest_type, 5)
+    time_limit = {"daily": 5, "weekly": 10, "monthly": 20, "custom": 10}.get(contest_type, 10)
     
     now = datetime.utcnow()
+    title = f"{name_a if target_user_id == rel_data['user_a_id'] else name_b}'s Custom Challenge" if contest_type == "custom" else f"{contest_type.capitalize()} Bond Challenge 💫"
+    
     contest = db.table("contests_realtime").insert({
         "relationship_id": relationship_id,
         "contest_type": contest_type,
-        "title": f"{contest_type.capitalize()} Bond Challenge 💫",
+        "title": title,
         "description": f"Answer {num_questions} questions about each other!",
         "scheduled_at": now.isoformat(),
         "starts_at": now.isoformat(),
@@ -118,53 +117,77 @@ async def generate_contest(relationship_id: str, contest_type: str = "weekly") -
     
     contest_data = contest.data[0]
     questions = []
-    used_categories = set()
-    all_facts = (facts_a.data or []) + (facts_b.data or [])
     
-    random.shuffle(all_facts)
-    for fact in all_facts[:num_questions]:
-        about_user = fact["user_id"]
-        about_name = name_a if about_user == rel_data["user_a_id"] else name_b
+    if contest_type == "custom" and target_user_id:
+        custom_qs = db.table("user_custom_questions_realtime").select("*").eq("user_id", target_user_id).execute()
+        qs_data = custom_qs.data or []
+        random.shuffle(qs_data)
+        for i, q in enumerate(qs_data[:5]):
+            correct_val = q["options"][q["correct_option_index"]] if q["options"] and len(q["options"]) > q["correct_option_index"] else "IDK"
+            cq = db.table("contest_questions_realtime").insert({
+                "contest_id": contest_data["id"],
+                "question_text": q["question_text"],
+                "question_type": "multiple_choice",
+                "options": q["options"],
+                "question_about_user": target_user_id,
+                "correct_answer": correct_val,
+                "confidence_score": 1.0,
+                "points": 10,
+                "question_order": i
+            }).execute()
+            if cq.data:
+                questions.append(cq.data[0])
+    else:
+        facts_a = db.table("chat_facts_realtime").select("*").eq("user_id", rel_data["user_a_id"]).eq("relationship_id", relationship_id).eq("used_in_contest", False).execute()
+        facts_b = db.table("chat_facts_realtime").select("*").eq("user_id", rel_data["user_b_id"]).eq("relationship_id", relationship_id).eq("used_in_contest", False).execute()
         
-        template = next((t for t in QUESTION_TEMPLATES if t["category"] == fact["fact_category"]),
-            {"template": f"What did {about_name} mention about their {fact['fact_category']}?", "category": fact["fact_category"]}
-        )
+        used_categories = set()
+        all_facts = (facts_a.data or []) + (facts_b.data or [])
         
-        q = db.table("contest_questions_realtime").insert({
-            "contest_id": contest_data["id"],
-            "question_text": template["template"].format(name=about_name),
-            "question_type": "open",
-            "question_about_user": about_user,
-            "correct_answer": fact["fact_value"],
-            "confidence_score": fact.get("confidence", 0.8),
-            "points": 10,
-            "question_order": len(questions)
-        }).execute()
-        
-        if q.data:
-            questions.append(q.data[0])
-            used_categories.add(fact["fact_category"])
-            db.table("chat_facts_realtime").update({"used_in_contest": True}).eq("id", fact["id"]).execute()
-    
-    remaining = num_questions - len(questions)
-    if remaining > 0:
-        available_templates = [t for t in QUESTION_TEMPLATES if t["category"] not in used_categories]
-        random.shuffle(available_templates)
-        for template in available_templates[:remaining]:
-            about_user = random.choice([rel_data["user_a_id"], rel_data["user_b_id"]])
+        random.shuffle(all_facts)
+        for fact in all_facts[:num_questions]:
+            about_user = fact["user_id"]
             about_name = name_a if about_user == rel_data["user_a_id"] else name_b
+            
+            template = next((t for t in QUESTION_TEMPLATES if t["category"] == fact["fact_category"]),
+                {"template": f"What did {about_name} mention about their {fact['fact_category']}?", "category": fact["fact_category"]}
+            )
             
             q = db.table("contest_questions_realtime").insert({
                 "contest_id": contest_data["id"],
                 "question_text": template["template"].format(name=about_name),
                 "question_type": "open",
                 "question_about_user": about_user,
+                "correct_answer": fact["fact_value"],
+                "confidence_score": fact.get("confidence", 0.8),
                 "points": 10,
                 "question_order": len(questions)
             }).execute()
+            
             if q.data:
                 questions.append(q.data[0])
+                used_categories.add(fact["fact_category"])
+                db.table("chat_facts_realtime").update({"used_in_contest": True}).eq("id", fact["id"]).execute()
+        
+        remaining = num_questions - len(questions)
+        if remaining > 0:
+            available_templates = [t for t in QUESTION_TEMPLATES if t["category"] not in used_categories]
+            random.shuffle(available_templates)
+            for template in available_templates[:remaining]:
+                about_user = random.choice([rel_data["user_a_id"], rel_data["user_b_id"]])
+                about_name = name_a if about_user == rel_data["user_a_id"] else name_b
                 
+                q = db.table("contest_questions_realtime").insert({
+                    "contest_id": contest_data["id"],
+                    "question_text": template["template"].format(name=about_name),
+                    "question_type": "open",
+                    "question_about_user": about_user,
+                    "points": 10,
+                    "question_order": len(questions)
+                }).execute()
+                if q.data:
+                    questions.append(q.data[0])
+                    
     return {"contest": contest_data, "questions": questions, "time_limit_minutes": time_limit}
 
 

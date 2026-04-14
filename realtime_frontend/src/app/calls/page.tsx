@@ -651,19 +651,6 @@ function CallsPageContent() {
                   ))}
                 </select>
 
-                {selectedRel && activeRel && (
-                  <div className="text-xs text-muted mb-4 p-3 rounded-xl bg-[var(--bg-card-hover)] border border-themed">
-                    <p className="font-medium text-[var(--text-secondary)] mb-1">Level Requirements:</p>
-                    <div className="flex gap-4">
-                      <span className={`flex items-center gap-1 ${(activeRel.level || 0) >= 3 ? 'text-green-400' : 'text-red-400'}`}>
-                        <Phone className="w-3 h-3" /> Audio: Lv.3 {(activeRel.level || 0) >= 3 ? '✓' : '✗'}
-                      </span>
-                      <span className={`flex items-center gap-1 ${(activeRel.level || 0) >= 4 ? 'text-blue-400' : 'text-red-400'}`}>
-                        <Video className="w-3 h-3" /> Video: Lv.4 {(activeRel.level || 0) >= 4 ? '✓' : '✗'}
-                      </span>
-                    </div>
-                  </div>
-                )}
 
                 {/* Call type selector */}
                 <div className="flex gap-3 mb-4">

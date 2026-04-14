@@ -18,8 +18,9 @@ class LoginRequest(BaseModel):
     password: str
 
 class AuthResponse(BaseModel):
-    token: str
-    user: dict
+    access_token: str
+    user_id: str
+    email: str
 
 class ProfileUpdate(BaseModel):
     display_name: Optional[str] = None
@@ -85,10 +86,16 @@ class VotePollRequest(BaseModel):
 class ContestRequest(BaseModel):
     relationship_id: str
     contest_type: str
+    target_user_id: Optional[str] = None
 
 class AnswerRequest(BaseModel):
     question_id: str
     answer: str
+
+class CustomQuestionCreate(BaseModel):
+    question_text: str
+    options: List[str]
+    correct_option_index: int
 
 class StartGameRequest(BaseModel):
     game_id: str
@@ -171,7 +178,6 @@ class GratitudeRequest(BaseModel):
     is_anonymous: bool = False
 
 class FriendRequestCreate(BaseModel):
-    receiver_id: str
     message: Optional[str] = None
 
 class FriendRequestRespond(BaseModel):
@@ -193,7 +199,9 @@ class PrivacySettingsUpdate(BaseModel):
 
 class CreateUserQuestionRequest(BaseModel):
     question_text: str
-    category: str
+    category: str = "personal"
+    options: Optional[List[str]] = None
+    correct_option_index: Optional[int] = 0
 
 class AnswerUserQuestionRequest(BaseModel):
     answer: str

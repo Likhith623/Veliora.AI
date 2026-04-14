@@ -7,6 +7,9 @@ Users can:
   - Random questions generated at signup for users who don't provide their own
 """
 import random
+import os
+import json
+import httpx
 from fastapi import APIRouter, HTTPException, Depends
 from datetime import datetime
 
@@ -15,6 +18,7 @@ from realtime_communication.services.auth_service import get_current_user_id
 from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.xp_service import award_xp
 from realtime_communication.services.notification_service import send_notification
+from realtime_communication.config import get_settings
 
 router = APIRouter(prefix="/questions", tags=["Personal Q&A"])
 
@@ -61,11 +65,18 @@ async def add_my_question(
     if existing.count >= 20:
         raise HTTPException(status_code=400, detail="Maximum 20 questions allowed")
     
+    # DB doesn't strictly depend on correct_answer text if options exist, but we satisfy NOT NULL constraint
+    correct_text = ""
+    if req.options and 0 <= req.correct_option_index < len(req.options):
+        correct_text = req.options[req.correct_option_index]
+    
     q = db.table("user_questions_realtime").insert({
         "user_id": current_user,
         "question_text": req.question_text,
-        "correct_answer": req.correct_answer,
+        "correct_answer": correct_text,
         "category": req.category,
+        "options": req.options or [],
+        "correct_option_index": req.correct_option_index or 0,
         "is_active": True,
     }).execute()
     
@@ -100,10 +111,16 @@ async def update_my_question(
     if not q.data or q.data[0]["user_id"] != current_user:
         raise HTTPException(status_code=403, detail="Not your question")
     
+    correct_text = ""
+    if req.options and 0 <= req.correct_option_index < len(req.options):
+        correct_text = req.options[req.correct_option_index]
+        
     result = db.table("user_questions_realtime").update({
         "question_text": req.question_text,
-        "correct_answer": req.correct_answer,
+        "correct_answer": correct_text,
         "category": req.category,
+        "options": req.options or [],
+        "correct_option_index": req.correct_option_index or 0,
         "updated_at": datetime.utcnow().isoformat(),
     }).eq("id", question_id).execute()
     
@@ -247,3 +264,85 @@ async def get_random_questions(count: int = 5, current_user: str = Depends(get_c
     """Get random questions for new users who haven't set up their own."""
     selected = random.sample(RANDOM_QUESTIONS, min(count, len(RANDOM_QUESTIONS)))
     return {"questions": [{"question_text": q, "category": "personal"} for q in selected]}
+
+@router.post("/generate-ai")
+async def generate_ai_question(current_user: str = Depends(get_current_user_id)):
+    """Generate a fun, personal question with 4 options using Gemini."""
+    settings = get_settings()
+    api_key = settings.GEMINI_API_KEY
+    
+    if not api_key:
+        print("[Questions] GEMINI_API_KEY is empty in settings.")
+        raise HTTPException(status_code=500, detail="Gemini API Key missing")
+        
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    
+    prompt = (
+        "Role: Expert Fun Question Generator for Veliora.AI.\n"
+        "Task: Create a highly engaging, fun, or deeply personal multiple-choice question "
+        "designed for best friends or couples to test their bond. The tone should be youthful, "
+        "exciting, and geared towards social discovery.\n\n"
+        "Constraint: Return ONLY a valid JSON object. No preamble, no markdown code blocks.\n\n"
+        "Required Schema:\n"
+        "{\n"
+        '  "question_text": "string",\n'
+        '  "options": ["string", "string", "string", "string"],\n'
+        '  "correct_option_index": integer (0-3),\n'
+        '  "category": "fun" | "deep" | "random" | "culture"\n'
+        "}\n"
+    )
+    
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.9, 
+            "topP": 0.95,
+            "maxOutputTokens": 500,
+            "responseMimeType": "application/json"
+        }
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.post(url, json=payload, timeout=15.0)
+            if resp.status_code != 200:
+                print(f"Gemini API Error {resp.status_code}: {resp.text}")
+                # Fallback to secondary key if primary failed
+                alt_key = settings.GOOGLE_TRANSLATE_API_KEY
+                if alt_key and alt_key != api_key:
+                    print("[Questions] Attempting fallback to GOOGLE_TRANSLATE_API_KEY...")
+                    alt_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={alt_key}"
+                    resp = await client.post(alt_url, json=payload, timeout=15.0)
+            
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail=f"Gemini API Error: {resp.text[:100]}")
+                
+            data = resp.json()
+            if "candidates" not in data or not data["candidates"]:
+                print("Gemini returned no candidates:", data)
+                raise HTTPException(status_code=500, detail="Gemini returned an empty response")
+                
+            raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            
+            # Robust JSON extraction
+            if "{" in raw_text:
+                start = raw_text.find("{")
+                end = raw_text.rfind("}")
+                if start != -1 and end != -1:
+                    raw_text = raw_text[start : end + 1]
+                
+            parsed = json.loads(raw_text)
+            return {
+                "question_text": parsed.get("question_text", ""),
+                "options": parsed.get("options", ["", "", "", ""]),
+                "correct_option_index": parsed.get("correct_option_index", 0),
+                "category": parsed.get("category", "fun")
+            }
+            
+        except json.JSONDecodeError:
+            print("Failed to parse Gemini JSON:", raw_text[:200])
+            raise HTTPException(status_code=500, detail="Gemini returned invalid JSON format")
+        except Exception as e:
+            print(f"Gemini generation error: {type(e).__name__} - {str(e)}")
+            raise HTTPException(status_code=500, detail=str(e))
+

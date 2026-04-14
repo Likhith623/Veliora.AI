@@ -59,7 +59,8 @@ export function createWsWithReconnect(
     };
 
     ws.onerror = (error: Event) => {
-      console.error('[WS] Error:', error);
+      // Native WebSocket errors yield empty Event objects, so we provide context mapping.
+      console.error(`[WS] Connection error for url: ${url.split('?')[0]}`);
       handlers.onError?.(error);
     };
 
@@ -238,6 +239,9 @@ export function createRoomWS(
     onClose: roomHandlers.onClose,
     onError: roomHandlers.onError,
     onMessage: (data) => {
+      if (typeof window !== 'undefined' && (window as any)._handleRoomWebRTC) {
+        (window as any)._handleRoomWebRTC(data);
+      }
       switch (data.type) {
         case 'new_message':
           roomHandlers.onNewMessage?.(data.message);
@@ -277,11 +281,47 @@ export function createRoomWS(
 //   {"type": "state", "state": {...}}             — every tick (30fps pong/hockey)
 //   {"type": "game_over", "winner": str, "scores": {}, "xp_awarded": {}}
 //   {"type": "opponent_disconnected", "user_id": str}
+// ── Global Presence WebSocket ──────────────────────────────────
+// WS: ws://.../presence/ws/{user_id}
+
+export interface PresenceWSHandlers {
+  onGameInvite?: (data: { sender_id: string, sender_name: string, game_type: string, session_id: string }) => void;
+  onGameInviteFailed?: (error: string) => void;
+  onInviteResponse?: (data: { accept: boolean, session_id: string, responder_id: string }) => void;
+  onOpen?: () => void;
+  onClose?: (event: CloseEvent) => void;
+}
+
+export function createPresenceWS(
+  userId: string,
+  handlers: PresenceWSHandlers
+): ManagedWebSocket {
+  const url = `${WS_BASE}/presence/ws/${userId}`;
+
+  return createWsWithReconnect(url, {
+    onOpen: handlers.onOpen,
+    onClose: handlers.onClose,
+    onMessage: (data) => {
+      switch (data.type) {
+        case 'game_invite_received':
+          handlers.onGameInvite?.(data);
+          break;
+        case 'game_invite_failed':
+          handlers.onGameInviteFailed?.(data.error);
+          break;
+        case 'invite_response':
+          handlers.onInviteResponse?.(data);
+          break;
+      }
+    },
+  });
+}
 
 export interface LiveGameWSHandlers {
   onWaitingForOpponent?: () => void;
   onGameStart?: (state: any) => void;
   onState?: (state: any) => void;
+  onRoundResult?: (data: { match: boolean, ans_a: string, ans_b: string, state: any }) => void;
   onGameOver?: (winner: string, scores: Record<string, number>, xpAwarded: any) => void;
   onOpponentDisconnected?: (userId: string) => void;
   onOpen?: () => void;
@@ -310,6 +350,9 @@ export function createLiveGameWS(
           break;
         case 'state':
           gameHandlers.onState?.(data.state);
+          break;
+        case 'round_result':
+          gameHandlers.onRoundResult?.(data);
           break;
         case 'game_over':
           gameHandlers.onGameOver?.(data.winner, data.scores, data.xp_awarded);

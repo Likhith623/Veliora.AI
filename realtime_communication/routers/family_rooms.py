@@ -88,7 +88,7 @@ async def get_user_rooms(user_id: str = Depends(get_current_user_id)):
     
     rooms = []
     for m in (memberships.data or []):
-        room = m.get("family_rooms", {})
+        room = m.get("family_rooms_realtime") or m.get("family_rooms", {})
         if not room:
             continue
         # Get member count
@@ -482,6 +482,20 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
                     "type": "typing",
                     "user_id": user_id
                 }, exclude=websocket)
+                
+            elif msg_type in ("webrtc_offer", "webrtc_answer", "webrtc_ice_candidate"):
+                payload = {
+                    "type": msg_type,
+                    "from_user_id": user_id,
+                    **message_data
+                }
+                await manager.broadcast(room_id, payload, exclude=websocket)
+                
+            elif msg_type == "call_join":
+                await manager.broadcast(room_id, {"type": "call_join", "user_id": user_id}, exclude=websocket)
+                
+            elif msg_type == "call_leave":
+                await manager.broadcast(room_id, {"type": "call_leave", "user_id": user_id}, exclude=websocket)
                 
             elif msg_type == "message":
                 original_text = message_data.get("text", "")

@@ -8,6 +8,7 @@ import {
   Heart, Zap, Users, ChevronRight, Timer
 } from 'lucide-react';
 import { ROLE_EMOJIS } from '@/types';
+import { api } from '@/lib/api';
 
 const MOCK_QUESTIONS = [
   { id: 'q1', question: "What is Maria's favorite Brazilian dish she likes to cook on Sundays?", options: ['Feijoada', 'Pão de queijo', 'Coxinha', 'Brigadeiro'], correct: 0, source: 'From your conversation on Day 5' },
@@ -21,11 +22,21 @@ type ContestState = 'overview' | 'playing' | 'results';
 
 export default function ContestsPage() {
   const [state, setState] = useState<ContestState>('overview');
+  const [activeQuestions, setActiveQuestions] = useState<any[]>(MOCK_QUESTIONS);
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState<(number | null)[]>(new Array(MOCK_QUESTIONS.length).fill(null));
   const [showResult, setShowResult] = useState(false);
   const [timeLeft, setTimeLeft] = useState(120);
   const [score, setScore] = useState(0);
+  const [eligibleFriends, setEligibleFriends] = useState<any[]>([]);
+  const [generating, setGenerating] = useState(false);
+
+  useEffect(() => {
+    // Fetch eligible custom contest friends
+    api.getEligibleContestFriends()
+      .then(res => setEligibleFriends(res.eligible_friends || []))
+      .catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (state === 'playing' && timeLeft > 0) {
@@ -36,6 +47,39 @@ export default function ContestsPage() {
     }
   }, [state, timeLeft]);
 
+  const startCustomContest = async (friendId: string, relationshipId: string) => {
+    setGenerating(true);
+    try {
+      const res = await api.createContest({
+        relationship_id: relationshipId,
+        contest_type: 'custom',
+        target_user_id: friendId
+      });
+      console.log('Custom Contest Generated:', res);
+      const customQs = (res.questions || []).map((q: any) => {
+        const opts = q.options || ['A', 'B', 'C', 'D'];
+        let correctIdx = opts.indexOf(q.correct_answer);
+        if (correctIdx === -1) correctIdx = 0;
+        return {
+          id: q.id,
+          question: q.question_text,
+          options: opts,
+          correct: correctIdx,
+          source: 'Custom Question'
+        };
+      });
+      if (customQs.length > 0) {
+        setActiveQuestions(customQs);
+        setAnswers(new Array(customQs.length).fill(null));
+      }
+      setState('playing');
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const handleAnswer = (optionIdx: number) => {
     if (showResult) return;
     const newAnswers = [...answers];
@@ -43,13 +87,13 @@ export default function ContestsPage() {
     setAnswers(newAnswers);
     setShowResult(true);
 
-    if (optionIdx === MOCK_QUESTIONS[currentQ].correct) {
+    if (optionIdx === activeQuestions[currentQ].correct) {
       setScore(s => s + 10);
     }
 
     setTimeout(() => {
       setShowResult(false);
-      if (currentQ < MOCK_QUESTIONS.length - 1) {
+      if (currentQ < activeQuestions.length - 1) {
         setCurrentQ(currentQ + 1);
       } else {
         setState('results');
@@ -57,7 +101,7 @@ export default function ContestsPage() {
     }, 1500);
   };
 
-  const totalCorrect = answers.filter((a, i) => a === MOCK_QUESTIONS[i].correct).length;
+  const totalCorrect = answers.filter((a, i) => a === activeQuestions[i]?.correct).length;
 
   return (
     <div className="min-h-screen pb-24">
@@ -109,113 +153,52 @@ export default function ContestsPage() {
           {/* ── Overview ─────────────────────── */}
           {state === 'overview' && (
             <motion.div key="overview" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              {/* Active contest */}
-              <motion.div
-                className="glass-card relative overflow-hidden mb-8 ring-1 ring-amber-500/20 shadow-[0_0_30px_-5px_rgba(245,158,11,0.15)]"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                whileHover={{ scale: 1.01 }}
-                transition={{ type: 'spring', stiffness: 300 }}
-              >
-                <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-orange-500/10" />
-                <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full bg-amber-500/5 blur-3xl" />
-                <div className="relative z-10">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Trophy className="w-6 h-6 text-amber-400" />
-                    <span className="font-bold text-lg">Weekly Bond Challenge</span>
-                    <motion.span className="ml-auto text-xs text-green-400 bg-green-500/10 px-2.5 py-1 rounded-full ring-1 ring-green-500/20 font-medium" animate={{ scale: [1, 1.05, 1] }} transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}>● Ready!</motion.span>
+              
+              {/* Custom Challenges Section */}
+              <div className="glass-card mb-8 border border-purple-500/30">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-5">
+                  <div>
+                    <h3 className="font-bold flex items-center gap-2 text-lg">
+                      <Sparkles className="w-5 h-5 text-purple-400" />
+                      Custom Challenges
+                    </h3>
+                    <p className="text-sm text-muted mt-1">
+                      Challenge your friends using their personalized questions!
+                    </p>
                   </div>
-
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-familia-500 to-bond-500 flex items-center justify-center text-lg">
-                        {ROLE_EMOJIS['son']}
-                      </div>
-                      <span className="text-sm">You</span>
-                    </div>
-                    <div className="text-subtle">VS</div>
-                    <div className="flex items-center gap-2">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center text-lg">
-                        {ROLE_EMOJIS['mother']}
-                      </div>
-                      <span className="text-sm">Maria Santos 🇧🇷</span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-3 gap-3 mb-5 text-center text-sm">
-                    <div className="bg-[var(--bg-card-hover)] rounded-xl p-3 ring-1 ring-[var(--border-color)]">
-                      <div className="text-lg font-bold text-amber-400">5</div>
-                      <div className="text-[10px] text-muted mt-0.5">Questions</div>
-                    </div>
-                    <div className="bg-[var(--bg-card-hover)] rounded-xl p-3 ring-1 ring-[var(--border-color)]">
-                      <div className="text-lg font-bold text-amber-400">2:00</div>
-                      <div className="text-[10px] text-muted mt-0.5">Time Limit</div>
-                    </div>
-                    <div className="bg-[var(--bg-card-hover)] rounded-xl p-3 ring-1 ring-[var(--border-color)]">
-                      <div className="text-lg font-bold text-amber-400">50</div>
-                      <div className="text-[10px] text-muted mt-0.5">Max Points</div>
-                    </div>
-                  </div>
-
-                  <p className="text-xs text-muted mb-4">
-                    Questions are generated from your real conversations. How well do you know each other?
-                  </p>
-
-                  <motion.button
-                    onClick={() => setState('playing')}
-                    className="btn-primary w-full flex items-center justify-center gap-2 text-base font-semibold shadow-lg shadow-familia-500/20"
-                    whileHover={{ scale: 1.02, boxShadow: '0 0 30px rgba(168, 85, 247, 0.3)' }}
-                    whileTap={{ scale: 0.97 }}
-                  >
-                    <Trophy className="w-5 h-5" />
-                    Start Challenge!
-                  </motion.button>
+                  <Link href="/contests/my-questions">
+                    <motion.button whileHover={{ scale: 1.02 }} className="px-4 py-2 rounded-xl bg-purple-500/10 text-purple-500 font-medium text-sm border border-purple-500/20 whitespace-nowrap">
+                      Edit My Questions
+                    </motion.button>
+                  </Link>
                 </div>
-              </motion.div>
 
-              {/* Past contests */}
-              <h3 className="font-bold mb-4 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-muted" />
-                Past Results
-              </h3>
-              <div className="space-y-3">
-                {[
-                  { partner: 'Maria Santos', date: '3 days ago', yourScore: 40, partnerScore: 35, synchrony: 75 },
-                  { partner: 'Kenji Tanaka', date: '1 week ago', yourScore: 30, partnerScore: 30, synchrony: 90 },
-                ].map((result, i) => (
-                  <motion.div
-                    key={i}
-                    className="rounded-xl p-[1px] bg-gradient-to-r from-[var(--border-color)] via-[var(--border-color)] to-[var(--border-color)] hover:from-familia-500/30 hover:to-bond-500/30 transition-all duration-300"
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                    whileHover={{ scale: 1.01 }}
-                  >
-                    <div className="glass-card !p-4 !rounded-[11px]">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium text-sm">{result.partner}</div>
-                          <div className="text-xs text-muted">{result.date}</div>
+                {eligibleFriends.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {eligibleFriends.map((f, i) => (
+                      <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-[var(--bg-primary)] border border-themed">
+                        <div className="flex items-center gap-3">
+                          <img src={f.avatar_url || 'https://via.placeholder.com/40'} alt={f.display_name} className="w-10 h-10 rounded-full object-cover" />
+                          <span className="font-medium text-sm">{f.display_name}</span>
                         </div>
-                        <div className="flex items-center gap-4 text-center">
-                          <div>
-                            <div className="font-bold text-familia-400">{result.yourScore}</div>
-                            <div className="text-[10px] text-muted">You</div>
-                          </div>
-                          <div className="text-subtle">vs</div>
-                          <div>
-                            <div className="font-bold text-green-400">{result.partnerScore}</div>
-                            <div className="text-[10px] text-muted">Partner</div>
-                          </div>
-                          <div className="ml-2 px-2.5 py-1 rounded-full bg-gradient-to-r from-amber-500/10 to-orange-500/10 text-amber-400 text-xs font-medium ring-1 ring-amber-500/20">
-                            {result.synchrony}% sync
-                          </div>
-                        </div>
+                        <button 
+                          disabled={generating}
+                          onClick={() => startCustomContest(f.friend_id, f.relationship_id)}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-green-500/10 text-green-500 hover:bg-green-500/20 transition"
+                        >
+                          Challenge
+                        </button>
                       </div>
-                    </div>
-                  </motion.div>
-                ))}
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-xl bg-[var(--bg-primary)] border border-themed text-center text-sm text-muted">
+                    None of your friends have created custom questions yet.
+                  </div>
+                )}
               </div>
+
+
             </motion.div>
           )}
 
@@ -224,7 +207,7 @@ export default function ContestsPage() {
             <motion.div key="playing" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
               {/* Progress */}
               <div className="flex items-center gap-2 mb-6">
-                {MOCK_QUESTIONS.map((_, i) => (
+                {activeQuestions.map((_, i) => (
                   <motion.div
                     key={i}
                     className={`flex-1 h-2 rounded-full transition-all ${i < currentQ ? 'bg-gradient-to-r from-familia-500 to-bond-500' :
@@ -239,7 +222,7 @@ export default function ContestsPage() {
               </div>
 
               <div className="flex items-center justify-between mb-3 text-sm">
-                <span className="text-muted font-medium">Question {currentQ + 1} of {MOCK_QUESTIONS.length}</span>
+                <span className="text-muted font-medium">Question {currentQ + 1} of {activeQuestions.length}</span>
                 <motion.span className="flex items-center gap-1.5 bg-amber-500/10 px-2.5 py-1 rounded-full" key={score} initial={{ scale: 1.2 }} animate={{ scale: 1 }}>
                   <Star className="w-3.5 h-3.5 text-amber-400" />
                   <span className="font-bold text-amber-400 text-xs">{score} pts</span>
@@ -263,16 +246,16 @@ export default function ContestsPage() {
                   <div>
                     <div className="text-[10px] text-subtle mb-1 flex items-center gap-1">
                       <Sparkles className="w-3 h-3" />
-                      {MOCK_QUESTIONS[currentQ].source}
+                      {activeQuestions[currentQ].source}
                     </div>
-                    <h3 className="text-lg font-semibold leading-snug">{MOCK_QUESTIONS[currentQ].question}</h3>
+                    <h3 className="text-lg font-semibold leading-snug">{activeQuestions[currentQ].question}</h3>
                   </div>
                 </div>
 
                 <div className="space-y-3">
-                  {MOCK_QUESTIONS[currentQ].options.map((opt, i) => {
+                  {activeQuestions[currentQ].options.map((opt: string, i: number) => {
                     const isSelected = answers[currentQ] === i;
-                    const isCorrect = i === MOCK_QUESTIONS[currentQ].correct;
+                    const isCorrect = i === activeQuestions[currentQ].correct;
                     const showCorrect = showResult && isCorrect;
                     const showWrong = showResult && isSelected && !isCorrect;
 
@@ -341,7 +324,7 @@ export default function ContestsPage() {
                       <div className="text-xs text-muted mt-1">Your Score</div>
                     </motion.div>
                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.5 }}>
-                      <div className="text-3xl font-bold text-green-400">{totalCorrect}/{MOCK_QUESTIONS.length}</div>
+                      <div className="text-3xl font-bold text-green-400">{totalCorrect}/{activeQuestions.length}</div>
                       <div className="text-xs text-muted mt-1">Correct</div>
                     </motion.div>
                     <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }} transition={{ delay: 0.7 }}>
@@ -361,24 +344,17 @@ export default function ContestsPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-center gap-4">
-                <Link href="/chat/rel-1">
-                  <motion.button className="btn-primary" whileHover={{ scale: 1.05 }}>
-                    Back to Chat 💬
-                  </motion.button>
-                </Link>
+              <div className="flex gap-3 max-w-sm mx-auto">
                 <button
                   onClick={() => {
                     setState('overview');
-                    setCurrentQ(0);
-                    setAnswers(new Array(MOCK_QUESTIONS.length).fill(null));
                     setScore(0);
                     setTimeLeft(120);
                     setShowResult(false);
                   }}
-                  className="px-4 py-3 rounded-xl border border-[var(--border-color)] text-muted hover:text-[var(--text-secondary)] transition text-sm"
+                  className="w-full flex-1 btn-primary py-3 flex items-center justify-center gap-2"
                 >
-                  Try Again
+                  Back to Contests 🏆
                 </button>
               </div>
             </motion.div>

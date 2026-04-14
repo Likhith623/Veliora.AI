@@ -11,6 +11,7 @@ import { api } from '@/lib/api';
 import { createRoomWS, type ManagedWebSocket } from '@/lib/websocket';
 import { useAuth } from '@/lib/AuthContext';
 import toast from 'react-hot-toast';
+import { GroupCall } from './GroupCall';
 
 interface FamilyRoom {
   id: string;
@@ -59,6 +60,7 @@ export default function FamilyRoomsPage() {
   const [rooms, setRooms] = useState<FamilyRoom[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<FamilyRoom | null>(null);
   const [messages, setMessages] = useState<RoomMessage[]>([]);
+  const [isCallActive, setIsCallActive] = useState(false);
   const [msgInput, setMsgInput] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -168,7 +170,16 @@ export default function FamilyRoomsPage() {
       const ws = createRoomWS(selectedRoom.id, user.id, {
         onNewMessage: (message) => {
           setMessages(prev => {
+            // Deduplicate to avoid React duplicate key errors from racing updates
             if (prev.some(m => m.id === message.id)) return prev;
+            
+            // Check if this incoming message matches a recently sent optimistic message 
+            // by comparing the exact text content and sender_id (we swap IDs to prevent keys colliding)
+            const isMatch = prev.find(m => m.id.startsWith('temp-') && m.sender_id === message.sender_id && m.content === (message.original_text || message.content));
+            if (isMatch) {
+              return prev.map(m => m.id === isMatch.id ? message : m);
+            }
+            
             return [...prev, message];
           });
         },
@@ -247,9 +258,19 @@ export default function FamilyRoomsPage() {
         content: messageText,
         content_type: 'text',
       });
-      setMessages(prev => 
-        prev.map(m => m.id === optimisticMsg.id ? { ...result.message, profiles: optimisticMsg.profiles } : m)
-      );
+      setMessages(prev => {
+        // Did the WebSocket already append the real message because the text didn't exact match?
+        if (prev.some(m => m.id === result.message?.id)) {
+          // Remove the temp message entirely since the real one is already safely in state.
+          return prev.filter(m => m.id !== optimisticMsg.id);
+        }
+
+        // If the WebSocket already replaced it perfectly (by ID or text matching), do nothing.
+        if (!prev.some(m => m.id === optimisticMsg.id)) return prev;
+        
+        // Otherwise, substitute the exact temp message with the finalized API response.
+        return prev.map(m => m.id === optimisticMsg.id ? { ...result.message, profiles: optimisticMsg.profiles } : m);
+      });
     } catch (err: any) {
       console.error('Failed to send message:', err);
       toast.error(err.message || 'Failed to send message');
@@ -483,12 +504,25 @@ export default function FamilyRoomsPage() {
 
           {view === 'chat' && selectedRoom && (
             <motion.div key="chat" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="flex flex-col h-[calc(100vh-200px)]">
-              <div className="flex-1 overflow-y-auto space-y-4 mb-4">
-                {selectedRoom.is_moderator && (
-                  <div className="flex justify-end mb-2">
+              {isCallActive && roomWsRef.current && (
+                 <GroupCall 
+                   roomId={selectedRoom.id}
+                   userId={user?.id || ''}
+                   ws={roomWsRef.current}
+                   onLeave={() => setIsCallActive(false)}
+                   members={selectedRoom.members || []}
+                 />
+              )}
+              
+              <div className="flex-1 overflow-y-auto space-y-4 mb-4 mt-2">
+                <div className="flex justify-end mb-2 gap-2">
+                  {!isCallActive && (
+                    <button onClick={() => setIsCallActive(true)} className="text-xs px-3 py-1 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20">Join Call</button>
+                  )}
+                  {selectedRoom.is_moderator && (
                     <button onClick={() => openCodesModal(selectedRoom)} className="text-xs px-3 py-1 rounded-lg bg-[var(--bg-card)] border border-themed hover:bg-[var(--bg-card-hover)]">Manage Invite Codes</button>
-                  </div>
-                )}
+                  )}
+                </div>
                 {messages.length === 0 ? (
                   <div className="text-center py-12">
                     <MessageCircle className="w-12 h-12 mx-auto mb-4 text-muted opacity-30" />
@@ -517,7 +551,7 @@ export default function FamilyRoomsPage() {
                               ? 'bg-gradient-to-br from-familia-500/80 to-bond-500/80 text-white rounded-br-md'
                               : 'bg-[var(--bg-card)] border border-themed rounded-bl-md'
                           }`}>
-                            <p className="text-sm">{msg.content}</p>
+                            <p className="text-sm">{msg.original_text || msg.content}</p>
                           </div>
                           <div className={`text-[10px] text-muted mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
                             {formatTime(msg.created_at)}

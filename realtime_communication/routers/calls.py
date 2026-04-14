@@ -96,21 +96,7 @@ async def webrtc_signal(websocket: WebSocket, relationship_id: str, user_id: str
             if msg_type == "call_start":
                 call_type = msg.get("call_type", "audio")
                 
-                # Enforce level requirements
-                if call_type == "audio" and level < 3:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"Audio calls require Level 3 (Bonded). Current: Level {level}."
-                    })
-                    continue
-                
-                if call_type == "video" and level < 4:
-                    await websocket.send_json({
-                        "type": "error",
-                        "message": f"Video calls require Level 4 (Close). Current: Level {level}."
-                    })
-                    continue
-                
+
                 # Notify partner
                 caller = db.table("profiles_realtime").select("display_name").eq("id", user_id).execute()
                 caller_name = caller.data[0]["display_name"] if caller.data else "Someone"

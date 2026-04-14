@@ -1,13 +1,56 @@
 """Contests router - Enhanced Bonding Challenge Ecosystem."""
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
-from realtime_communication.models.schemas import ContestRequest, AnswerRequest
+from realtime_communication.models.schemas import ContestRequest, AnswerRequest, CustomQuestionCreate
 from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.contest_service import generate_contest, submit_answer, finish_contest
 from realtime_communication.services.auth_service import get_current_user_id
 
 router = APIRouter(prefix="/contests", tags=["Contests"])
+
+@router.post("/custom/questions")
+async def save_custom_questions(req: List[CustomQuestionCreate], user_id: str = Depends(get_current_user_id)):
+    """Save the user's custom question bank."""
+    db = get_supabase()
+    db.table("user_custom_questions_realtime").delete().eq("user_id", user_id).execute()
+    if not req:
+        return {"status": "success"}
+    payload = [{
+        "user_id": user_id,
+        "question_text": q.question_text,
+        "options": q.options,
+        "correct_option_index": q.correct_option_index
+    } for q in req]
+    db.table("user_custom_questions_realtime").insert(payload).execute()
+    return {"status": "success"}
+
+@router.get("/custom/questions")
+async def get_my_custom_questions(user_id: str = Depends(get_current_user_id)):
+    db = get_supabase()
+    res = db.table("user_custom_questions_realtime").select("*").eq("user_id", user_id).execute()
+    return {"questions": res.data or []}
+
+@router.get("/custom/eligibility")
+async def get_eligible_friends(user_id: str = Depends(get_current_user_id)):
+    """Return friends who have completed their 5 custom questions."""
+    db = get_supabase()
+    rels = db.table("relationships_realtime").select("*, user_a:profiles_realtime!user_a_id(id, display_name, profile_photo_url), user_b:profiles_realtime!user_b_id(id, display_name, profile_photo_url)").or_(f"user_a_id.eq.{user_id},user_b_id.eq.{user_id}").eq("status", "active").execute()
+    eligible = []
+    for rel in (rels.data or []):
+        friend_id = rel["user_b_id"] if rel["user_a_id"] == user_id else rel["user_a_id"]
+        count_res = db.table("user_custom_questions_realtime").select("id", count="exact").eq("user_id", friend_id).execute()
+        count = count_res.count if hasattr(count_res, "count") else len(count_res.data or [])
+        if count >= 1:
+            friend_profile = rel["user_b"] if rel["user_a_id"] == user_id else rel["user_a"]
+            if friend_profile:
+                eligible.append({
+                    "relationship_id": rel["id"],
+                    "friend_id": friend_id,
+                    "display_name": friend_profile.get("display_name", "Friend"),
+                    "avatar_url": friend_profile.get("profile_photo_url", "")
+                })
+    return {"eligible_friends": eligible}
 
 async def _update_leaderboard(db, user_id: str, contest_type: str, score_to_add: int):
     """O(1) Check and Upsert into contest_leaderboard_realtime created in Phase 7."""
@@ -45,7 +88,7 @@ async def create_contest(req: ContestRequest, user_id: str = Depends(get_current
         raise HTTPException(status_code=403, detail="Unauthorized relationship access")
     
     # Generate deeply contextual contest mapping
-    result = await generate_contest(req.relationship_id, req.contest_type)
+    result = await generate_contest(req.relationship_id, req.contest_type, getattr(req, "target_user_id", None))
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
     

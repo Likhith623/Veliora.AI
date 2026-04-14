@@ -16,6 +16,8 @@ interface Question {
   question_text: string;
   category?: string;
   is_public?: boolean;
+  options?: string[];
+  correct_option_index?: number;
   created_at?: string;
 }
 
@@ -28,7 +30,10 @@ export default function QuestionsPage() {
   const [newText, setNewText] = useState('');
   const [newCategory, setNewCategory] = useState('');
   const [isPublic, setIsPublic] = useState(true);
+  const [newOptions, setNewOptions] = useState<string[]>(['', '', '', '']);
+  const [newCorrectIndex, setNewCorrectIndex] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingAI, setIsGeneratingAI] = useState(false);
   const [randomQ, setRandomQ] = useState<Question | null>(null);
   const [isLoadingRandom, setIsLoadingRandom] = useState(false);
 
@@ -50,16 +55,24 @@ export default function QuestionsPage() {
 
   const createQuestion = async () => {
     if (!newText.trim()) return;
+    if (newOptions.some(o => !o.trim())) {
+      toast.error("Please fill in all 4 options.");
+      return;
+    }
     setIsSaving(true);
     try {
       await api.createQuestion({
         question_text: newText.trim(),
         category: newCategory.trim() || undefined,
         is_public: isPublic,
+        options: newOptions,
+        correct_option_index: newCorrectIndex
       });
       toast.success('Question created!');
       setNewText('');
       setNewCategory('');
+      setNewOptions(['', '', '', '']);
+      setNewCorrectIndex(0);
       setShowCreate(false);
       loadQuestions();
     } catch (e: any) {
@@ -76,10 +89,13 @@ export default function QuestionsPage() {
       await api.updateQuestion(questionId, {
         question_text: newText.trim(),
         is_public: isPublic,
+        options: newOptions,
+        correct_option_index: newCorrectIndex
       });
       toast.success('Question updated!');
       setEditingId(null);
       setNewText('');
+      setNewOptions(['', '', '', '']);
       loadQuestions();
     } catch (e: any) {
       toast.error(e.message || 'Failed to update');
@@ -95,6 +111,29 @@ export default function QuestionsPage() {
       setQuestions(prev => prev.filter(q => q.id !== questionId));
     } catch (e: any) {
       toast.error(e.message || 'Failed to delete');
+    }
+  };
+
+  const handleGenerateAI = async () => {
+    setIsGeneratingAI(true);
+    toast.loading('Gemini is generating...', { id: 'ai' });
+    try {
+      const g = await api.generateQuestionAI();
+      setNewText(g.question_text);
+      if (g.options && Array.isArray(g.options)) {
+        setNewOptions(g.options);
+      }
+      if (typeof g.correct_option_index === 'number') {
+        setNewCorrectIndex(g.correct_option_index);
+      }
+      if (g.category) {
+        setNewCategory(g.category);
+      }
+      toast.success('Generated successfully!', { id: 'ai' });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to generate', { id: 'ai' });
+    } finally {
+      setIsGeneratingAI(false);
     }
   };
 
@@ -114,6 +153,8 @@ export default function QuestionsPage() {
     setEditingId(q.id);
     setNewText(q.question_text);
     setIsPublic(q.is_public !== false);
+    setNewOptions(q.options || ['', '', '', '']);
+    setNewCorrectIndex(q.correct_option_index || 0);
     setShowCreate(false);
   };
 
@@ -147,7 +188,7 @@ export default function QuestionsPage() {
             My Questions
           </h1>
           <motion.button
-            onClick={() => { setShowCreate(!showCreate); setEditingId(null); setNewText(''); }}
+            onClick={() => { setShowCreate(!showCreate); setEditingId(null); setNewText(''); setNewOptions(['', '', '', '']); }}
             className="ml-auto p-2 rounded-xl bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/20 text-purple-400 hover:bg-purple-500/20 transition"
             whileTap={{ scale: 0.92 }}
           >
@@ -197,27 +238,80 @@ export default function QuestionsPage() {
               className="overflow-hidden mb-6"
             >
               <div className="glass-card border-purple-500/20">
-                <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                  {editingId ? <Edit3 className="w-4 h-4 text-purple-400" /> : <Plus className="w-4 h-4 text-purple-400" />}
-                  {editingId ? 'Edit Question' : 'Create Question'}
-                </h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="font-semibold text-sm flex items-center gap-2">
+                    {editingId ? <Edit3 className="w-4 h-4 text-purple-400" /> : <Plus className="w-4 h-4 text-purple-400" />}
+                    {editingId ? 'Edit Question' : 'Create Question'}
+                  </h3>
+                  <motion.button
+                    onClick={handleGenerateAI}
+                    disabled={isGeneratingAI}
+                    whileTap={{ scale: 0.95 }}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-500/10 to-pink-500/10 border border-purple-500/30 text-purple-400 text-xs font-semibold hover:bg-purple-500/20 transition"
+                  >
+                    {isGeneratingAI ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    Generate with AI 🤖
+                  </motion.button>
+                </div>
 
-                <textarea
-                  value={newText}
-                  onChange={(e) => setNewText(e.target.value)}
-                  placeholder="Write your question here..."
-                  className="w-full px-4 py-3 rounded-xl bg-[var(--bg-primary)] border border-themed text-sm mb-3 outline-none focus:border-purple-500/50 transition resize-none min-h-[80px]"
-                  rows={3}
-                />
+                <div className="space-y-4 mb-4">
+                  <div>
+                    <label className="block text-xs text-muted mb-1 font-medium">Question Text</label>
+                    <textarea
+                      value={newText}
+                      onChange={(e) => setNewText(e.target.value)}
+                      placeholder="Write your personal question here..."
+                      className="w-full px-4 py-3 rounded-xl bg-[var(--bg-primary)] border border-themed text-sm outline-none focus:border-purple-500/50 transition resize-none min-h-[80px]"
+                      rows={2}
+                    />
+                  </div>
 
-                {!editingId && (
-                  <input
-                    value={newCategory}
-                    onChange={(e) => setNewCategory(e.target.value)}
-                    placeholder="Category (optional: culture, family, fun...)"
-                    className="w-full px-4 py-2.5 rounded-xl bg-[var(--bg-primary)] border border-themed text-sm mb-3 outline-none focus:border-purple-500/50 transition"
-                  />
-                )}
+                  <div>
+                    <label className="block text-xs text-muted mb-2 font-medium">Options (Select the correct answer)</label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {newOptions.map((opt, optIdx) => (
+                        <div key={optIdx} className="relative">
+                          <input
+                            type="text"
+                            value={opt}
+                            onChange={(e) => {
+                              const opts = [...newOptions];
+                              opts[optIdx] = e.target.value;
+                              setNewOptions(opts);
+                            }}
+                            placeholder={`Option ${optIdx + 1}`}
+                            className={`w-full pl-4 pr-10 py-2.5 rounded-xl border outline-none text-sm transition ${
+                              newCorrectIndex === optIdx
+                                ? 'bg-green-500/10 border-green-500/50 text-green-600 dark:text-green-400'
+                                : 'bg-[var(--bg-primary)] border-[var(--border-color)] focus:border-purple-500/50'
+                            }`}
+                          />
+                          <button
+                            onClick={() => setNewCorrectIndex(optIdx)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-[var(--bg-card)] transition"
+                            title="Mark as correct answer"
+                          >
+                            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${newCorrectIndex === optIdx ? 'border-green-500 bg-green-500' : 'border-gray-400 opacity-50'}`}>
+                              {newCorrectIndex === optIdx && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {!editingId && (
+                    <div>
+                      <label className="block text-xs text-muted mb-1 font-medium">Category</label>
+                      <input
+                        value={newCategory}
+                        onChange={(e) => setNewCategory(e.target.value)}
+                        placeholder="e.g., culture, family, fun... (optional)"
+                        className="w-full px-4 py-2.5 rounded-xl bg-[var(--bg-primary)] border border-themed text-sm outline-none focus:border-purple-500/50 transition"
+                      />
+                    </div>
+                  )}
+                </div>
 
                 <div className="flex items-center justify-between mb-4">
                   <button

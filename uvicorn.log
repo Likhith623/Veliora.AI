@@ -1,0 +1,21 @@
+INFO:     Will watch for changes in these directories: ['/Users/likhith./Veliora.AI_backend.']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [23320] using WatchFiles
+INFO:     Started server process [23322]
+INFO:     Waiting for application startup.
+10:47:26 │ veliora                        │ INFO    │ 🔥 Veliora.AI starting up...
+10:47:27 │ Redis_chat.working_files.redis_class │ INFO    │ Redis Stack connected: localhost:6379/0
+10:47:27 │ Redis_chat.working_files.redis_class │ INFO    │ memories_idx already exists
+10:47:27 │ Redis_chat.working_files.redis_class │ INFO    │ chats_idx already exists
+10:47:27 │ services.redis_cache           │ INFO    │ Redis Stack initialized and indexes created.
+10:47:27 │ veliora                        │ INFO    │ ✅ Redis Stack connected and indexes created
+10:47:28 │ veliora                        │ INFO    │ ✅ RabbitMQ workers started (memory, message, cleanup)
+10:47:28 │ veliora                        │ INFO    │ ✅ XP flush worker started
+10:47:28 │ veliora                        │ INFO    │ ✅ Diary CRON worker started
+10:47:28 │ veliora                        │ INFO    │ 🚀 Veliora.AI ready!
+10:47:28 │ Redis_chat.working_files.memory_worker │ INFO    │ [MemoryWorker] Connecting to RabbitMQ...
+10:47:28 │ Redis_chat.working_files.message_worker │ INFO    │ [MessageWorker] Connecting to RabbitMQ...
+10:47:28 │ services.background_tasks      │ INFO    │ XP flush worker started
+10:47:28 │ services.background_tasks      │ INFO    │ Diary CRON worker started
+10:47:28 │ services.background_tasks      │ INFO    │ Diary CRON: next run in 67351s at 2026-04-15 00:00:00+00:00
+INFO:     Application startup complete.

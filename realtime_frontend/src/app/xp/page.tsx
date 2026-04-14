@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { useState, useEffect } from 'react';
 import {
   ArrowLeft, Zap, Star, Trophy, Gift, TrendingUp, Clock,
-  ChevronRight, Flame, Sparkles, Loader2, Send, Crown
+  ChevronRight, Flame, Sparkles, Loader2, Send, Crown,
+  Heart, User
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/AuthContext';
@@ -211,6 +212,38 @@ export default function XPPage() {
                     ))}
                   </div>
 
+                  {/* Friends / Bonds */}
+                  {relationships?.length > 0 && (
+                    <div className="glass-card mb-6">
+                      <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
+                        <Heart className="w-4 h-4 text-heart-400 fill-heart-400" /> Individual Friend XP
+                      </h3>
+                      <div className="space-y-2">
+                        {relationships.map(rel => (
+                          <div key={rel.id} className="p-3 rounded-xl bg-gradient-to-r from-bond-500/5 to-familia-500/5 border border-themed flex items-center justify-between transition hover:bg-bond-500/10">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full overflow-hidden bg-[var(--bg-card)] border border-themed flex-shrink-0 flex items-center justify-center">
+                                {rel.partner_avatar_config?.image_url ? (
+                                  <img src={rel.partner_avatar_config.image_url} alt="avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                  <User className="w-5 h-5 text-muted" />
+                                )}
+                              </div>
+                              <div>
+                                <div className="text-sm font-semibold">{rel.partner_display_name || 'Friend'} <span>{rel.partner_country}</span></div>
+                                <div className="text-[10px] uppercase tracking-wider text-muted font-bold text-bond-400">{rel.level_label || 'Bond Level'}</div>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-sm font-bold text-familia-400 flex items-center justify-end gap-1"><Zap className="w-3 h-3"/> {rel.shared_xp?.toLocaleString() || '0'}</div>
+                              <div className="text-[10px] text-muted">Lvl {rel.level}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Level unlock features */}
                   <div className="glass-card">
                     <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
@@ -295,49 +328,60 @@ export default function XPPage() {
               {/* ── Leaderboard ── */}
               {tab === 'leaderboard' && (
                 <motion.div key="leaderboard" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
-                  <div className="glass-card">
-                    <h3 className="font-semibold text-sm mb-4 flex items-center gap-2">
-                      <Trophy className="w-4 h-4 text-amber-400" /> XP Leaderboard
-                    </h3>
+                  <div className="glass-card !p-0 overflow-hidden relative">
+                    <div className="p-4 border-b border-themed bg-[var(--bg-card-hover)] flex items-center justify-between">
+                      <h3 className="font-semibold text-sm flex items-center gap-2">
+                        <Crown className="w-4 h-4 text-amber-400" /> Global Leaderboard
+                      </h3>
+                      <div className="text-xs bg-amber-500/10 text-amber-400 px-2 py-1 rounded-md font-bold tracking-widest">WORLDWIDE</div>
+                    </div>
                     {leaderboard.length === 0 ? (
-                      <div className="text-center py-8">
-                        <Trophy className="w-8 h-8 mx-auto mb-2 text-muted opacity-30" />
-                        <p className="text-muted text-sm">Leaderboard is empty</p>
+                      <div className="text-center py-12">
+                        <Trophy className="w-10 h-10 mx-auto mb-3 text-muted opacity-30" />
+                        <p className="text-muted text-sm font-medium">No Rankings Yet</p>
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        {leaderboard.map((entry, i) => (
-                          <motion.div
-                            key={entry.user_id}
-                            className={`flex items-center gap-3 p-3 rounded-xl border transition ${
-                              entry.user_id === user?.id
-                                ? 'bg-amber-500/5 border-amber-500/20'
-                                : 'bg-[var(--bg-card-hover)] border-themed'
-                            }`}
-                            initial={{ opacity: 0, x: -10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: i * 0.05 }}
-                          >
-                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-sm ${
-                              i === 0 ? 'bg-amber-500/20 text-amber-400' :
-                              i === 1 ? 'bg-gray-400/20 text-gray-300' :
-                              i === 2 ? 'bg-orange-500/20 text-orange-400' :
-                              'bg-[var(--bg-card)] text-muted'
-                            }`}>
-                              {i <= 2 ? ['🥇', '🥈', '🥉'][i] : entry.rank}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium truncate">
-                                {entry.display_name}
-                                {entry.user_id === user?.id && <span className="text-xs text-amber-400 ml-1">(you)</span>}
-                              </p>
-                              <p className="text-[10px] text-muted">{entry.country} — Lv.{entry.level || 1}</p>
-                            </div>
-                            <div className="text-sm font-bold text-amber-400">
-                              {(entry.total_xp || 0).toLocaleString()}
-                            </div>
-                          </motion.div>
-                        ))}
+                      <div className="p-2 space-y-1">
+                        {leaderboard.map((entry, i) => {
+                          const isTop3 = i < 3;
+                          const bgColors = ['bg-gradient-to-r from-amber-500/20 to-yellow-500/5 border-amber-500/30', 'bg-gradient-to-r from-gray-300/20 to-gray-400/5 border-gray-400/30', 'bg-gradient-to-r from-orange-600/20 to-orange-500/5 border-orange-500/30'];
+                          
+                          return (
+                            <motion.div
+                              key={entry.user_id}
+                              className={`flex items-center gap-3 p-3 rounded-xl border transition ${
+                                entry.user_id === user?.id
+                                  ? 'bg-bond-500/10 border-bond-500/30 ring-1 ring-bond-500/50'
+                                  : isTop3 ? bgColors[i] : 'bg-[var(--bg-card)] border-transparent hover:bg-[var(--bg-card-hover)]'
+                              }`}
+                              initial={{ opacity: 0, x: -10 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: i * 0.05 }}
+                            >
+                              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-lg shadow-inner ${
+                                i === 0 ? 'bg-gradient-to-br from-yellow-300 to-amber-500 text-black shadow-amber-500/50' :
+                                i === 1 ? 'bg-gradient-to-br from-gray-200 to-gray-400 text-black shadow-gray-400/50' :
+                                i === 2 ? 'bg-gradient-to-br from-orange-400 to-orange-600 text-white shadow-orange-500/50' :
+                                'bg-[var(--bg-card-hover)] text-muted font-bold text-sm border border-themed'
+                              }`}>
+                                {i <= 2 ? ['🥇', '🥈', '🥉'][i] : entry.rank}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-bold truncate flex items-center gap-1.5">
+                                  {entry.display_name} 
+                                  <span className="text-xs opacity-80">{entry.country}</span>
+                                  {entry.user_id === user?.id && <span className="text-[10px] bg-bond-500 text-white px-1.5 py-0.5 rounded ml-1 tracking-wider uppercase">You</span>}
+                                </p>
+                                <p className="text-[10px] text-muted font-medium mt-0.5 tracking-wider uppercase">Level {entry.level || 1}</p>
+                              </div>
+                              <div className="text-right">
+                                <div className={`text-base font-black tracking-tight ${isTop3 ? 'textPrimary' : 'text-muted'}`}>
+                                  {(entry.total_xp || 0).toLocaleString()} <span className="text-[10px] uppercase font-bold opacity-60">XP</span>
+                                </div>
+                              </div>
+                            </motion.div>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

@@ -31,7 +31,6 @@ class LiveGameManager:
         self.game_loops: Dict[str, asyncio.Task] = {}           # session_id → loop task
     
     async def connect(self, ws: WebSocket, session_id: str, user_id: str):
-        await ws.accept()
         if session_id not in self.connections:
             self.connections[session_id] = {}
         self.connections[session_id][user_id] = ws
@@ -120,10 +119,31 @@ def init_tictactoe_state(player_a: str, player_b: str) -> dict:
     }
 
 
+def init_bonding_synchrony_state(player_a: str, player_b: str) -> dict:
+    return {
+        "type": "bonding_synchrony",
+        "questions": [
+            {"q": "Live in Brazil for a year 🇧🇷", "opt_a": "Brazil", "opt_b": "Japan"},
+            {"q": "Learn 5 languages at basic level or Master 1?", "opt_a": "5 Basic", "opt_b": "1 Master"},
+            {"q": "Cook traditional meal or Teach family recipe?", "opt_a": "Cook", "opt_b": "Teach"},
+            {"q": "Have pen pal everywhere or One lifelong friend?", "opt_a": "Pen pal", "opt_b": "Best Friend"},
+            {"q": "Celebrate Holi 🎨 or Carnival 🎉?", "opt_a": "Holi", "opt_b": "Carnival"}
+        ],
+        "current_q": 0,
+        "answers": {player_a: None, player_b: None},
+        "scores": {player_a: 0, player_b: 0},
+        "player_a": player_a,
+        "player_b": player_b,
+        "status": "playing",
+        "winner": None,
+    }
+
+
 GAME_INITIALIZERS = {
     "pong": init_pong_state,
     "air_hockey": init_air_hockey_state,
     "tic_tac_toe": init_tictactoe_state,
+    "bonding_synchrony": init_bonding_synchrony_state,
 }
 
 
@@ -404,6 +424,7 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
       - {"type": "game_over", "winner": ...}  (when game ends)
       - {"type": "waiting_for_opponent"}      (when waiting)
     """
+    await websocket.accept()
     db = get_supabase()
     
     # Validate session
@@ -413,7 +434,16 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
         return
     
     session_data = session.data[0]
-    player_ids = [p["user_id"] for p in session_data.get("players", [])]
+    
+    # Parse players gracefully in case Supabase returns JSON as string
+    raw_players = session_data.get("players", [])
+    if isinstance(raw_players, str):
+        try:
+            raw_players = json.loads(raw_players)
+        except Exception:
+            raw_players = []
+            
+    player_ids = [p.get("user_id") for p in raw_players if isinstance(p, dict) and "user_id" in p]
     
     if user_id not in player_ids:
         await websocket.close(code=4003, reason="Not a player in this game")
@@ -435,7 +465,14 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
                 conns = manager.connections.get(session_id, {})
                 if len(conns) >= 2:
                     # Both players ready — initialize game
-                    game_type = session_data.get("game_data", {}).get("game_type", "pong")
+                    raw_game_data = session_data.get("game_data", {})
+                    if isinstance(raw_game_data, str):
+                        try:
+                            raw_game_data = json.loads(raw_game_data)
+                        except Exception:
+                            raw_game_data = {}
+                            
+                    game_type = raw_game_data.get("game_type", "pong")
                     initializer = GAME_INITIALIZERS.get(game_type, init_pong_state)
                     state = initializer(player_ids[0], player_ids[1])
                     manager.game_states[session_id] = state
@@ -520,6 +557,49 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
                                     else state["player_a"]
                                 )
                                 await manager.broadcast(session_id, {"type": "state", "state": state})
+                
+                elif game_type == "bonding_synchrony":
+                    answer = move_data.get("answer")
+                    if answer is not None:
+                        state["answers"][user_id] = answer
+                        
+                        # Check if both have answered
+                        ans_a = state["answers"][state["player_a"]]
+                        ans_b = state["answers"][state["player_b"]]
+                        
+                        if ans_a is not None and ans_b is not None:
+                            # Evaluate match
+                            match = (ans_a == ans_b)
+                            if match:
+                                state["scores"][state["player_a"]] += 10
+                                state["scores"][state["player_b"]] += 10
+                            
+                            # Broadcast round_result
+                            await manager.broadcast(session_id, {
+                                "type": "round_result", 
+                                "match": match, 
+                                "ans_a": ans_a, 
+                                "ans_b": ans_b,
+                                "state": state
+                            })
+                            
+                            # Wait a few seconds for UI animation, then clear & progress
+                            await asyncio.sleep(4.0)
+                            
+                            state["current_q"] += 1
+                            state["answers"][state["player_a"]] = None
+                            state["answers"][state["player_b"]] = None
+                            
+                            if state["current_q"] >= len(state["questions"]):
+                                state["status"] = "finished"
+                                state["winner"] = "bonding"
+                                await manager.broadcast(session_id, {"type": "state", "state": state})
+                                await _finish_game(session_id, state, db)
+                            else:
+                                await manager.broadcast(session_id, {"type": "state", "state": state})
+                        else:
+                            # Just broadcast state so UI knows the other person locked in
+                            await manager.broadcast(session_id, {"type": "state", "state": state})
     
     except WebSocketDisconnect:
         manager.disconnect(session_id, user_id)

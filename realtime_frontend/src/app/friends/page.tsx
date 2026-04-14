@@ -52,7 +52,18 @@ export default function FriendsPage() {
           api.getFriends().catch(() => ({ friends: [] })),
           api.getPendingRequests().catch(() => ({ requests: [] })),
         ]);
-        setFriends(Array.isArray(friendsRes) ? friendsRes : friendsRes.friends || []);
+        const rawFriends = Array.isArray(friendsRes) ? friendsRes : friendsRes.friends || [];
+        const mappedFriends = rawFriends.map((f: any) => ({
+          id: f.profile?.id || f.relationship_id || f.id || Math.random().toString(),
+          user_id: f.profile?.id,
+          display_name: f.profile?.display_name || f.display_name || 'Unknown',
+          username: f.profile?.username || f.username,
+          country: f.profile?.country || f.country,
+          status: f.profile?.status || f.status,
+          avatar_url: f.profile?.profile_photo_url || f.avatar_url,
+          relationship_id: f.relationship_id || f.id
+        }));
+        setFriends(mappedFriends);
         setRequests(Array.isArray(reqRes) ? reqRes : reqRes.requests || []);
       } catch (e) {
         console.error(e);
@@ -94,7 +105,18 @@ export default function FriendsPage() {
       if (action === 'accept') {
         // Refresh friends list
         const res = await api.getFriends().catch(() => ({ friends: [] }));
-        setFriends(Array.isArray(res) ? res : res.friends || []);
+        const rawFriends = Array.isArray(res) ? res : res.friends || [];
+        const mappedFriends = rawFriends.map((f: any) => ({
+          id: f.profile?.id || f.relationship_id || f.id || Math.random().toString(),
+          user_id: f.profile?.id,
+          display_name: f.profile?.display_name || f.display_name || 'Unknown',
+          username: f.profile?.username || f.username,
+          country: f.profile?.country || f.country,
+          status: f.profile?.status || f.status,
+          avatar_url: f.profile?.profile_photo_url || f.avatar_url,
+          relationship_id: f.relationship_id || f.id
+        }));
+        setFriends(mappedFriends);
       }
     } catch (e: any) {
       toast.error(e.message || 'Failed to respond');

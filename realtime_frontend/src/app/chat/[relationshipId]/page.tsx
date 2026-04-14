@@ -169,7 +169,12 @@ export default function ChatPage() {
         content_type: 'text',
       });
       const newMsg = res.message || res;
-      setMessages(prev => prev.map(m => m.id === temp.id ? newMsg : m));
+      setMessages(prev => {
+        if (prev.some(m => m.id === newMsg.id)) {
+          return prev.filter(m => m.id !== temp.id);
+        }
+        return prev.map(m => m.id === temp.id ? newMsg : m);
+      });
     } catch (err: any) {
       toast.error(err.message || 'Failed to send');
       setMessages(prev => prev.filter(m => m.id !== temp.id));

@@ -209,8 +209,10 @@ from realtime_communication.routers.questions import router as rc_questions
 from realtime_communication.routers.live_games import router as rc_live_games
 from realtime_communication.routers.calls import router as rc_calls
 from realtime_communication.routers.verification import router as rc_verification
+from realtime_communication.routers.auth import router as rc_auth
 
 rt_prefix = "/api/v1"
+app.include_router(rc_auth, prefix=rt_prefix)
 app.include_router(rc_profiles, prefix=rt_prefix)
 app.include_router(rc_verification, prefix=rt_prefix)
 app.include_router(rc_matching, prefix=rt_prefix)
@@ -225,6 +227,8 @@ app.include_router(rc_games, prefix=rt_prefix)
 app.include_router(rc_live_games, prefix=rt_prefix)
 app.include_router(rc_contests, prefix=rt_prefix)
 app.include_router(rc_family_rooms, prefix=rt_prefix)
+from realtime_communication.routers.presence import router as rc_presence
+app.include_router(rc_presence, prefix=rt_prefix)
 app.include_router(rc_safety, prefix=rt_prefix)
 
 # Mount static files for serving generated images + voice notes

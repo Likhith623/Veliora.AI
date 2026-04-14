@@ -449,7 +449,12 @@ export const api = {
     content: string;
     content_type: 'text' | 'image' | 'video' | 'voice';
     media_url?: string | null;
-  }) => post(`/rooms/${roomId}/message`, data),
+  }) => post(`/rooms/${roomId}/message`, {
+    original_text: data.content,
+    content_type: data.content_type,
+    image_url: data.content_type === 'image' ? data.media_url : undefined,
+    video_url: data.content_type === 'video' ? data.media_url : undefined,
+  }),
 
   // 8.9 Get Room Messages — GET /rooms/{room_id}/messages
   getRoomMessages: (roomId: string, limit: number = 50) =>
@@ -535,7 +540,8 @@ export const api = {
   // 11.1 Create Contest — POST /contests/create
   createContest: (data: {
     relationship_id: string;
-    contest_type: 'vocabulary' | 'culture_trivia' | 'language_challenge' | 'riddle';
+    contest_type: string;
+    target_user_id?: string;
   }) => post('/contests/create', data),
 
   // 11.2 Get Contests for Relationship — GET /contests/relationship/{rel_id}
@@ -560,6 +566,23 @@ export const api = {
   // 11.7 Contest Schedule — GET /contests/schedule/configuration
   getContestSchedule: () => get('/contests/schedule/configuration'),
 
+  // 11.8 Save Custom Contest Questions
+  saveCustomQuestions: (questions: Array<{
+    question_text: string;
+    options: string[];
+    correct_option_index: number;
+  }>) => post('/contests/custom/questions', questions),
+
+  // 11.9 Get My Custom Contest Questions
+  getMyCustomQuestions: () => get('/contests/custom/questions'),
+
+  // 11.10 Get Eligible Friends for Custom Contests
+  getEligibleContestFriends: () => get('/contests/custom/eligibility'),
+
+  // 11.11 Global Presence & Invites
+  getActiveFriends: () => get('/presence/active-friends'),
+  sendGameInvite: (target_user_id: string, game_type: string) => post('/presence/invite', { target_user_id, game_type }),
+
   // ═════════════════════════════════════════════════════════════
   // SECTION 12 — Questions
   // ═════════════════════════════════════════════════════════════
@@ -569,6 +592,8 @@ export const api = {
     question_text: string;
     category?: string;
     is_public?: boolean;
+    options?: string[];
+    correct_option_index?: number;
   }) => post('/questions/mine', data),
 
   // 12.2 Get My Questions — GET /questions/mine
@@ -578,51 +603,55 @@ export const api = {
   updateQuestion: (questionId: string, data: {
     question_text?: string;
     is_public?: boolean;
+    options?: string[];
+    correct_option_index?: number;
   }) => put(`/questions/${questionId}`, data),
 
   // 12.4 Delete Question — DELETE /questions/{question_id}
   deleteQuestion: (questionId: string) => del(`/questions/${questionId}`),
 
-  // 12.5 Get Friend's Questions — GET /questions/friend/{friend_id}
+  // 12.5 Get Random Question — GET /questions/random
+  getRandomQuestion: () => get('/questions/random?count=1').then(res => res.questions?.[0]),
+
+  // 12.6 Get Friend's Questions — GET /questions/friend/{friend_id}
   getFriendQuestions: (friendId: string) => get(`/questions/friend/${friendId}`),
 
-  // 12.6 Answer Question — POST /questions/answer
-  answerQuestion: (data: {
-    question_id: string;
-    answer: string;
-    target_user_id: string;
-  }) => post('/questions/answer', data),
+  // 12.7 Answer Friend's Question — POST /questions/answer
+  answerFriendQuestion: (questionId: string, answer: string) => 
+    post('/questions/answer', { question_id: questionId, answer }),
 
-  // 12.7 Get Random Question — GET /questions/random
-  getRandomQuestion: () => get('/questions/random'),
+  // 12.8 Generate AI Question — POST /questions/generate-ai
+  generateQuestionAI: () => post('/questions/generate-ai', {}),
+
+
 
   // ═════════════════════════════════════════════════════════════
   // SECTION 13 — Translation
   // ═════════════════════════════════════════════════════════════
 
-  // 13.1 Translate Text — POST /translation/
+  // 13.1 Translate Text — POST /translate/
   translate: (data: {
     text: string;
     source_language: string;
     target_language: string;
-  }) => post('/translation/', data),
+  }) => post('/translate/', data),
 
-  // 13.2 Batch Translate — POST /translation/batch
+  // 13.2 Batch Translate — POST /translate/batch
   batchTranslate: (data: {
     texts: string[];
     source_language: string;
     target_language: string;
-  }) => post('/translation/batch', data),
+  }) => post('/translate/batch', data),
 
-  // 13.3 Detect Language — POST /translation/detect
-  detectLanguage: (text: string) => post('/translation/detect', { text }),
+  // 13.3 Detect Language — POST /translate/detect
+  detectLanguage: (text: string) => post('/translate/detect', { text }),
 
-  // 13.4 List Supported Languages — GET /translation/languages (public)
-  getLanguages: () => get('/translation/languages'),
+  // 13.4 List Supported Languages — GET /translate/languages (public)
+  getLanguages: () => get('/translate/languages'),
 
-  // 13.5 Toggle Show Original — PATCH /translation/languages/{code}/show-original
+  // 13.5 Toggle Show Original — PATCH /translate/languages/{code}/show-original
   toggleShowOriginal: (languageCode: string) =>
-    patch(`/translation/languages/${languageCode}/show-original`),
+    patch(`/translate/languages/${languageCode}/show-original`),
 
   // ═════════════════════════════════════════════════════════════
   // SECTION 14 — Safety
