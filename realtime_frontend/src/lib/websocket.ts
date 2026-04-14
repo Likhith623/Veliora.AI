@@ -161,6 +161,7 @@ export function createChatWS(
 
 export interface CallSignalHandlers {
   onIncomingCall?: (callType: string, callerId: string) => void;
+  onCallAccept?: () => void;
   onOffer?: (sdp: string, from: string) => void;
   onAnswer?: (sdp: string, from: string) => void;
   onICECandidate?: (candidate: any, from: string) => void;
@@ -186,6 +187,9 @@ export function createCallSignalingWS(
       switch (data.type) {
         case 'incoming_call':
           callHandlers.onIncomingCall?.(data.call_type, data.caller_id);
+          break;
+        case 'call_accept':
+          callHandlers.onCallAccept?.();
           break;
         case 'offer':
           callHandlers.onOffer?.(data.sdp, data.from);
@@ -289,6 +293,7 @@ export interface PresenceWSHandlers {
   onGameInvite?: (data: { sender_id: string, sender_name: string, game_type: string, session_id: string }) => void;
   onGameInviteFailed?: (error: string) => void;
   onInviteResponse?: (data: { accept: boolean, session_id: string, responder_id: string }) => void;
+  onIncomingCall?: (data: { caller_id: string, caller_name: string, call_type: string, relationship_id: string }) => void;
   onOpen?: () => void;
   onClose?: (event: CloseEvent) => void;
 }
@@ -313,8 +318,11 @@ export function createPresenceWS(
         case 'invite_response':
           handlers.onInviteResponse?.(data);
           break;
+        case 'incoming_call':
+          handlers.onIncomingCall?.(data);
+          break;
       }
-    },
+    }
   });
 }
 

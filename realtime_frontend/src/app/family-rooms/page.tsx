@@ -551,7 +551,7 @@ export default function FamilyRoomsPage() {
                               ? 'bg-gradient-to-br from-familia-500/80 to-bond-500/80 text-white rounded-br-md'
                               : 'bg-[var(--bg-card)] border border-themed rounded-bl-md'
                           }`}>
-                            <p className="text-sm">{msg.original_text || msg.content}</p>
+                            <p className="text-sm">{(msg as any).original_text || msg.content}</p>
                           </div>
                           <div className={`text-[10px] text-muted mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
                             {formatTime(msg.created_at)}

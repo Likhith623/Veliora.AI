@@ -17,6 +17,7 @@ from datetime import datetime
 from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.auth_service import get_current_user_id
 from realtime_communication.services.notification_service import send_notification
+from realtime_communication.routers.presence import presence_manager
 
 router = APIRouter(prefix="/calls", tags=["Voice & Video Calls"])
 
@@ -107,6 +108,15 @@ async def webrtc_signal(websocket: WebSocket, relationship_id: str, user_id: str
                     sender=caller_name
                 )
                 
+                # Push global real-time presence alert
+                await presence_manager.send_to_user(partner_id, {
+                    "type": "incoming_call",
+                    "call_type": call_type,
+                    "caller_id": user_id,
+                    "caller_name": caller_name,
+                    "relationship_id": relationship_id
+                })
+                
                 # Forward to partner
                 await signaling.send_to_partner(relationship_id, user_id, {
                     "type": "incoming_call",
@@ -114,7 +124,7 @@ async def webrtc_signal(websocket: WebSocket, relationship_id: str, user_id: str
                     "caller_id": user_id,
                 })
             
-            elif msg_type in ("offer", "answer", "ice_candidate"):
+            elif msg_type in ("offer", "answer", "ice_candidate", "call_accept"):
                 # Forward signaling data to partner
                 await signaling.send_to_partner(relationship_id, user_id, {
                     **msg,
@@ -143,7 +153,7 @@ async def webrtc_signal(websocket: WebSocket, relationship_id: str, user_id: str
                             "relationship_id": relationship_id,
                             "caller_id": user_id,  # Person ending the call will log for simplicity, or we can use metadata
                             "receiver_id": partner_id,
-                            "call_type": call_type,
+                            "is_video_call": call_type == "video",
                             "started_at": datetime.utcnow().isoformat(), # approximation if not provided by client
                             "duration_seconds": duration,
                             "status": "completed"
@@ -261,9 +271,9 @@ async def get_call_logs(relationship_id: str, limit: int = 50, offset: int = 0, 
         raise HTTPException(status_code=403, detail="Unauthorized access to these call logs.")
     
     logs = db.table("call_logs_realtime") \
-        .select("id, caller_id, receiver_id, call_type, started_at, duration_seconds, status, created_at") \
+        .select("id, caller_id, receiver_id, started_at, duration_seconds, status, is_video_call") \
         .eq("relationship_id", relationship_id) \
-        .order("created_at", desc=True) \
+        .order("started_at", desc=True) \
         .range(offset, offset + limit - 1) \
         .execute()
         

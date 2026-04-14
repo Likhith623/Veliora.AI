@@ -28,7 +28,7 @@ function CallsPageContent() {
   const callTypeParam = (searchParams.get('type') as 'audio' | 'video') || 'audio';
   const { user, relationships } = useAuth();
 
-  const [callView, setCallView] = useState<CallView>('idle');
+  const [callView, setCallView] = useState<CallView>(searchParams.get('incoming') === 'true' ? 'incoming' : 'idle');
   const [callType, setCallType] = useState<'audio' | 'video'>(callTypeParam);
   const [isMuted, setIsMuted] = useState(false);
   const [isCameraOff, setIsCameraOff] = useState(false);
@@ -37,12 +37,14 @@ function CallsPageContent() {
   const [callLogs, setCallLogs] = useState<CallLog[]>([]);
   const [selectedRel, setSelectedRel] = useState(relId);
   const [partnerName, setPartnerName] = useState('Partner');
-  const [incomingCallType, setIncomingCallType] = useState<'audio' | 'video'>('audio');
+  const [incomingCallType, setIncomingCallType] = useState<'audio' | 'video'>(callTypeParam);
 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<ManagedWebSocket | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const callStartTimeRef = useRef<number>(0);
@@ -69,6 +71,7 @@ function CallsPageContent() {
     };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     localStreamRef.current = stream;
+    // We attach srcObject later using useEffect on callView change to ensure elements exist in DOM.
     if (localVideoRef.current && type === 'video') {
       localVideoRef.current.srcObject = stream;
     }
@@ -81,8 +84,16 @@ function CallsPageContent() {
     pcRef.current = pc;
 
     pc.ontrack = (event) => {
-      if (remoteVideoRef.current && event.streams[0]) {
-        remoteVideoRef.current.srcObject = event.streams[0];
+      if (event.streams[0]) {
+        remoteStreamRef.current = event.streams[0];
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+          remoteVideoRef.current.play().catch(e => console.warn('Video play blocked:', e));
+        }
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = event.streams[0];
+          remoteAudioRef.current.play().catch(e => console.warn('Audio play blocked:', e));
+        }
       }
     };
 
@@ -161,6 +172,16 @@ function CallsPageContent() {
           setCallView('ringing');
         },
         onIncomingCall: () => { /* Caller won't receive incoming_call for own call */ },
+        onCallAccept: async () => {
+          // Partner has accepted, now we can send our offer
+          try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            ws.send({ type: 'offer', sdp: offer.sdp });
+          } catch (e) {
+            console.error('[Call] Failed to create offer:', e);
+          }
+        },
         onOffer: async (sdp) => {
           // If we're the caller and receive an offer, handle gracefully (edge case)
           try {
@@ -205,17 +226,6 @@ function CallsPageContent() {
 
       wsRef.current = ws;
 
-      // Create and send offer after WS connects
-      setTimeout(async () => {
-        try {
-          const offer = await pc.createOffer();
-          await pc.setLocalDescription(offer);
-          ws.send({ type: 'offer', sdp: offer.sdp });
-        } catch (e) {
-          console.error('[Call] Failed to create offer:', e);
-        }
-      }, 300);
-
     } catch (err: any) {
       console.error('Failed to start call:', err);
       if (err.name === 'NotAllowedError') {
@@ -238,11 +248,18 @@ function CallsPageContent() {
       stream.getTracks().forEach(track => pc.addTrack(track, stream));
       setCallType(incomingCallType);
 
+      // Close the previous idle listening WS
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+
       // The existing WS is already connected from the signaling listener
       // We now need to handle the full WebRTC handshake as the answerer
       const ws = createCallSignalingWS(selectedRel, user.id, {
         onOpen: () => {
           // Send ready signal — the caller's offer should arrive shortly
+          ws.send({ type: 'call_accept' });
         },
         onIncomingCall: () => { /* Already accepted */ },
         onOffer: async (sdp) => {
@@ -306,6 +323,18 @@ function CallsPageContent() {
     toast('Call rejected');
   }, []);
 
+  // Auto-accept if directed from notification
+  const hasAutoAccepted = useRef(false);
+  useEffect(() => {
+    if (callView === 'incoming' && searchParams.get('incoming') === 'true' && user?.id && selectedRel && !hasAutoAccepted.current) {
+      hasAutoAccepted.current = true;
+      // Clean URL params silently so refreshes don't re-trigger it
+      window.history.replaceState({}, '', `/calls?rel=${selectedRel}&type=${callTypeParam}`);
+      // Add slight delay to ensure UI state transitions cleanly before acquiring media
+      setTimeout(() => acceptIncomingCall(), 300);
+    }
+  }, [callView, searchParams, user?.id, selectedRel, callTypeParam, acceptIncomingCall]);
+
   // ── Listen for incoming calls via WS when idle ──
   useEffect(() => {
     if (!user?.id || !selectedRel || callView !== 'idle') return;
@@ -338,14 +367,23 @@ function CallsPageContent() {
   }, [user?.id, selectedRel, callView, relationships]);
 
   const toggleMute = () => {
-    localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = !t.enabled; });
+    localStreamRef.current?.getAudioTracks().forEach(t => { t.enabled = isMuted; });
     setIsMuted(!isMuted);
   };
 
   const toggleCamera = () => {
-    localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = !t.enabled; });
+    localStreamRef.current?.getVideoTracks().forEach(t => { t.enabled = isCameraOff; });
     setIsCameraOff(!isCameraOff);
   };
+
+  useEffect(() => {
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.muted = !isSpeakerOn;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.muted = !isSpeakerOn;
+    }
+  }, [isSpeakerOn]);
 
   const fmtTimer = (s: number) =>
     `${Math.floor(s / 60).toString().padStart(2, '0')}:${(s % 60).toString().padStart(2, '0')}`;
@@ -355,6 +393,26 @@ function CallsPageContent() {
     if (s < 60) return `${s}s`;
     return `${Math.floor(s / 60)}m ${s % 60}s`;
   };
+
+  // Add useEffect to sync media streams to dynamically rendered DOM elements
+  useEffect(() => {
+    if (callView === 'active' || callView === 'connecting' || callView === 'ringing') {
+      if (localStreamRef.current && localVideoRef.current && callType === 'video') {
+        localVideoRef.current.srcObject = localStreamRef.current;
+        localVideoRef.current.play().catch(e => console.warn('Local play blocked:', e));
+      }
+      if (remoteStreamRef.current) {
+        if (remoteVideoRef.current && callType === 'video') {
+          remoteVideoRef.current.srcObject = remoteStreamRef.current;
+          remoteVideoRef.current.play().catch(e => console.warn('Remote video play blocked:', e));
+        }
+        if (remoteAudioRef.current) {
+          remoteAudioRef.current.srcObject = remoteStreamRef.current;
+          remoteAudioRef.current.play().catch(e => console.warn('Remote audio play blocked:', e));
+        }
+      }
+    }
+  }, [callView, callType]);
 
   // Cleanup on unmount
   useEffect(() => () => { endCall(false); }, []);
@@ -400,6 +458,7 @@ function CallsPageContent() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-6">
+        <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" muted={!isSpeakerOn} />
         <AnimatePresence mode="wait">
           {/* ── INCOMING CALL VIEW ── */}
           {callView === 'incoming' && (
@@ -489,7 +548,7 @@ function CallsPageContent() {
               {/* Video area */}
               {callType === 'video' ? (
                 <div className="relative rounded-2xl overflow-hidden bg-black mb-6 shadow-2xl shadow-black/30 neon-border-green" style={{ aspectRatio: '16/9', minHeight: 300 }}>
-                  <video ref={remoteVideoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                  <video ref={remoteVideoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
                   {/* Local camera PiP */}
                   <motion.div
                     className="absolute bottom-4 right-4 w-36 h-28 rounded-xl overflow-hidden border-2 border-white/20 shadow-2xl"
@@ -556,7 +615,7 @@ function CallsPageContent() {
                       </motion.div>
                     </div>
                     <h2 className="text-xl font-bold mb-1">{partnerName}</h2>
-                    <p className="text-muted text-sm flex items-center justify-center gap-2">
+                    <div className="text-muted text-sm flex items-center justify-center gap-2">
                       {callView === 'ringing' && <><PhoneForwarded className="w-4 h-4 text-amber-400" /> Ringing...</>}
                       {callView === 'connecting' && <><Loader2 className="w-4 h-4 animate-spin" /> Connecting...</>}
                       {callView === 'active' && (
@@ -565,7 +624,7 @@ function CallsPageContent() {
                           {fmtTimer(elapsedTime)}
                         </>
                       )}
-                    </p>
+                    </div>
                   </div>
                 </div>
               )}

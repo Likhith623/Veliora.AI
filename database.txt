@@ -25,6 +25,7 @@ CREATE TABLE public.call_logs_realtime (
   duration_seconds integer DEFAULT 0,
   room_id character varying,
   is_video_call boolean DEFAULT false,
+  relationship_id uuid,
   CONSTRAINT call_logs_realtime_pkey PRIMARY KEY (id),
   CONSTRAINT call_logs_realtime_caller_id_fkey FOREIGN KEY (caller_id) REFERENCES auth.users(id),
   CONSTRAINT call_logs_realtime_receiver_id_fkey FOREIGN KEY (receiver_id) REFERENCES auth.users(id)
@@ -611,6 +612,16 @@ CREATE TABLE public.user_achievements_realtime (
   CONSTRAINT user_achievements_realtime_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles_realtime(id),
   CONSTRAINT user_achievements_realtime_achievement_id_fkey FOREIGN KEY (achievement_id) REFERENCES public.achievements_realtime(id)
 );
+CREATE TABLE public.user_custom_questions_realtime (
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),
+  user_id uuid,
+  question_text text NOT NULL,
+  options jsonb NOT NULL,
+  correct_option_index integer NOT NULL,
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT user_custom_questions_realtime_pkey PRIMARY KEY (id),
+  CONSTRAINT user_custom_questions_realtime_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles_realtime(id)
+);
 CREATE TABLE public.user_game_sessions (
   id text NOT NULL,
   user_id uuid NOT NULL,
@@ -648,6 +659,8 @@ CREATE TABLE public.user_questions_realtime (
   times_answered_correctly integer DEFAULT 0,
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
+  options jsonb DEFAULT '[]'::jsonb,
+  correct_option_index integer DEFAULT 0,
   CONSTRAINT user_questions_realtime_pkey PRIMARY KEY (id),
   CONSTRAINT user_questions_realtime_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles_realtime(id)
 );
