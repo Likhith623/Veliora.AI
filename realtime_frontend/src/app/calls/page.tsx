@@ -63,11 +63,53 @@ function CallsPageContent() {
     }
   }, [selectedRel, activeRel]);
 
+  // ── SDP Optimizer for Maximum Audio Quality ──
+  const enhanceSDPAudioQuality = (sdp: string) => {
+    let enhancedSdp = sdp;
+    // Extract the OPUS payload type (usually 111, but can vary)
+    const rtpmapMatch = enhancedSdp.match(/a=rtpmap:(\d+) opus\/48000\/2/);
+    if (rtpmapMatch) {
+      const pt = rtpmapMatch[1];
+      // Target existing fmtp line for OPUS, or append if missing
+      const fmtpRegex = new RegExp(`a=fmtp:${pt}\\s+(.*?)(?:\\r?\\n|$)`);
+      if (fmtpRegex.test(enhancedSdp)) {
+        enhancedSdp = enhancedSdp.replace(fmtpRegex, (match, p1) => {
+          let newParams = p1;
+          if (!newParams.includes('stereo=1')) newParams += ';stereo=1';
+          if (!newParams.includes('sprop-stereo=1')) newParams += ';sprop-stereo=1';
+          if (!newParams.includes('maxaveragebitrate=')) newParams += ';maxaveragebitrate=510000'; // 510kbps Opus max
+          if (!newParams.includes('useinbandfec=1')) newParams += ';useinbandfec=1';
+          if (!newParams.includes('cbr=1')) newParams += ';cbr=1';
+          return `a=fmtp:${pt} ${newParams}\r\n`;
+        });
+      } else {
+        enhancedSdp = enhancedSdp.replace(
+          new RegExp(`a=rtpmap:${pt} opus\\/48000\\/2`),
+          `a=rtpmap:${pt} opus/48000/2\r\na=fmtp:${pt} stereo=1;sprop-stereo=1;maxaveragebitrate=510000;useinbandfec=1;cbr=1`
+        );
+      }
+    }
+    return enhancedSdp;
+  };
+
   // ── Acquire local media ──
   const acquireMedia = useCallback(async (type: 'audio' | 'video') => {
     const constraints = {
-      audio: true,
-      video: type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' } : false,
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        sampleRate: 48000,
+        channelCount: 2,
+        // Advanced browser-specific constraints for broadcasting quality
+        googEchoCancellation: true,
+        googAutoGainControl: true,
+        googNoiseSuppression: true,
+        googHighpassFilter: false, // Prevents cutting off deep voices
+        googTypingNoiseDetection: true,
+        googAudioMirroring: false
+      } as any,
+      video: type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60, min: 24 }, facingMode: 'user' } : false,
     };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     localStreamRef.current = stream;
@@ -176,6 +218,7 @@ function CallsPageContent() {
           // Partner has accepted, now we can send our offer
           try {
             const offer = await pc.createOffer();
+            offer.sdp = enhanceSDPAudioQuality(offer.sdp || ''); // Apply highest quality OPUS settings
             await pc.setLocalDescription(offer);
             ws.send({ type: 'offer', sdp: offer.sdp });
           } catch (e) {
@@ -187,6 +230,7 @@ function CallsPageContent() {
           try {
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
             const answer = await pc.createAnswer();
+            answer.sdp = enhanceSDPAudioQuality(answer.sdp || ''); // Apply highest quality OPUS settings
             await pc.setLocalDescription(answer);
             ws.send({ type: 'answer', sdp: answer.sdp });
           } catch (e) {
@@ -267,6 +311,7 @@ function CallsPageContent() {
           try {
             await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
             const answer = await pc.createAnswer();
+            answer.sdp = enhanceSDPAudioQuality(answer.sdp || ''); // Apply highest quality OPUS settings
             await pc.setLocalDescription(answer);
             ws.send({ type: 'answer', sdp: answer.sdp });
             setCallView('active');
