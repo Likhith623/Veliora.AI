@@ -96,6 +96,7 @@ function LiveGamesPageContent() {
   // ── Game engine refs ──
   const rollbackManagerRef = useRef<RollbackManager | null>(null);
   const localInputYRef = useRef<number | null>(null);
+  const localInputXRef = useRef<number | null>(null);
   const gameStateRef = useRef<GameState | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -291,28 +292,40 @@ function LiveGamesPageContent() {
       }
 
       // ── AIR HOCKEY: host-authoritative path ─────────────────────────────────
-      if (state.type === 'air_hockey' && isInitiatorRef.current) {
-        while (accumRef.current >= TICK_RATE) {
-          const prevStatus = state.status;
-          updateAirHockey(state as AirHockeyState);
-          accumRef.current -= TICK_RATE;
+      if (state.type === 'air_hockey') {
+        if (isInitiatorRef.current) {
+          while (accumRef.current >= TICK_RATE) {
+            const prevStatus = state.status;
+            updateAirHockey(state as AirHockeyState);
+            accumRef.current -= TICK_RATE;
 
-          if (dcRef.current?.readyState === 'open') {
-            dcRef.current.send(JSON.stringify({ type: 'state', state }));
+            if (dcRef.current?.readyState === 'open') {
+              dcRef.current.send(JSON.stringify({ type: 'state', state }));
+            }
+            if (prevStatus === 'playing' && state.status === 'finished') {
+              wsRef.current?.send({ type: 'game_finished', winner: state.winner, state });
+            }
           }
-          if (prevStatus === 'playing' && state.status === 'finished') {
-            wsRef.current?.send({ type: 'game_finished', winner: state.winner, state });
+
+          // Sync HUD
+          const scores = (state as AirHockeyState).scores;
+          const p1Score = scores[state.player_a] ?? 0;
+          const p2Score = scores[state.player_b] ?? 0;
+          setHudScores((prev) => {
+            if (prev.p1 !== p1Score || prev.p2 !== p2Score) return { p1: p1Score, p2: p2Score };
+            return prev;
+          });
+        } else {
+          // Guest: throttle input sending to TICK_RATE (30 Hz) so we don't crash WebRTC DataChannel buffer.
+          while (accumRef.current >= TICK_RATE) {
+            accumRef.current -= TICK_RATE;
+            if (localInputXRef.current !== null && localInputYRef.current !== null) {
+              if (dcRef.current?.readyState === 'open') {
+                dcRef.current.send(JSON.stringify({ type: 'input', x: localInputXRef.current, y: localInputYRef.current }));
+              }
+            }
           }
         }
-
-        // Sync HUD
-        const scores = (state as AirHockeyState).scores;
-        const p1Score = scores[state.player_a] ?? 0;
-        const p2Score = scores[state.player_b] ?? 0;
-        setHudScores((prev) => {
-          if (prev.p1 !== p1Score || prev.p2 !== p2Score) return { p1: p1Score, p2: p2Score };
-          return prev;
-        });
       }
 
       drawCurrentState();
@@ -614,9 +627,8 @@ function LiveGamesPageContent() {
             }
           }
         } else {
-          if (dcRef.current?.readyState === 'open') {
-            dcRef.current.send(JSON.stringify({ type: 'input', x, y }));
-          }
+          localInputXRef.current = x;
+          localInputYRef.current = y;
         }
       }
     },
@@ -630,14 +642,43 @@ function LiveGamesPageContent() {
     if (e.touches.length > 0) handleClientInput(e.touches[0].clientX, e.touches[0].clientY);
   };
 
+  const checkTicTacToeWinner = (b: string[]) => {
+    const lines = [
+      [0, 1, 2], [3, 4, 5], [6, 7, 8],
+      [0, 3, 6], [1, 4, 7], [2, 5, 8],
+      [0, 4, 8], [2, 4, 6]
+    ];
+    for (const [x, y, z] of lines) {
+      if (b[x] && b[x] === b[y] && b[x] === b[z]) return b[x];
+    }
+    if (!b.includes('')) return 'draw';
+    return null;
+  };
+
   const handleTicTacToeClick = (idx: number) => {
     if (!wsRef.current || !gameState || gameState.type !== 'tic_tac_toe') return;
     if (gameState.current_turn === user?.id && gameState.board[idx] === '') {
-      const newState = { ...gameState, board: [...gameState.board] };
+      const newState: GameState = { ...gameState, board: [...gameState.board] };
       newState.board[idx] = newState.symbols[user.id];
       newState.current_turn =
         newState.player_a === user.id ? newState.player_b : newState.player_a;
-      wsRef.current.send({ type: 'sync_state', state: newState });
+      
+      const symbolWinner = checkTicTacToeWinner(newState.board);
+      if (symbolWinner) {
+        newState.status = 'finished';
+        let winnerId = 'draw';
+        if (symbolWinner !== 'draw') {
+          winnerId = symbolWinner === newState.symbols[newState.player_a] ? newState.player_a : newState.player_b;
+        }
+        newState.winner = winnerId;
+        wsRef.current.send({ type: 'game_finished', winner: winnerId, state: newState });
+      } else {
+        wsRef.current.send({ type: 'sync_state', state: newState });
+      }
+      
+      // Zero latency immediate update locally
+      setGameState(newState);
+      gameStateRef.current = newState;
     }
   };
 
