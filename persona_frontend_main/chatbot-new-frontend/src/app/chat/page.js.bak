@@ -4048,23 +4048,6 @@ const Dashboard = ({
 
     const currentTime = new Date();
 
-    // Optimistic UI for text games
-    const tempId = Date.now().toString();
-    const newUserMsg = {
-      id: tempId,
-      text: userMessage,
-      sender: "user",
-      timestamp: currentTime,
-    };
-    setMessages((prev) => [...prev, newUserMsg]);
-    setHasConversations(true);
-
-    // Smooth scrolling
-    const timeoutId = setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 50);
-
-
     try {
       setIsTyping(true);
 

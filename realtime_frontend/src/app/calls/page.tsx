@@ -20,6 +20,11 @@ type CallView = 'idle' | 'ringing' | 'incoming' | 'connecting' | 'active' | 'end
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
+  {
+    urls: "turn:YOUR_VM_IP:3478",
+    username: "likhith",
+    credential: "strongpassword"
+  }
 ];
 
 function CallsPageContent() {
