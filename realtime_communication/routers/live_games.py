@@ -1,14 +1,15 @@
-"""Live immersive games — Pong, Air Hockey, Tic-Tac-Toe via WebSocket.
 
-Game state is synchronized in real-time between two players.
+#live_games.py
+"""Live immersive games — Pong, Air Hockey, Tic-Tac-Toe via WebRTC P2P.
+
+The server acts ONLY as a matchmaking and WebRTC signaling server (SDP/ICE).
+Game state is synchronized in real-time P2P using WebRTC RTCDataChannel.
 All results are stored in Supabase game_sessions with XP awarded.
 """
 import json
-import math
 import random
-import asyncio
 from datetime import datetime
-from typing import Dict, Set
+from typing import Dict
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Depends
 
 from realtime_communication.models.schemas import CreateLiveGameRequest
@@ -16,19 +17,18 @@ from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.auth_service import get_current_user_id
 from realtime_communication.services.xp_service import award_xp, check_and_level_up
 from realtime_communication.services.notification_service import send_notification
+from realtime_communication.routers.presence import presence_manager
 
-router = APIRouter(prefix="/games/live", tags=["Live Immersive Games"])
+router = APIRouter(prefix="/games/live", tags=["Live Immersive Games (WebRTC)"])
 
 
-# ─── Game State Manager ────────────────────────────────────────────────────────
+# ─── Game State Manager (WebRTC Signaling Only) ────────────────────────────────
 
 class LiveGameManager:
-    """Manages WebSocket connections and game state for live games."""
+    """Manages WebSocket connections strictly for WebRTC signaling and game state consensus."""
     
     def __init__(self):
         self.connections: Dict[str, Dict[str, WebSocket]] = {}  # session_id → {user_id: ws}
-        self.game_states: Dict[str, dict] = {}                  # session_id → game state
-        self.game_loops: Dict[str, asyncio.Task] = {}           # session_id → loop task
     
     async def connect(self, ws: WebSocket, session_id: str, user_id: str):
         if session_id not in self.connections:
@@ -40,11 +40,6 @@ class LiveGameManager:
             self.connections[session_id].pop(user_id, None)
             if not self.connections[session_id]:
                 del self.connections[session_id]
-                self.game_states.pop(session_id, None)
-                # Cancel game loop
-                task = self.game_loops.pop(session_id, None)
-                if task:
-                    task.cancel()
     
     async def broadcast(self, session_id: str, data: dict, exclude: str = None):
         if session_id in self.connections:
@@ -66,243 +61,6 @@ class LiveGameManager:
 manager = LiveGameManager()
 
 
-# ─── Game Initializers ─────────────────────────────────────────────────────────
-
-def init_pong_state(player_a: str, player_b: str) -> dict:
-    return {
-        "type": "pong",
-        "canvas": {"width": 800, "height": 400},
-        "ball": {"x": 400, "y": 200, "vx": 4, "vy": 3, "radius": 8},
-        "paddles": {
-            player_a: {"y": 170, "height": 60, "width": 10, "x": 20, "speed": 6},
-            player_b: {"y": 170, "height": 60, "width": 10, "x": 770, "speed": 6},
-        },
-        "scores": {player_a: 0, player_b: 0},
-        "max_score": 5,
-        "status": "playing",
-        "player_a": player_a,
-        "player_b": player_b,
-    }
-
-
-def init_air_hockey_state(player_a: str, player_b: str) -> dict:
-    return {
-        "type": "air_hockey",
-        "canvas": {"width": 400, "height": 700},
-        "puck": {"x": 200, "y": 350, "vx": 0, "vy": 0, "radius": 12},
-        "mallets": {
-            player_a: {"x": 200, "y": 600, "radius": 25},
-            player_b: {"x": 200, "y": 100, "radius": 25},
-        },
-        "goals": {
-            player_a: {"y": 0, "width": 120},    # top goal (player_a defends bottom)
-            player_b: {"y": 700, "width": 120},   # bottom goal (player_b defends top)
-        },
-        "scores": {player_a: 0, player_b: 0},
-        "max_score": 5,
-        "status": "playing",
-        "player_a": player_a,
-        "player_b": player_b,
-    }
-
-
-def init_tictactoe_state(player_a: str, player_b: str) -> dict:
-    return {
-        "type": "tic_tac_toe",
-        "board": [""] * 9,  # 3x3 grid as flat array
-        "current_turn": player_a,
-        "symbols": {player_a: "X", player_b: "O"},
-        "player_a": player_a,
-        "player_b": player_b,
-        "status": "playing",
-        "winner": None,
-    }
-
-
-def init_bonding_synchrony_state(player_a: str, player_b: str) -> dict:
-    return {
-        "type": "bonding_synchrony",
-        "questions": [
-            {"q": "Live in Brazil for a year 🇧🇷", "opt_a": "Brazil", "opt_b": "Japan"},
-            {"q": "Learn 5 languages at basic level or Master 1?", "opt_a": "5 Basic", "opt_b": "1 Master"},
-            {"q": "Cook traditional meal or Teach family recipe?", "opt_a": "Cook", "opt_b": "Teach"},
-            {"q": "Have pen pal everywhere or One lifelong friend?", "opt_a": "Pen pal", "opt_b": "Best Friend"},
-            {"q": "Celebrate Holi 🎨 or Carnival 🎉?", "opt_a": "Holi", "opt_b": "Carnival"}
-        ],
-        "current_q": 0,
-        "answers": {player_a: None, player_b: None},
-        "scores": {player_a: 0, player_b: 0},
-        "player_a": player_a,
-        "player_b": player_b,
-        "status": "playing",
-        "winner": None,
-    }
-
-
-GAME_INITIALIZERS = {
-    "pong": init_pong_state,
-    "air_hockey": init_air_hockey_state,
-    "tic_tac_toe": init_tictactoe_state,
-    "bonding_synchrony": init_bonding_synchrony_state,
-}
-
-
-# ─── Game Physics / Logic ──────────────────────────────────────────────────────
-
-def update_pong(state: dict) -> dict:
-    """Update pong ball physics for one tick."""
-    if state["status"] != "playing":
-        return state
-    
-    ball = state["ball"]
-    canvas = state["canvas"]
-    
-    ball["x"] += ball["vx"]
-    ball["y"] += ball["vy"]
-    
-    # Wall bounce (top/bottom)
-    if ball["y"] - ball["radius"] <= 0 or ball["y"] + ball["radius"] >= canvas["height"]:
-        ball["vy"] = -ball["vy"]
-        ball["y"] = max(ball["radius"], min(canvas["height"] - ball["radius"], ball["y"]))
-    
-    pa = state["player_a"]
-    pb = state["player_b"]
-    
-    # Paddle collision — left paddle (player_a)
-    paddle_a = state["paddles"][pa]
-    if (ball["x"] - ball["radius"] <= paddle_a["x"] + paddle_a["width"] and
-        ball["x"] - ball["radius"] >= paddle_a["x"] and
-        paddle_a["y"] <= ball["y"] <= paddle_a["y"] + paddle_a["height"]):
-        ball["vx"] = abs(ball["vx"]) * 1.05  # speed up slightly
-        # Angle adjustment based on hit position
-        hit_pos = (ball["y"] - paddle_a["y"]) / paddle_a["height"]
-        ball["vy"] = (hit_pos - 0.5) * 8
-    
-    # Paddle collision — right paddle (player_b)
-    paddle_b = state["paddles"][pb]
-    if (ball["x"] + ball["radius"] >= paddle_b["x"] and
-        ball["x"] + ball["radius"] <= paddle_b["x"] + paddle_b["width"] and
-        paddle_b["y"] <= ball["y"] <= paddle_b["y"] + paddle_b["height"]):
-        ball["vx"] = -abs(ball["vx"]) * 1.05
-        hit_pos = (ball["y"] - paddle_b["y"]) / paddle_b["height"]
-        ball["vy"] = (hit_pos - 0.5) * 8
-    
-    # Scoring
-    if ball["x"] - ball["radius"] <= 0:
-        state["scores"][pb] += 1
-        _reset_pong_ball(state)
-    elif ball["x"] + ball["radius"] >= canvas["width"]:
-        state["scores"][pa] += 1
-        _reset_pong_ball(state)
-    
-    # Speed cap
-    max_speed = 12
-    ball["vx"] = max(-max_speed, min(max_speed, ball["vx"]))
-    ball["vy"] = max(-max_speed, min(max_speed, ball["vy"]))
-    
-    # Check win
-    if state["scores"][pa] >= state["max_score"] or state["scores"][pb] >= state["max_score"]:
-        state["status"] = "finished"
-        state["winner"] = pa if state["scores"][pa] >= state["max_score"] else pb
-    
-    return state
-
-
-def _reset_pong_ball(state: dict):
-    canvas = state["canvas"]
-    state["ball"]["x"] = canvas["width"] // 2
-    state["ball"]["y"] = canvas["height"] // 2
-    state["ball"]["vx"] = random.choice([-4, 4])
-    state["ball"]["vy"] = random.choice([-3, 3])
-
-
-def update_air_hockey(state: dict) -> dict:
-    """Update air hockey puck physics."""
-    if state["status"] != "playing":
-        return state
-    
-    puck = state["puck"]
-    canvas = state["canvas"]
-    
-    # Apply friction
-    puck["vx"] *= 0.99
-    puck["vy"] *= 0.99
-    
-    puck["x"] += puck["vx"]
-    puck["y"] += puck["vy"]
-    
-    # Wall bounce (left/right)
-    if puck["x"] - puck["radius"] <= 0 or puck["x"] + puck["radius"] >= canvas["width"]:
-        puck["vx"] = -puck["vx"] * 0.9
-        puck["x"] = max(puck["radius"], min(canvas["width"] - puck["radius"], puck["x"]))
-    
-    pa = state["player_a"]
-    pb = state["player_b"]
-    
-    # Mallet collision
-    for pid in [pa, pb]:
-        m = state["mallets"][pid]
-        dx = puck["x"] - m["x"]
-        dy = puck["y"] - m["y"]
-        dist = math.sqrt(dx*dx + dy*dy)
-        if dist < puck["radius"] + m["radius"] and dist > 0:
-            # Bounce off mallet
-            nx = dx / dist
-            ny = dy / dist
-            puck["vx"] = nx * 8
-            puck["vy"] = ny * 8
-            # Push puck out of mallet
-            overlap = puck["radius"] + m["radius"] - dist
-            puck["x"] += nx * overlap
-            puck["y"] += ny * overlap
-    
-    # Goal detection — top goal (player_b scores)
-    goal_width = 120
-    goal_center = canvas["width"] // 2
-    if puck["y"] - puck["radius"] <= 0:
-        if abs(puck["x"] - goal_center) < goal_width // 2:
-            state["scores"][pb] += 1  # player_b scores in top goal
-            _reset_hockey_puck(state)
-        else:
-            puck["vy"] = abs(puck["vy"])
-    
-    # Bottom goal (player_a scores)
-    if puck["y"] + puck["radius"] >= canvas["height"]:
-        if abs(puck["x"] - goal_center) < goal_width // 2:
-            state["scores"][pa] += 1  # player_a scores in bottom goal
-            _reset_hockey_puck(state)
-        else:
-            puck["vy"] = -abs(puck["vy"])
-    
-    # Check win
-    if state["scores"][pa] >= state["max_score"] or state["scores"][pb] >= state["max_score"]:
-        state["status"] = "finished"
-        state["winner"] = pa if state["scores"][pa] >= state["max_score"] else pb
-    
-    return state
-
-
-def _reset_hockey_puck(state: dict):
-    canvas = state["canvas"]
-    state["puck"]["x"] = canvas["width"] // 2
-    state["puck"]["y"] = canvas["height"] // 2
-    state["puck"]["vx"] = 0
-    state["puck"]["vy"] = 0
-
-
-def check_tictactoe_winner(board: list) -> str | None:
-    """Check for a tic-tac-toe winner. Returns symbol or None."""
-    lines = [
-        [0, 1, 2], [3, 4, 5], [6, 7, 8],  # rows
-        [0, 3, 6], [1, 4, 7], [2, 5, 8],  # cols
-        [0, 4, 8], [2, 4, 6],              # diags
-    ]
-    for a, b, c in lines:
-        if board[a] and board[a] == board[b] == board[c]:
-            return board[a]
-    return None
-
-
 # ─── REST Endpoints ────────────────────────────────────────────────────────────
 
 @router.get("/available")
@@ -313,7 +71,7 @@ async def get_available_games():
             {
                 "type": "pong",
                 "title": "🏓 Pong",
-                "description": "Classic pong! First to 5 points wins.",
+                "description": "Classic pong! First to 5 points wins. (P2P Low Latency)",
                 "players": 2,
                 "estimated_minutes": 3,
                 "xp_reward": 15,
@@ -321,7 +79,7 @@ async def get_available_games():
             {
                 "type": "air_hockey",
                 "title": "🥅 Air Hockey",
-                "description": "Fast-paced air hockey! Score goals to win.",
+                "description": "Fast-paced air hockey! Score goals to win. (P2P Low Latency)",
                 "players": 2,
                 "estimated_minutes": 3,
                 "xp_reward": 15,
@@ -343,8 +101,7 @@ async def create_live_game(req: CreateLiveGameRequest, current_user: str = Depen
     """Create a live game session and invite the partner."""
     db = get_supabase()
     
-    if req.game_type not in GAME_INITIALIZERS:
-        raise HTTPException(status_code=400, detail=f"Unknown game type. Available: {list(GAME_INITIALIZERS.keys())}")
+    # We still accept all game types, including bonding_synchrony which might skip P2P depending on frontend.
     
     # Verify relationship
     rel = db.table("relationships_realtime").select("*").eq("id", req.relationship_id).eq("status", "active").execute()
@@ -379,13 +136,18 @@ async def create_live_game(req: CreateLiveGameRequest, current_user: str = Depen
         game_id = game_catalog.data[0]["id"]
     
     # Create session
+    session_players = [
+        {"user_id": current_user, "score": 0},
+        {"user_id": partner_id, "score": 0},
+    ]
+    # Assign initiator for WebRTC
+    session_players[0]["is_initiator"] = True
+    session_players[1]["is_initiator"] = False
+    
     session = db.table("game_sessions_realtime").insert({
         "game_id": game_id,
         "relationship_id": req.relationship_id,
-        "players": [
-            {"user_id": current_user, "score": 0},
-            {"user_id": partner_id, "score": 0},
-        ],
+        "players": session_players,
         "status": "waiting",
         "game_data": {"game_type": req.game_type},
         "created_at": datetime.utcnow().isoformat(),
@@ -406,23 +168,31 @@ async def create_live_game(req: CreateLiveGameRequest, current_user: str = Depen
         sender=sender_name, game=req.game_type.replace("_", " ").title()
     )
     
+    await presence_manager.send_to_user(partner_id, {
+        "type": "game_invite_received",
+        "sender_id": current_user,
+        "sender_name": sender_name,
+        "game_type": req.game_type,
+        "session_id": session_id
+    })
+    
     return {"session_id": session_id, "game_type": req.game_type}
 
 
-# ─── WebSocket Game Endpoint ──────────────────────────────────────────────────
+# ─── WebSocket Game Endpoint (Signaling) ──────────────────────────────────────
 
 @router.websocket("/ws/{session_id}/{user_id}")
 async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
-    """WebSocket endpoint for real-time game play.
+    """WebSocket endpoint solely for WebRTC signaling and game state sync/consensus.
     
     Client sends:
-      - {"type": "move", "data": {...}}  (paddle position, mallet position, cell index)
-      - {"type": "ready"}                (player ready to start)
+      - {"type": "ready"}
+      - {"type": "webrtc_offer", "offer": ...}
+      - {"type": "webrtc_answer", "answer": ...}
+      - {"type": "webrtc_ice_candidate", "candidate": ...}
+      - {"type": "game_finished", "winner": ..., "state": ...}
     
-    Server sends:
-      - {"type": "state", "state": {...}}     (full game state every tick)
-      - {"type": "game_over", "winner": ...}  (when game ends)
-      - {"type": "waiting_for_opponent"}      (when waiting)
+    Server relays WebRTC payloads to the other player and processes game_finished.
     """
     await websocket.accept()
     db = get_supabase()
@@ -434,13 +204,11 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
         return
     
     session_data = session.data[0]
-    
-    # Parse players gracefully in case Supabase returns JSON as string
     raw_players = session_data.get("players", [])
     if isinstance(raw_players, str):
         try:
             raw_players = json.loads(raw_players)
-        except Exception:
+        except:
             raw_players = []
             
     player_ids = [p.get("user_id") for p in raw_players if isinstance(p, dict) and "user_id" in p]
@@ -449,157 +217,85 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
         await websocket.close(code=4003, reason="Not a player in this game")
         return
     
+    # Determine if this user is the initiator (Player A)
+    is_initiator = raw_players[0].get("user_id") == user_id
+    
     await manager.connect(websocket, session_id, user_id)
     
     try:
-        # Wait for both players
         conns = manager.connections.get(session_id, {})
         if len(conns) < 2:
             await websocket.send_json({"type": "waiting_for_opponent"})
+        else:
+            await manager.broadcast(session_id, {"type": "opponent_joined"})
         
         while True:
             data = await websocket.receive_text()
             msg = json.loads(data)
+            msg_type = msg.get("type")
             
-            if msg.get("type") == "ready":
+            # Game Start & Signaling Setup
+            if msg_type == "ready":
                 conns = manager.connections.get(session_id, {})
                 if len(conns) >= 2:
-                    # Both players ready — initialize game
-                    raw_game_data = session_data.get("game_data", {})
-                    if isinstance(raw_game_data, str):
-                        try:
-                            raw_game_data = json.loads(raw_game_data)
-                        except Exception:
-                            raw_game_data = {}
-                            
-                    game_type = raw_game_data.get("game_type", "pong")
-                    initializer = GAME_INITIALIZERS.get(game_type, init_pong_state)
-                    state = initializer(player_ids[0], player_ids[1])
-                    manager.game_states[session_id] = state
-                    
+                    # Both players ready
                     # Update session status
                     db.table("game_sessions_realtime").update({
                         "status": "active",
                         "started_at": datetime.utcnow().isoformat(),
                     }).eq("id", session_id).execute()
                     
-                    await manager.broadcast(session_id, {"type": "game_start", "state": state})
-                    
-                    # Start physics loop for action games
-                    if game_type in ("pong", "air_hockey"):
-                        if session_id not in manager.game_loops:
-                            task = asyncio.create_task(_game_loop(session_id, game_type, db))
-                            manager.game_loops[session_id] = task
+                    game_type = session_data.get("game_data", {}).get("game_type", "pong")
+                    for member_id, member_ws in list(conns.items()):
+                        m_is_initiator = (raw_players[0].get("user_id") == member_id)
+                        await manager.send_to(session_id, member_id, {
+                            "type": "game_start", 
+                            "is_initiator": m_is_initiator,
+                            "players": player_ids,
+                            "game_type": game_type
+                        })
                 else:
                     await websocket.send_json({"type": "waiting_for_opponent"})
             
-            elif msg.get("type") == "move":
-                state = manager.game_states.get(session_id)
-                if not state or state.get("status") != "playing":
-                    continue
+            # Relaying WebRTC Signaling
+            elif msg_type == "webrtc_offer":
+                await manager.broadcast(session_id, {
+                    "type": "webrtc_offer",
+                    "offer": msg.get("offer"),
+                    "sender_id": user_id
+                }, exclude=user_id)
                 
-                move_data = msg.get("data", {})
-                game_type = state.get("type", "pong")
+            elif msg_type == "webrtc_answer":
+                await manager.broadcast(session_id, {
+                    "type": "webrtc_answer",
+                    "answer": msg.get("answer"),
+                    "sender_id": user_id
+                }, exclude=user_id)
                 
-                if game_type == "pong":
-                    # Update paddle position
-                    if user_id in state.get("paddles", {}):
-                        y = move_data.get("y")
-                        if y is not None:
-                            paddle = state["paddles"][user_id]
-                            canvas_h = state["canvas"]["height"]
-                            paddle["y"] = max(0, min(canvas_h - paddle["height"], y))
+            elif msg_type == "webrtc_ice_candidate":
+                await manager.broadcast(session_id, {
+                    "type": "webrtc_ice_candidate",
+                    "candidate": msg.get("candidate"),
+                    "sender_id": user_id
+                }, exclude=user_id)
                 
-                elif game_type == "air_hockey":
-                    # Update mallet position
-                    if user_id in state.get("mallets", {}):
-                        x = move_data.get("x")
-                        y = move_data.get("y")
-                        if x is not None and y is not None:
-                            mallet = state["mallets"][user_id]
-                            canvas = state["canvas"]
-                            mallet["x"] = max(mallet["radius"], min(canvas["width"] - mallet["radius"], x))
-                            # Restrict to own half
-                            if user_id == state["player_a"]:
-                                mallet["y"] = max(canvas["height"] // 2 + mallet["radius"],
-                                                  min(canvas["height"] - mallet["radius"], y))
-                            else:
-                                mallet["y"] = max(mallet["radius"],
-                                                  min(canvas["height"] // 2 - mallet["radius"], y))
-                
-                elif game_type == "tic_tac_toe":
-                    cell = move_data.get("cell")
-                    if cell is not None and 0 <= cell < 9:
-                        if state["current_turn"] == user_id and state["board"][cell] == "":
-                            state["board"][cell] = state["symbols"][user_id]
-                            
-                            # Check winner
-                            winner_symbol = check_tictactoe_winner(state["board"])
-                            if winner_symbol:
-                                state["status"] = "finished"
-                                # Find winner user_id from symbol
-                                for pid, sym in state["symbols"].items():
-                                    if sym == winner_symbol:
-                                        state["winner"] = pid
-                                        break
-                                await manager.broadcast(session_id, {"type": "state", "state": state})
-                                await _finish_game(session_id, state, db)
-                            elif "" not in state["board"]:
-                                # Draw
-                                state["status"] = "finished"
-                                state["winner"] = "draw"
-                                await manager.broadcast(session_id, {"type": "state", "state": state})
-                                await _finish_game(session_id, state, db)
-                            else:
-                                # Switch turn
-                                state["current_turn"] = (
-                                    state["player_b"] if user_id == state["player_a"]
-                                    else state["player_a"]
-                                )
-                                await manager.broadcast(session_id, {"type": "state", "state": state})
-                
-                elif game_type == "bonding_synchrony":
-                    answer = move_data.get("answer")
-                    if answer is not None:
-                        state["answers"][user_id] = answer
-                        
-                        # Check if both have answered
-                        ans_a = state["answers"][state["player_a"]]
-                        ans_b = state["answers"][state["player_b"]]
-                        
-                        if ans_a is not None and ans_b is not None:
-                            # Evaluate match
-                            match = (ans_a == ans_b)
-                            if match:
-                                state["scores"][state["player_a"]] += 10
-                                state["scores"][state["player_b"]] += 10
-                            
-                            # Broadcast round_result
-                            await manager.broadcast(session_id, {
-                                "type": "round_result", 
-                                "match": match, 
-                                "ans_a": ans_a, 
-                                "ans_b": ans_b,
-                                "state": state
-                            })
-                            
-                            # Wait a few seconds for UI animation, then clear & progress
-                            await asyncio.sleep(4.0)
-                            
-                            state["current_q"] += 1
-                            state["answers"][state["player_a"]] = None
-                            state["answers"][state["player_b"]] = None
-                            
-                            if state["current_q"] >= len(state["questions"]):
-                                state["status"] = "finished"
-                                state["winner"] = "bonding"
-                                await manager.broadcast(session_id, {"type": "state", "state": state})
-                                await _finish_game(session_id, state, db)
-                            else:
-                                await manager.broadcast(session_id, {"type": "state", "state": state})
-                        else:
-                            # Just broadcast state so UI knows the other person locked in
-                            await manager.broadcast(session_id, {"type": "state", "state": state})
+            # Non-P2P games (tic_tac_toe, bonding_synchrony) can still use centralized websocket fallback
+            elif msg_type == "sync_state": 
+                # For non-latency-sensitive games or turn-based games
+                await manager.broadcast(session_id, {
+                    "type": "sync_state",
+                    "state": msg.get("state"),
+                    "sender_id": user_id
+                }, exclude=user_id)
+            
+            # P2P consensus resolution
+            elif msg_type == "game_finished":
+                # Ensure we only process this once
+                check = db.table("game_sessions_realtime").select("status").eq("id", session_id).execute()
+                if check.data and check.data[0].get("status") != "completed":
+                    winner = msg.get("winner")
+                    final_state = msg.get("state", {})
+                    await _finish_game(session_id, final_state, winner, player_ids, db)
     
     except WebSocketDisconnect:
         manager.disconnect(session_id, user_id)
@@ -608,60 +304,37 @@ async def live_game_ws(websocket: WebSocket, session_id: str, user_id: str):
             "user_id": user_id
         })
     except Exception as e:
-        print(f"[LiveGame] Error: {e}")
+        print(f"[LiveGame WS] Error: {e}")
         manager.disconnect(session_id, user_id)
 
 
-async def _game_loop(session_id: str, game_type: str, db):
-    """Physics update loop for action games (Pong, Air Hockey)."""
-    tick_rate = 1 / 30  # 30 FPS
-    
-    try:
-        while session_id in manager.game_states:
-            state = manager.game_states[session_id]
-            if state["status"] != "playing":
-                break
-            
-            if game_type == "pong":
-                state = update_pong(state)
-            elif game_type == "air_hockey":
-                state = update_air_hockey(state)
-            
-            manager.game_states[session_id] = state
-            
-            await manager.broadcast(session_id, {"type": "state", "state": state})
-            
-            if state["status"] == "finished":
-                await _finish_game(session_id, state, db)
-                break
-            
-            await asyncio.sleep(tick_rate)
-    except asyncio.CancelledError:
-        pass
-    except Exception as e:
-        print(f"[GameLoop] Error for {session_id}: {e}")
-
-
-async def _finish_game(session_id: str, state: dict, db):
+async def _finish_game(session_id: str, state: dict, winner: str, player_ids: list, db):
     """Handle game completion — save results, award XP, notify."""
-    winner = state.get("winner")
-    pa = state.get("player_a")
-    pb = state.get("player_b")
+    pa_id = player_ids[0]
+    pb_id = player_ids[1] if len(player_ids) > 1 else None
+    
+    game_type = state.get("type", state.get("game_type", "pong"))
     
     # Determine XP rewards
-    xp_winner = 15 if state.get("type") != "tic_tac_toe" else 10
+    xp_winner = 15 if game_type != "tic_tac_toe" else 10
     xp_loser = 5
     xp_draw = 8
     
     winner_id = None
-    if winner and winner != "draw":
+    if winner == "bonding":
+        await award_xp(pa_id, xp_winner, "game", "game_reward", source_id=session_id)
+        if pb_id:
+            await award_xp(pb_id, xp_winner, "game", "game_reward", source_id=session_id)
+    elif winner and winner != "draw":
         winner_id = winner
-        loser_id = pb if winner == pa else pa
-        await award_xp(winner, xp_winner, "game", "game_reward", source_id=session_id)
-        await award_xp(loser_id, xp_loser, "game", "game_reward", source_id=session_id)
+        loser_id = pb_id if winner == pa_id else pa_id
+        await award_xp(winner_id, xp_winner, "game", "game_reward", source_id=session_id)
+        if loser_id:
+            await award_xp(loser_id, xp_loser, "game", "game_reward", source_id=session_id)
     elif winner == "draw":
-        await award_xp(pa, xp_draw, "game", "game_reward", source_id=session_id)
-        await award_xp(pb, xp_draw, "game", "game_reward", source_id=session_id)
+        await award_xp(pa_id, xp_draw, "game", "game_reward", source_id=session_id)
+        if pb_id:
+            await award_xp(pb_id, xp_draw, "game", "game_reward", source_id=session_id)
     
     # Update session in DB
     scores = state.get("scores", {})
@@ -669,8 +342,8 @@ async def _finish_game(session_id: str, state: dict, db):
         "status": "completed",
         "winner_id": winner_id,
         "game_data": state,
-        "xp_awarded_user_a": xp_winner if winner == pa else (xp_draw if winner == "draw" else xp_loser),
-        "xp_awarded_user_b": xp_winner if winner == pb else (xp_draw if winner == "draw" else xp_loser),
+        "xp_awarded_user_a": xp_winner if winner in (pa_id, "bonding") else (xp_draw if winner == "draw" else xp_loser),
+        "xp_awarded_user_b": xp_winner if winner in (pb_id, "bonding") else (xp_draw if winner == "draw" else xp_loser),
         "bond_points_awarded": 5,
         "completed_at": datetime.utcnow().isoformat(),
     }).eq("id", session_id).execute()
@@ -686,7 +359,7 @@ async def _finish_game(session_id: str, state: dict, db):
             await check_and_level_up(rel_id)
     
     # Update realtime_xp game stats
-    for uid in [pa, pb]:
+    for uid in [pa_id, pb_id]:
         if uid:
             xp_row = db.table("realtime_xp_realtime").select("games_played, games_won").eq("user_id", uid).execute()
             if xp_row.data:
@@ -704,9 +377,9 @@ async def _finish_game(session_id: str, state: dict, db):
     })
     
     # Notify players
-    for uid in [pa, pb]:
+    for uid in [pa_id, pb_id]:
         if uid:
-            game_name = state.get("type", "game").replace("_", " ").title()
+            game_name = game_type.replace("_", " ").title()
             if winner == uid:
                 await send_notification(uid, "game_completed",
                                        data={"session_id": session_id},

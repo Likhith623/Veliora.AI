@@ -46,7 +46,11 @@ export default function GlobalPresence() {
       onInviteResponse: (data) => {
         if (data.accept) {
           toast.success("Game accepted! Connecting...");
-          router.push(`/games/live-bond/${data.session_id}`);
+          if (data.game_type === 'bonding_synchrony') {
+            router.push(`/games/live-bond/${data.session_id}`);
+          } else {
+            router.push(`/live-games?session=${data.session_id}`);
+          }
         } else {
           toast.error("Invite was declined.");
         }
@@ -74,11 +78,16 @@ export default function GlobalPresence() {
       type: "respond_invite",
       inviter_id: invite.sender_id,
       accept,
-      session_id: invite.session_id
+      session_id: invite.session_id,
+      game_type: invite.game_type
     });
 
     if (accept) {
-      router.push(`/games/live-bond/${invite.session_id}`);
+      if (invite.game_type === 'bonding_synchrony') {
+        router.push(`/games/live-bond/${invite.session_id}`);
+      } else {
+        router.push(`/live-games?session=${invite.session_id}`);
+      }
     }
     setInvite(null);
   };

@@ -1,3 +1,4 @@
+//api.ts
 // ═══════════════════════════════════════════════════════════════
 // Veliora.AI — Realtime Communication API Client
 // Synced to: INTEGRATON_RALTINE.md (all 19 sections)

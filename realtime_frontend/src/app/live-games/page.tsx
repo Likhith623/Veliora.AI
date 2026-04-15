@@ -5,39 +5,19 @@ import Link from 'next/link';
 import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import {
-  ArrowLeft, Gamepad2, Loader2, Wifi, WifiOff, Trophy, Zap, X as XIcon
+  ArrowLeft, Gamepad2, Loader2, Wifi, WifiOff, Trophy, Zap, Activity
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { createLiveGameWS, type ManagedWebSocket } from '@/lib/websocket';
 import { useAuth } from '@/lib/AuthContext';
 import toast from 'react-hot-toast';
+import {
+  PongState, AirHockeyState, initPongState, initAirHockeyState, updateAirHockey, TICK_RATE
+} from '@/lib/gameEngine';
+import { RollbackManager } from '@/lib/RollbackManager';
+import { FP_MULT } from '@/lib/FixedPointEngine';
 
-// ── Types matching backend exactly ─────────────────────────────
-interface PongState {
-  type: 'pong';
-  canvas: { width: number; height: number };
-  ball: { x: number; y: number; vx: number; vy: number; radius: number };
-  paddles: Record<string, { y: number; height: number; width: number; x: number; speed: number }>;
-  scores: Record<string, number>;
-  max_score: number;
-  status: 'playing' | 'finished';
-  player_a: string;
-  player_b: string;
-  winner?: string;
-}
-
-interface AirHockeyState {
-  type: 'air_hockey';
-  canvas: { width: number; height: number };
-  puck: { x: number; y: number; vx: number; vy: number; radius: number };
-  mallets: Record<string, { x: number; y: number; radius: number }>;
-  scores: Record<string, number>;
-  max_score: number;
-  status: 'playing' | 'finished';
-  player_a: string;
-  player_b: string;
-  winner?: string;
-}
+// ─── Types ─────────────────────────────────────────────────────────────────────
 
 interface TicTacToeState {
   type: 'tic_tac_toe';
@@ -68,17 +48,29 @@ const GAME_ICONS: Record<string, string> = {
   tic_tac_toe: '❌',
 };
 
-const GAME_COLORS: Record<string, { from: string; to: string; glow: string }> = {
-  pong: { from: '#a855f7', to: '#ec4899', glow: 'rgba(168,85,247,0.3)' },
-  air_hockey: { from: '#3b82f6', to: '#06b6d4', glow: 'rgba(59,130,246,0.3)' },
-  tic_tac_toe: { from: '#f97316', to: '#ef4444', glow: 'rgba(249,115,22,0.3)' },
+const GAME_COLORS: Record<string, { from: string; to: string }> = {
+  pong: { from: '#a855f7', to: '#ec4899' },
+  air_hockey: { from: '#3b82f6', to: '#06b6d4' },
+  tic_tac_toe: { from: '#f97316', to: '#ef4444' },
 };
+
+// ─── Constants ─────────────────────────────────────────────────────────────────
+
+/**
+ * Fixed simulation timestep in ms.
+ * 60 Hz keeps rollback cheap (each resim step is ~0.016ms of physics).
+ * The old 30 Hz value (TICK_RATE=33ms) made rollback feel "skippy".
+ */
+const SIM_HZ = 60;
+const SIM_STEP_MS = 1000 / SIM_HZ; // 16.667ms
+
+// ─── Component ─────────────────────────────────────────────────────────────────
 
 function LiveGamesPageContent() {
   const searchParams = useSearchParams();
   const joinSessionId = searchParams.get('session') || '';
   const { user, relationships } = useAuth();
-  
+
   const [view, setView] = useState<PageView>('lobby');
   const [availableGames, setAvailableGames] = useState<LiveGameInfo[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -87,99 +79,570 @@ function LiveGamesPageContent() {
   const [sessionId, setSessionId] = useState('');
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isWsConnected, setIsWsConnected] = useState(false);
+  const [isP2pConnected, setIsP2pConnected] = useState(false);
   const [winner, setWinner] = useState<string | null>(null);
   const [finalScores, setFinalScores] = useState<Record<string, number>>({});
   const [xpAwarded, setXpAwarded] = useState<any>(null);
-  const [scoreFlash, setScoreFlash] = useState(false);
-  const [prevScores, setPrevScores] = useState<Record<string, number>>({});
+  // Scores displayed in the HUD — updated deterministically from physics, never randomly
+  const [hudScores, setHudScores] = useState<{ p1: number; p2: number }>({ p1: 0, p2: 0 });
 
+  // ── Networking refs ──
   const wsRef = useRef<ManagedWebSocket | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const gameStateRef = useRef<GameState | null>(null); // ← FIX: ref for stale closure
-  const animFrameRef = useRef<number>(0);
+  const pcRef = useRef<RTCPeerConnection | null>(null);
+  const dcRef = useRef<RTCDataChannel | null>(null);
+  const isInitiatorRef = useRef<boolean>(false);
+  const playersRef = useRef<string[]>([]);
 
-  // Keep ref in sync with state (fixes stale closure in event handlers)
+  // ── Game engine refs ──
+  const rollbackManagerRef = useRef<RollbackManager | null>(null);
+  const localInputYRef = useRef<number | null>(null);
+  const gameStateRef = useRef<GameState | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  // ── Loop refs (no useState — avoids re-render on every tick) ──
+  const animFrameRef = useRef<number>(0);
+  const lastSimTimeRef = useRef<number>(0);
+  const accumRef = useRef<number>(0);
+
+  // ── WebRTC pending message queue ──
+  // FIX (Bug 7): Buffer offer/answer/ice that arrive before pcRef is ready
+  const pendingWebRTCMessages = useRef<Array<{ type: string; data: any }>>([]);
+  const webRTCReadyRef = useRef<boolean>(false);
+
+  // Sync react gameState → ref for use inside rAF callbacks
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
 
-  // Detect score changes for flash effect
-  useEffect(() => {
-    if (!gameState || gameState.type === 'tic_tac_toe') return;
-    const scores = gameState.scores;
-    const prevTotal = Object.values(prevScores).reduce((a, b) => a + b, 0);
-    const newTotal = Object.values(scores).reduce((a, b) => a + b, 0);
-    if (newTotal > prevTotal && prevTotal > 0) {
-      setScoreFlash(true);
-      setTimeout(() => setScoreFlash(false), 400);
-    }
-    setPrevScores({ ...scores });
-  }, [gameState?.type === 'tic_tac_toe' ? null : JSON.stringify((gameState as any)?.scores)]);
+  // ─── WebRTC setup ───────────────────────────────────────────────────────────
 
-  // ── Load available live games ──
-  useEffect(() => {
-    api.getLiveGames().then(res => {
-      setAvailableGames(res.games || []);
-    }).catch(console.error).finally(() => setIsLoading(false));
+  const setupDataChannel = useCallback((dc: RTCDataChannel) => {
+    dc.binaryType = 'arraybuffer';
+    dc.onopen = () => {
+      setIsP2pConnected(true);
+    };
+    dc.onclose = () => setIsP2pConnected(false);
+    dc.onmessage = (e) => {
+      try {
+        const data = JSON.parse(e.data as string);
+        if (data.type === 'state') {
+          // Air hockey host-authoritative fallback
+          gameStateRef.current = data.state as GameState;
+        } else if (data.type === 'input') {
+          // Air hockey fallback input
+          handleOpponentInput(data);
+        } else if (data.type === 'rb_input') {
+          // Rollback input packet
+          rollbackManagerRef.current?.onRemoteInput(data.frame, data.input);
+        }
+      } catch (_) {}
+    };
+    dcRef.current = dc;
   }, []);
 
-  // ── Deep-link: auto-join from ?session= URL param ──
+  const flushPendingWebRTC = useCallback(async () => {
+    if (!pcRef.current) return;
+    while (pendingWebRTCMessages.current.length > 0) {
+      // Don't process ICE candidates yet if we don't have a remote description
+      if (pendingWebRTCMessages.current[0].type === 'ice' && !pcRef.current.remoteDescription) {
+        // Move ICE to the back of the line or wait
+        // Wait, if it's the only type left, we just wait until an answer/offer comes.
+        const nonIceIdx = pendingWebRTCMessages.current.findIndex(m => m.type !== 'ice');
+        if (nonIceIdx === -1) break; // Only ICE candidates left, wait for offer/answer
+        
+        // Bring the offer/answer to the front
+        const msg = pendingWebRTCMessages.current.splice(nonIceIdx, 1)[0];
+        pendingWebRTCMessages.current.unshift(msg);
+      }
+
+      const msg = pendingWebRTCMessages.current.shift()!;
+      try {
+        if (msg.type === 'offer') {
+          if (pcRef.current.signalingState !== 'stable') {
+            continue;
+          }
+          await pcRef.current.setRemoteDescription(msg.data);
+          const answer = await pcRef.current.createAnswer();
+          await pcRef.current.setLocalDescription(answer);
+          wsRef.current?.send({ type: 'webrtc_answer', answer });
+        } else if (msg.type === 'answer') {
+          if (pcRef.current.signalingState !== 'stable') {
+            await pcRef.current.setRemoteDescription(msg.data);
+          }
+        } else if (msg.type === 'ice') {
+          await pcRef.current.addIceCandidate(msg.data);
+        }
+      } catch (err) {
+        console.warn('[WebRTC] flush error', err);
+      }
+    }
+  }, []);
+
+  const setupWebRTC = useCallback((isInitiator: boolean) => {
+    isInitiatorRef.current = isInitiator;
+
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+      ],
+    });
+    pcRef.current = pc;
+
+    // Use a negotiated data channel — avoids the offer/answer race on channel creation
+    const dc = pc.createDataChannel('game_state', { negotiated: true, id: 0, ordered: false, maxRetransmits: 0 });
+    setupDataChannel(dc);
+
+    pc.onicecandidate = (e) => {
+      if (e.candidate && wsRef.current) {
+        wsRef.current.send({ type: 'webrtc_ice_candidate', candidate: e.candidate });
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'failed') {
+        toast.error('P2P connection failed — check your network');
+      }
+    };
+
+    // Mark WebRTC as ready and flush anything queued before pcRef was set
+    webRTCReadyRef.current = true;
+    flushPendingWebRTC();
+
+    if (isInitiator) {
+      pc.createOffer()
+        .then((offer) => pc.setLocalDescription(offer))
+        .then(() => {
+          wsRef.current?.send({ type: 'webrtc_offer', offer: pc.localDescription });
+        })
+        .catch((err) => console.error('[WebRTC] offer error', err));
+    }
+  }, [setupDataChannel, flushPendingWebRTC]);
+
+  const handleOpponentInput = useCallback(
+    (data: any) => {
+      if (!isInitiatorRef.current || !gameStateRef.current || !playersRef.current.length || !user)
+        return;
+      const state = gameStateRef.current;
+      const opponentId = playersRef.current.find((id) => id !== user.id);
+      if (!opponentId || state.type !== 'air_hockey') return;
+      const m = state.mallets[opponentId];
+      if (!m) return;
+      m.x = Math.max(m.radius, Math.min(state.canvas.width - m.radius, data.x));
+      if (opponentId === state.player_a) {
+        m.y = Math.max(state.canvas.height / 2 + m.radius, Math.min(state.canvas.height - m.radius, data.y));
+      } else {
+        m.y = Math.max(m.radius, Math.min(state.canvas.height / 2 - m.radius, data.y));
+      }
+    },
+    [user]
+  );
+
+  // ─── Main game loop (rAF + fixed-step accumulator) ─────────────────────────
+  //
+  // FIX (Bug 3 & 4): replaces setInterval with rAF-based accumulator.
+  // This runs at the browser's native refresh rate and advances the simulation
+  // in discrete 16.667ms steps. Prevents drift and ensures rollback has enough
+  // frames of history to work with.
+
+  const gameLoop = useCallback(
+    (timestamp: number) => {
+      animFrameRef.current = requestAnimationFrame(gameLoop);
+
+      const state = gameStateRef.current;
+      if (!state || state.status !== 'playing') {
+        drawCurrentState();
+        return;
+      }
+
+      // Accumulate elapsed time
+      if (lastSimTimeRef.current === 0) lastSimTimeRef.current = timestamp;
+      const elapsed = timestamp - lastSimTimeRef.current;
+      lastSimTimeRef.current = timestamp;
+
+      // Cap at 200ms to avoid spiral-of-death after a tab becomes visible again
+      accumRef.current = Math.min(accumRef.current + elapsed, 200);
+
+      // ── PONG: rollback path ──────────────────────────────────────────────────
+      if (state.type === 'pong' && rollbackManagerRef.current) {
+        while (accumRef.current >= SIM_STEP_MS) {
+          rollbackManagerRef.current.update(localInputYRef.current);
+          accumRef.current -= SIM_STEP_MS;
+
+          // Check win condition from the authoritative physics state
+          const vState = rollbackManagerRef.current.getVisualState();
+          if (vState.scores.p1 >= 5 || vState.scores.p2 >= 5) {
+            const winnerKey = vState.scores.p1 >= 5 ? state.player_a : state.player_b;
+            // Only fire once
+            if (state.status === 'playing') {
+              state.status = 'finished';
+              state.winner = winnerKey;
+              wsRef.current?.send({ type: 'game_finished', winner: winnerKey, state });
+            }
+          }
+
+          // Update HUD scores deterministically (no Math.random gate!)
+          const s = rollbackManagerRef.current.getVisualState().scores;
+          setHudScores((prev) => {
+            if (prev.p1 !== s.p1 || prev.p2 !== s.p2) return { p1: s.p1, p2: s.p2 };
+            return prev;
+          });
+        }
+      }
+
+      // ── AIR HOCKEY: host-authoritative path ─────────────────────────────────
+      if (state.type === 'air_hockey' && isInitiatorRef.current) {
+        while (accumRef.current >= TICK_RATE) {
+          const prevStatus = state.status;
+          updateAirHockey(state as AirHockeyState);
+          accumRef.current -= TICK_RATE;
+
+          if (dcRef.current?.readyState === 'open') {
+            dcRef.current.send(JSON.stringify({ type: 'state', state }));
+          }
+          if (prevStatus === 'playing' && state.status === 'finished') {
+            wsRef.current?.send({ type: 'game_finished', winner: state.winner, state });
+          }
+        }
+
+        // Sync HUD
+        const scores = (state as AirHockeyState).scores;
+        const p1Score = scores[state.player_a] ?? 0;
+        const p2Score = scores[state.player_b] ?? 0;
+        setHudScores((prev) => {
+          if (prev.p1 !== p1Score || prev.p2 !== p2Score) return { p1: p1Score, p2: p2Score };
+          return prev;
+        });
+      }
+
+      drawCurrentState();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [user?.id]
+  );
+
+  // ─── Canvas draw (separated from sim logic) ────────────────────────────────
+
+  const drawCurrentState = useCallback(() => {
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    const state = gameStateRef.current;
+    if (!canvas || !ctx || !state || state.type === 'tic_tac_toe') return;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (state.type === 'pong') {
+      if (!rollbackManagerRef.current) return;
+      const vState = rollbackManagerRef.current.getVisualState();
+
+      // Center line
+      ctx.setLineDash([10, 10]);
+      ctx.beginPath();
+      ctx.moveTo(canvas.width / 2, 0);
+      ctx.lineTo(canvas.width / 2, canvas.height);
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const { p1, p2 } = vState.paddles;
+      const b = vState.ball;
+      const isP1 = rollbackManagerRef.current.isPlayerOne;
+
+      // Draw paddles — local player is highlighted
+      const localColor = '#ec4899';
+      const remoteColor = '#3b82f6';
+
+      ctx.fillStyle = isP1 ? localColor : remoteColor;
+      ctx.beginPath();
+      ctx.roundRect(p1.x / FP_MULT, p1.y / FP_MULT, p1.width / FP_MULT, p1.height / FP_MULT, 4);
+      ctx.fill();
+
+      ctx.fillStyle = isP1 ? remoteColor : localColor;
+      ctx.beginPath();
+      ctx.roundRect(p2.x / FP_MULT, p2.y / FP_MULT, p2.width / FP_MULT, p2.height / FP_MULT, 4);
+      ctx.fill();
+
+      // Ball with subtle glow
+      ctx.shadowColor = '#facc15';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.arc(b.x / FP_MULT, b.y / FP_MULT, b.radius / FP_MULT, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+
+    } else if (state.type === 'air_hockey') {
+      // Center line
+      ctx.fillStyle = 'rgba(255,255,255,0.04)';
+      ctx.fillRect(0, canvas.height / 2 - 1, canvas.width, 2);
+
+      // Center circle
+      ctx.beginPath();
+      ctx.arc(canvas.width / 2, canvas.height / 2, 50, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      // Goals
+      Object.values(state.goals).forEach((g: any) => {
+        ctx.fillStyle = 'rgba(239,68,68,0.25)';
+        ctx.fillRect(canvas.width / 2 - g.width / 2, g.y === 0 ? 0 : g.y - 8, g.width, 8);
+      });
+
+      // Mallets
+      Object.keys(state.mallets).forEach((pid) => {
+        const m = state.mallets[pid];
+        ctx.fillStyle = pid === user?.id ? '#ec4899' : '#3b82f6';
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, m.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // Puck
+      const p = state.puck;
+      ctx.shadowColor = '#facc15';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = '#facc15';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+  }, [user?.id]);
+
+  // Start/stop game loop based on view
+  useEffect(() => {
+    if (view === 'playing') {
+      lastSimTimeRef.current = 0;
+      accumRef.current = 0;
+      animFrameRef.current = requestAnimationFrame(gameLoop);
+    }
+    return () => {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = 0;
+    };
+  }, [view, gameLoop]);
+
+  // ─── Load available games ──────────────────────────────────────────────────
+
+  useEffect(() => {
+    api
+      .getLiveGames()
+      .then((res) => setAvailableGames(res.games || []))
+      .catch(console.error)
+      .finally(() => setIsLoading(false));
+  }, []);
+
   useEffect(() => {
     if (joinSessionId && user?.id) {
       setSessionId(joinSessionId);
       setView('waiting');
       connectToSession(joinSessionId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [joinSessionId, user?.id]);
 
-  // ── Connect to a game session WebSocket ──
-  const connectToSession = useCallback((sid: string) => {
-    if (!user?.id) return;
+  // ─── Session connection ────────────────────────────────────────────────────
 
-    const ws = createLiveGameWS(sid, user.id, {
-      onOpen: () => {
-        setIsWsConnected(true);
-        ws.send({ type: 'ready' });
-      },
-      onClose: () => setIsWsConnected(false),
-      onWaitingForOpponent: () => setView('waiting'),
-      onGameStart: (state) => {
-        setGameState(state);
-        setSelectedGameType(state.type);
-        setView('playing');
-      },
-      onState: (state) => {
-        gameStateRef.current = state;
-        if (state.type === 'tic_tac_toe') {
+  const connectToSession = useCallback(
+    (sid: string) => {
+      if (!user?.id) return;
+
+      const ws = createLiveGameWS(sid, user.id, {
+        onOpen: () => {
+          setIsWsConnected(true);
+          ws.send({ type: 'ready' });
+        },
+        onClose: () => setIsWsConnected(false),
+        onWaitingForOpponent: () => setView('waiting'),
+
+        onGameStart: (serverState, isInitiator, players, serverGameType) => {
+          playersRef.current = players || [];
+          
+          // Use the game type from the server if selectedGameType is missing (happens for invited players)
+          const actualGameType = selectedGameType || serverGameType;
+
+          // FIX (Bug 1 & 2): both players get a RollbackManager.
+          // isPlayerOne = am I players[0] (the left-side / initiator player).
+          const isP1 = players?.[0] === user.id;
+
+          let initialState: GameState | null = null;
+
+          if (actualGameType === 'pong' && players?.length === 2) {
+            initialState = initPongState(players[0], players[1]);
+            rollbackManagerRef.current = new RollbackManager(
+              (frame, input) => {
+                if (dcRef.current?.readyState === 'open') {
+                  dcRef.current.send(JSON.stringify({ type: 'rb_input', frame, input }));
+                }
+              },
+              isP1  // ← This is the critical fix: P2 gets isPlayerOne=false
+            );
+          } else if (actualGameType === 'air_hockey' && players?.length === 2) {
+             initialState = initAirHockeyState(players[0], players[1]);
+          } else if (actualGameType === 'tic_tac_toe' && players?.length === 2) {
+             initialState = {
+               type: 'tic_tac_toe',
+               board: Array(9).fill(''),
+               current_turn: players[0],
+               symbols: { [players[0]]: 'X', [players[1]]: 'O' },
+               player_a: players[0],
+               player_b: players[1],
+               status: 'playing',
+               winner: null,
+             } as TicTacToeState;
+          } else {
+            initialState = serverState;
+          }
+
+          if (initialState) {
+            setGameState(initialState);
+            gameStateRef.current = initialState;
+          }
+
+          setHudScores({ p1: 0, p2: 0 });
+
+          if (initialState?.type === 'pong' || initialState?.type === 'air_hockey') {
+            // FIX (Bug 7): setupWebRTC now marks webRTCReadyRef=true and flushes queue
+            setupWebRTC(!!isInitiator);
+            setView('playing');
+          } else {
+            setView('playing');
+          }
+        },
+
+        // FIX (Bug 7): queue messages that arrive before pcRef is populated
+        onWebRTCOffer: async (offer) => {
+          if (webRTCReadyRef.current && pcRef.current) {
+            try {
+              if (pcRef.current.signalingState === 'stable') {
+                await pcRef.current.setRemoteDescription(offer);
+                const answer = await pcRef.current.createAnswer();
+                await pcRef.current.setLocalDescription(answer);
+                wsRef.current?.send({ type: 'webrtc_answer', answer });
+                flushPendingWebRTC(); // Flush ICE candidates now
+              }
+            } catch (err) {
+              console.error('[WebRTC] offer handler error', err);
+            }
+          } else {
+            pendingWebRTCMessages.current.push({ type: 'offer', data: offer });
+          }
+        },
+
+        onWebRTCAnswer: async (answer) => {
+          if (webRTCReadyRef.current && pcRef.current) {
+            try {
+              if (pcRef.current.signalingState !== 'stable') {
+                await pcRef.current.setRemoteDescription(answer);
+              }
+              flushPendingWebRTC(); // Flush ICE candidates now
+            } catch (err) {
+              console.error('[WebRTC] answer handler error', err);
+            }
+          } else {
+            pendingWebRTCMessages.current.push({ type: 'answer', data: answer });
+          }
+        },
+
+        onWebRTCICECandidate: async (candidate) => {
+          if (webRTCReadyRef.current && pcRef.current && pcRef.current.remoteDescription) {
+            try {
+              await pcRef.current.addIceCandidate(candidate);
+            } catch (err) {
+              console.error('[WebRTC] ICE error', err);
+            }
+          } else {
+            pendingWebRTCMessages.current.push({ type: 'ice', data: candidate });
+            // Attempt flush in case this was just waiting for the ref flag
+            if (webRTCReadyRef.current) flushPendingWebRTC();
+          }
+        },
+
+        onSyncState: (state) => {
           setGameState(state);
+        },
+
+        onGameOver: (w, scores, xp) => {
+          setWinner(w);
+          setFinalScores(scores);
+          setXpAwarded(xp);
+          setView('game_over');
+        },
+
+        onOpponentDisconnected: () => {
+          toast.error('Opponent disconnected');
+          setWinner(user.id);
+          setView('game_over');
+        },
+      });
+
+      wsRef.current = ws;
+    },
+    [user?.id, selectedGameType, setupWebRTC]
+  );
+
+  // ─── Input handling ────────────────────────────────────────────────────────
+
+  const handleClientInput = useCallback(
+    (clientX: number, clientY: number) => {
+      if (!user || !gameStateRef.current || view !== 'playing') return;
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const x = (clientX - rect.left) * scaleX;
+      const y = (clientY - rect.top) * scaleY;
+
+      const st = gameStateRef.current;
+
+      if (st.type === 'pong') {
+        // Store raw canvas-pixel Y — RollbackManager converts to FP internally
+        localInputYRef.current = y;
+      } else if (st.type === 'air_hockey') {
+        if (isInitiatorRef.current) {
+          const m = st.mallets[user.id];
+          if (m) {
+            m.x = Math.max(m.radius, Math.min(st.canvas.width - m.radius, x));
+            if (user.id === st.player_a) {
+              m.y = Math.max(st.canvas.height / 2 + m.radius, Math.min(st.canvas.height - m.radius, y));
+            } else {
+              m.y = Math.max(m.radius, Math.min(st.canvas.height / 2 - m.radius, y));
+            }
+          }
         } else {
-          setGameState((prev) => {
-            if (!prev) return state;
-            if (prev.status !== state.status) return state;
-            const prevScores = JSON.stringify((prev as any).scores);
-            const newScores = JSON.stringify((state as any).scores);
-            if (prevScores !== newScores) return state;
-            return prev;
-          });
+          if (dcRef.current?.readyState === 'open') {
+            dcRef.current.send(JSON.stringify({ type: 'input', x, y }));
+          }
         }
-      },
-      onGameOver: (w, scores, xp) => {
-        setWinner(w);
-        setFinalScores(scores);
-        setXpAwarded(xp);
-        setView('game_over');
-      },
-      onOpponentDisconnected: () => {
-        toast.error('Opponent disconnected');
-        setView('game_over');
-        setWinner(user.id);
-      },
-    });
+      }
+    },
+    [user, view]
+  );
 
-    wsRef.current = ws;
-  }, [user?.id]);
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) =>
+    handleClientInput(e.clientX, e.clientY);
 
-  // ── Create a session and connect WebSocket ──
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length > 0) handleClientInput(e.touches[0].clientX, e.touches[0].clientY);
+  };
+
+  const handleTicTacToeClick = (idx: number) => {
+    if (!wsRef.current || !gameState || gameState.type !== 'tic_tac_toe') return;
+    if (gameState.current_turn === user?.id && gameState.board[idx] === '') {
+      const newState = { ...gameState, board: [...gameState.board] };
+      newState.board[idx] = newState.symbols[user.id];
+      newState.current_turn =
+        newState.player_a === user.id ? newState.player_b : newState.player_a;
+      wsRef.current.send({ type: 'sync_state', state: newState });
+    }
+  };
+
+  // ─── Start game ───────────────────────────────────────────────────────────
+
   const startGame = async (gameType: string) => {
     if (!selectedRel || !user?.id) {
       toast.error('Select a partner first');
@@ -187,774 +650,284 @@ function LiveGamesPageContent() {
     }
     setSelectedGameType(gameType);
     setView('waiting');
+    // Reset WebRTC state
+    webRTCReadyRef.current = false;
+    pendingWebRTCMessages.current = [];
+    rollbackManagerRef.current = null;
 
     try {
-      const res = await api.createLiveGame({
-        game_type: gameType,
-        relationship_id: selectedRel,
-      });
-
+      const res = await api.createLiveGame({ game_type: gameType, relationship_id: selectedRel });
       const sid = res.session_id;
       setSessionId(sid);
       connectToSession(sid);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to create game');
+    } catch {
+      toast.error('Failed to create game');
       setView('lobby');
     }
   };
 
-  // ── Send movement (reads from ref to avoid stale closure) ──
-  const sendMove = useCallback((data: any) => {
-    wsRef.current?.send({ type: 'move', data });
-  }, []);
+  const leaveGame = () => {
+    pcRef.current?.close();
+    wsRef.current?.close();
+    pcRef.current = null;
+    dcRef.current = null;
+    rollbackManagerRef.current = null;
+    webRTCReadyRef.current = false;
+    pendingWebRTCMessages.current = [];
+    setView('lobby');
+  };
 
-  // ── Cleanup ──
-  useEffect(() => {
-    return () => {
-      wsRef.current?.close();
-      cancelAnimationFrame(animFrameRef.current);
-    };
-  }, []);
+  // ─── Render ───────────────────────────────────────────────────────────────
 
-  // ═══════════════════════════════════════════════
-  // 🚀 PERFECT SYNC: requestAnimationFrame Renderer
-  // ═══════════════════════════════════════════════
-  useEffect(() => {
-    if (view !== 'playing') return;
-    
-    let isActive = true;
-    
-    const renderLoop = () => {
-      if (!isActive) return;
-      
-      const state_any = gameStateRef.current;
-      const canvas = canvasRef.current;
-      
-      if (state_any && canvas) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          if (state_any.type === 'pong') {
-            const state = state_any as PongState;
-
-    const scaleX = canvas.width / state.canvas.width;
-    const scaleY = canvas.height / state.canvas.height;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Background with subtle grid
-    ctx.fillStyle = '#07071a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Grid pattern
-    ctx.strokeStyle = 'rgba(255,255,255,0.02)';
-    ctx.lineWidth = 1;
-    for (let x = 0; x < canvas.width; x += 40) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvas.height); ctx.stroke();
-    }
-    for (let y = 0; y < canvas.height; y += 40) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvas.width, y); ctx.stroke();
-    }
-
-    // Center line — neon dashed
-    ctx.setLineDash([10, 10]);
-    ctx.strokeStyle = 'rgba(168,85,247,0.15)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(canvas.width / 2, 0);
-    ctx.lineTo(canvas.width / 2, canvas.height);
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Neon ball with trail
-    const bx = state.ball.x * scaleX;
-    const by = state.ball.y * scaleY;
-    const br = state.ball.radius * Math.min(scaleX, scaleY);
-
-    // Ball trail glow
-    const ballGlow = ctx.createRadialGradient(bx, by, 0, bx, by, br * 6);
-    ballGlow.addColorStop(0, 'rgba(255,107,53,0.35)');
-    ballGlow.addColorStop(0.4, 'rgba(255,107,53,0.08)');
-    ballGlow.addColorStop(1, 'transparent');
-    ctx.fillStyle = ballGlow;
-    ctx.fillRect(bx - br * 6, by - br * 6, br * 12, br * 12);
-
-    // Ball body
-    ctx.beginPath();
-    ctx.arc(bx, by, br, 0, Math.PI * 2);
-    const ballGrad = ctx.createRadialGradient(bx - br * 0.3, by - br * 0.3, 0, bx, by, br);
-    ballGrad.addColorStop(0, '#ffb088');
-    ballGrad.addColorStop(0.7, '#FF6B35');
-    ballGrad.addColorStop(1, '#cc4400');
-    ctx.fillStyle = ballGrad;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Paddles with neon glow
-    for (const pid of Object.keys(state.paddles)) {
-      const p = state.paddles[pid];
-      const px = p.x * scaleX;
-      const py = p.y * scaleY;
-      const pw = p.width * scaleX;
-      const ph = p.height * scaleY;
-      const isMe = pid === user?.id;
-      const color = isMe ? '#22c55e' : '#3b82f6';
-      const glowColor = isMe ? 'rgba(34,197,94,' : 'rgba(59,130,246,';
-
-      // Paddle neon glow
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 20;
-      ctx.fillStyle = color;
-      ctx.beginPath();
-      ctx.roundRect(px, py, pw, ph, 4);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
-      // Paddle edge highlight
-      const padGrad = ctx.createLinearGradient(px, py, px + pw, py + ph);
-      padGrad.addColorStop(0, `${glowColor}0.6)`);
-      padGrad.addColorStop(0.5, `${glowColor}0.9)`);
-      padGrad.addColorStop(1, `${glowColor}0.6)`);
-      ctx.fillStyle = padGrad;
-      ctx.fillRect(px, py, pw, ph);
-    }
-
-    // Score display — large, semi-transparent
-    ctx.font = 'bold 48px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    const playerIds = Object.keys(state.scores);
-    ctx.fillStyle = 'rgba(34,197,94,0.12)';
-    ctx.fillText(String(state.scores[playerIds[0]] || 0), canvas.width * 0.25, canvas.height / 2);
-    ctx.fillStyle = 'rgba(59,130,246,0.12)';
-    ctx.fillText(String(state.scores[playerIds[1]] || 0), canvas.width * 0.75, canvas.height / 2);
-  
-          } else if (state_any.type === 'air_hockey') {
-            const state = state_any as AirHockeyState;
-
-    const scaleX = canvas.width / state.canvas.width;
-    const scaleY = canvas.height / state.canvas.height;
-
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Rink background
-    ctx.fillStyle = '#070e1f';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    // Rink border glow
-    ctx.strokeStyle = 'rgba(59,130,246,0.15)';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
-
-    // Center circle — neon
-    ctx.beginPath();
-    ctx.arc(canvas.width / 2, canvas.height / 2, 50 * scaleX, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(6,182,212,0.2)';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    // Center dot
-    ctx.beginPath();
-    ctx.arc(canvas.width / 2, canvas.height / 2, 4, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(6,182,212,0.3)';
-    ctx.fill();
-
-    // Center line
-    ctx.beginPath();
-    ctx.moveTo(0, canvas.height / 2);
-    ctx.lineTo(canvas.width, canvas.height / 2);
-    ctx.strokeStyle = 'rgba(6,182,212,0.1)';
-    ctx.lineWidth = 1;
-    ctx.stroke();
-
-    // Goals — glowing
-    const goalWidth = 120 * scaleX;
-    const goalX = (canvas.width - goalWidth) / 2;
-
-    // Top goal
-    ctx.shadowColor = '#22c55e';
-    ctx.shadowBlur = 15;
-    ctx.fillStyle = 'rgba(34,197,94,0.25)';
-    ctx.fillRect(goalX, 0, goalWidth, 6);
-    ctx.shadowBlur = 0;
-
-    // Bottom goal
-    ctx.shadowColor = '#3b82f6';
-    ctx.shadowBlur = 15;
-    ctx.fillStyle = 'rgba(59,130,246,0.25)';
-    ctx.fillRect(goalX, canvas.height - 6, goalWidth, 6);
-    ctx.shadowBlur = 0;
-
-    // Puck with neon glow
-    const px = state.puck.x * scaleX;
-    const py = state.puck.y * scaleY;
-    const pr = state.puck.radius * Math.min(scaleX, scaleY);
-
-    const puckGlow = ctx.createRadialGradient(px, py, 0, px, py, pr * 4);
-    puckGlow.addColorStop(0, 'rgba(255,107,53,0.4)');
-    puckGlow.addColorStop(0.5, 'rgba(255,107,53,0.1)');
-    puckGlow.addColorStop(1, 'transparent');
-    ctx.fillStyle = puckGlow;
-    ctx.beginPath(); ctx.arc(px, py, pr * 4, 0, Math.PI * 2); ctx.fill();
-
-    // Puck body
-    ctx.beginPath();
-    ctx.arc(px, py, pr, 0, Math.PI * 2);
-    const pGrad = ctx.createRadialGradient(px - pr * 0.2, py - pr * 0.2, 0, px, py, pr);
-    pGrad.addColorStop(0, '#ffb088');
-    pGrad.addColorStop(0.7, '#FF6B35');
-    pGrad.addColorStop(1, '#cc4400');
-    ctx.fillStyle = pGrad;
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    // Mallets with neon glow
-    for (const pid of Object.keys(state.mallets)) {
-      const m = state.mallets[pid];
-      const mx = m.x * scaleX;
-      const my = m.y * scaleY;
-      const mr = m.radius * Math.min(scaleX, scaleY);
-      const isMe = pid === user?.id;
-      const color = isMe ? '#22c55e' : '#3b82f6';
-
-      // Outer glow
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 25;
-
-      // Mallet body
-      ctx.beginPath();
-      ctx.arc(mx, my, mr, 0, Math.PI * 2);
-      const mGrad = ctx.createRadialGradient(mx, my, 0, mx, my, mr);
-      mGrad.addColorStop(0, isMe ? '#4ade80' : '#60a5fa');
-      mGrad.addColorStop(0.7, color);
-      mGrad.addColorStop(1, isMe ? '#166534' : '#1e3a5f');
-      ctx.fillStyle = mGrad;
-      ctx.fill();
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-
-      ctx.shadowBlur = 0;
-
-      // Center dot
-      ctx.beginPath();
-      ctx.arc(mx, my, mr * 0.25, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,255,0.5)';
-      ctx.fill();
-    }
-
-    // Scores
-    ctx.font = 'bold 28px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    const pids = Object.keys(state.scores);
-    ctx.fillStyle = 'rgba(34,197,94,0.15)';
-    ctx.fillText(String(state.scores[pids[0]] || 0), 30, canvas.height / 2 - 15);
-    ctx.fillStyle = 'rgba(59,130,246,0.15)';
-    ctx.fillText(String(state.scores[pids[1]] || 0), 30, canvas.height / 2 + 30);
-  
-          }
-        }
-      }
-      
-      animFrameRef.current = requestAnimationFrame(renderLoop);
-    };
-    
-    animFrameRef.current = requestAnimationFrame(renderLoop);
-    return () => {
-      isActive = false;
-      cancelAnimationFrame(animFrameRef.current);
-    };
-  }, [view, user?.id]);
-
-
-  // ── Air Hockey mouse/touch input (uses ref for latest state) ──
-  useEffect(() => {
-    if (!gameState || gameState.type !== 'air_hockey' || view !== 'playing') return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const handleMove = (clientX: number, clientY: number) => {
-      const state = gameStateRef.current as AirHockeyState | null;
-      if (!state || state.type !== 'air_hockey') return;
-      const scaleX = canvas.width / state.canvas.width;
-      const scaleY = canvas.height / state.canvas.height;
-      const rect = canvas.getBoundingClientRect();
-      const x = (clientX - rect.left) / scaleX;
-      const y = (clientY - rect.top) / scaleY;
-      sendMove({ x, y });
-    };
-
-    const onMouseMove = (e: MouseEvent) => handleMove(e.clientX, e.clientY);
-    const onTouchMove = (e: TouchEvent) => {
-      e.preventDefault();
-      handleMove(e.touches[0].clientX, e.touches[0].clientY);
-    };
-
-    canvas.addEventListener('mousemove', onMouseMove);
-    canvas.addEventListener('touchmove', onTouchMove, { passive: false });
-
-    return () => {
-      canvas.removeEventListener('mousemove', onMouseMove);
-      canvas.removeEventListener('touchmove', onTouchMove);
-    };
-  }, [gameState?.type, view, user?.id, sendMove]);
-
-  // ═══════════════════════════════════════════════
-  // RENDER
-  // ═══════════════════════════════════════════════
-  const partnerName = relationships.find(r => r.id === selectedRel)?.partner_display_name || 'Partner';
-  const isMyWin = winner === user?.id;
-  const isDraw = winner === 'draw';
-  const gameColor = GAME_COLORS[selectedGameType] || GAME_COLORS.pong;
-
-  if (!user) {
+  if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center glass-card max-w-md">
-          <Gamepad2 className="w-12 h-12 mx-auto mb-4 text-purple-400" />
-          <h2 className="text-xl font-bold mb-2">Live Games</h2>
-          <p className="text-muted mb-6">Please log in to play</p>
-          <Link href="/login"><button className="btn-primary w-full">Log In</button></Link>
-        </div>
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-140px)]">
+        <Loader2 className="w-12 h-12 animate-spin text-purple-400" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen pb-24">
+    <div className="min-h-[calc(100vh-80px)] pb-24 font-sans text-gray-100 flex flex-col relative overflow-hidden bg-black/50">
+      {/* Ambient background */}
+      <div className="fixed inset-0 pointer-events-none z-[-1] flex justify-center items-center opacity-20 blur-3xl">
+        <div className="w-[30rem] h-[30rem] bg-gradient-to-r from-purple-500/20 to-pink-500/20 rounded-full" />
+      </div>
+
       {/* Header */}
-      <div className="sticky top-0 glass border-b border-themed z-20">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
-          <Link href="/dashboard">
-            <motion.button className="p-2 rounded-xl hover:bg-[var(--bg-card-hover)] border border-themed transition" whileTap={{ scale: 0.92 }}>
-              <ArrowLeft className="w-5 h-5" />
-            </motion.button>
+      <div className="flex items-center p-4 border-b border-white/10 bg-black/30 backdrop-blur-md sticky top-0 z-20">
+        {view !== 'lobby' ? (
+          <button
+            onClick={leaveGame}
+            className="p-2 mr-3 hover:bg-white/10 rounded-full transition-colors"
+          >
+            <ArrowLeft className="w-6 h-6" />
+          </button>
+        ) : (
+          <Link href="/dashboard" className="p-2 mr-3 hover:bg-white/10 rounded-full transition-colors">
+            <ArrowLeft className="w-6 h-6" />
           </Link>
-          <h1 className="font-bold text-lg flex items-center gap-2">
-            <div className="p-1.5 rounded-lg bg-gradient-to-br from-purple-500/20 to-pink-500/20">
-              <Gamepad2 className="w-4 h-4 text-purple-400" />
-            </div>
-            Live Games
-          </h1>
-          {view === 'playing' && (
-            <div className={`ml-auto flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border ${
-              isWsConnected ? 'bg-green-500/10 text-green-400 border-green-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
-            }`}>
-              {isWsConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
-              {isWsConnected ? 'Live' : 'Disconnected'}
+        )}
+        <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-pink-400 to-purple-500 flex items-center gap-2">
+          <Gamepad2 className="w-5 h-5 text-pink-400" />
+          Live Games
+        </h1>
+        <div className="ml-auto flex items-center text-xs space-x-3">
+          <div className="flex items-center gap-1">
+            {isWsConnected ? (
+              <Wifi className="w-4 h-4 text-green-400" />
+            ) : (
+              <WifiOff className="w-4 h-4 text-red-400" />
+            )}
+            <span className="text-gray-500">WS</span>
+          </div>
+          {(gameState?.type === 'pong' || gameState?.type === 'air_hockey') && (
+            <div className="flex items-center gap-1">
+              {isP2pConnected ? (
+                <Activity className="w-4 h-4 text-cyan-400" />
+              ) : (
+                <Loader2 className="w-4 h-4 text-yellow-400 animate-spin" />
+              )}
+              <span className="text-gray-500">P2P</span>
             </div>
           )}
         </div>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4 py-6">
-        <AnimatePresence mode="wait">
-          {/* ── LOBBY ── */}
-          {view === 'lobby' && (
-            <motion.div key="lobby" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-              <div className="glass-card mb-6 text-center relative overflow-hidden">
-                {/* Animated background */}
-                <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-transparent to-pink-500/5" />
-                <div className="relative z-10">
-                  <motion.h2
-                    className="text-2xl font-bold mb-2 gradient-text"
-                    initial={{ opacity: 0, y: -10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                  >
-                    Real-Time Games ⚡
-                  </motion.h2>
-                  <p className="text-muted text-sm mb-6">Play live canvas games with your bond partner. Physics run server-side at 30fps.</p>
-
-                  <div className="max-w-sm mx-auto text-left">
-                    <label className="text-xs text-muted mb-2 block">Play with:</label>
-                    <select
-                      value={selectedRel}
-                      onChange={(e) => setSelectedRel(e.target.value)}
-                      className="w-full px-3 py-2.5 rounded-xl bg-[var(--bg-primary)] border border-themed text-sm outline-none focus:border-purple-500/50 transition-colors"
-                    >
-                      <option value="">Select bond partner...</option>
-                      {relationships.filter(r => r.status === 'active').map(r => (
-                        <option key={r.id} value={r.id}>
-                          {r.partner?.display_name || r.partner_display_name || 'Partner'}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {isLoading ? (
-                <div className="flex justify-center py-12">
-                  <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  {availableGames.map((game, i) => {
-                    const color = GAME_COLORS[game.type] || GAME_COLORS.pong;
-                    return (
-                      <motion.div
-                        key={game.type}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: i * 0.1 }}
-                        onClick={() => selectedRel && startGame(game.type)}
-                        className={`glass-card text-center cursor-pointer group relative overflow-hidden transition-all duration-300 hover:shadow-lg ${!selectedRel ? 'opacity-40 cursor-not-allowed' : ''}`}
-                        whileHover={selectedRel ? { scale: 1.03, y: -4 } : {}}
-                        whileTap={selectedRel ? { scale: 0.97 } : {}}
-                        style={{
-                          borderColor: selectedRel ? 'transparent' : undefined,
-                        }}
-                      >
-                        {/* Hover gradient overlay */}
-                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                          style={{ background: `linear-gradient(135deg, ${color.from}10, ${color.to}10)` }}
-                        />
-                        {/* Top accent line */}
-                        <div className="absolute top-0 left-0 right-0 h-[2px] opacity-40 group-hover:opacity-100 transition-opacity"
-                          style={{ background: `linear-gradient(90deg, transparent, ${color.from}, ${color.to}, transparent)` }}
-                        />
-                        
-                        <div className="relative z-10">
-                          <motion.div
-                            className="text-5xl mb-4 inline-block"
-                            whileHover={{ rotate: [0, -10, 10, 0], scale: 1.2 }}
-                            transition={{ duration: 0.4 }}
-                          >
-                            {GAME_ICONS[game.type] || '🎮'}
-                          </motion.div>
-                          <h3 className="font-bold text-sm mb-1 group-hover:text-purple-400 transition">
-                            {game.title.replace(/^[^\s]+\s/, '')}
-                          </h3>
-                          <p className="text-xs text-muted mb-4">{game.description}</p>
-                          <div className="flex items-center justify-center gap-3 text-[10px] text-subtle">
-                            <span>~{game.estimated_minutes}min</span>
-                            <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full font-semibold">
-                              +{game.xp_reward} XP
-                            </span>
-                          </div>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              )}
-            </motion.div>
-          )}
-
-          {/* ── WAITING ── */}
-          {view === 'waiting' && (
-            <motion.div key="waiting" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center py-16">
-              <div className="relative w-24 h-24 mx-auto mb-8">
-                {/* Pulsing rings */}
-                {[0, 1, 2].map(i => (
-                  <motion.div
-                    key={i}
-                    className="absolute inset-0 rounded-full border-2 border-purple-500/30"
-                    animate={{ scale: [1, 1.8, 2.2], opacity: [0.5, 0.15, 0] }}
-                    transition={{ repeat: Infinity, duration: 2.5, delay: i * 0.6, ease: 'easeOut' }}
-                  />
-                ))}
-                <div className="absolute inset-0 rounded-full bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center border border-purple-500/20">
-                  <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
-                </div>
-              </div>
-              <h2 className="text-xl font-bold mb-2">Waiting for {partnerName}</h2>
-              <p className="text-muted text-sm mb-2">An invite has been sent. When they join, the game starts!</p>
-              {sessionId && (
-                <p className="text-xs text-subtle mb-6 font-mono">Session: {sessionId.slice(0, 8)}...</p>
-              )}
-              <button
-                onClick={() => { wsRef.current?.close(); setView('lobby'); }}
-                className="btn-secondary text-sm"
-              >
-                Cancel
-              </button>
-            </motion.div>
-          )}
-
-          {/* ── PLAYING — Pong/Air Hockey (Canvas) ── */}
-          {view === 'playing' && gameState && (gameState.type === 'pong' || gameState.type === 'air_hockey') && (
-            <motion.div key="playing-canvas" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              {/* Score bar with flash effect */}
-              <motion.div
-                className={`flex items-center justify-between mb-4 px-4 py-3 rounded-xl border border-themed transition-all ${
-                  scoreFlash ? 'bg-amber-500/10 border-amber-500/30' : 'bg-[var(--bg-card)]'
-                }`}
-                animate={scoreFlash ? { scale: [1, 1.02, 1] } : {}}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-3 h-3 rounded-full bg-green-500 shadow-sm shadow-green-500/50" />
-                  <span className="text-sm font-medium">You</span>
-                  <motion.span
-                    key={`my-score-${gameState.scores[user.id]}`}
-                    className="text-2xl font-bold text-green-400"
-                    initial={{ scale: 1.4, color: '#fbbf24' }}
-                    animate={{ scale: 1, color: '#4ade80' }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    {gameState.scores[user.id] || 0}
-                  </motion.span>
-                </div>
-                <div className="text-xs text-muted px-3 py-1 rounded-full bg-[var(--bg-card-hover)] border border-themed">
-                  First to {gameState.max_score}
-                </div>
-                <div className="flex items-center gap-3">
-                  <motion.span
-                    key={`opp-score-${gameState.scores[Object.keys(gameState.scores).find(k => k !== user.id) || '']}`}
-                    className="text-2xl font-bold text-blue-400"
-                    initial={{ scale: 1.4, color: '#fbbf24' }}
-                    animate={{ scale: 1, color: '#60a5fa' }}
-                    transition={{ duration: 0.3 }}
-                  >
-                    {gameState.scores[Object.keys(gameState.scores).find(k => k !== user.id) || ''] || 0}
-                  </motion.span>
-                  <span className="text-sm font-medium">{partnerName}</span>
-                  <div className="w-3 h-3 rounded-full bg-blue-500 shadow-sm shadow-blue-500/50" />
-                </div>
-              </motion.div>
-
-              {/* Canvas with neon border */}
-              <div className="flex justify-center">
-                <div className="relative group">
-                  {/* Neon border glow */}
-                  <div
-                    className="absolute -inset-[2px] rounded-2xl opacity-60 blur-[2px]"
-                    style={{
-                      background: `linear-gradient(135deg, ${gameColor.from}, ${gameColor.to}, ${gameColor.from})`,
-                      backgroundSize: '200% 200%',
-                      animation: 'gradient-shift 3s ease infinite',
-                    }}
-                  />
-                  <canvas
-                    ref={canvasRef}
-                    width={gameState.type === 'pong' ? 800 : 400}
-                    height={gameState.type === 'pong' ? 400 : 700}
-                    className="relative rounded-2xl shadow-2xl shadow-black/50 touch-none"
-                    style={{
-                      maxWidth: '100%',
-                      maxHeight: gameState.type === 'pong' ? '50vh' : '70vh',
-                      aspectRatio: gameState.type === 'pong' ? '2/1' : '4/7',
-                    }}
-                  />
-                </div>
-              </div>
-
-              <p className="text-center text-xs text-muted mt-4 flex items-center justify-center gap-2">
-                <Gamepad2 className="w-3 h-3" />
-                {gameState.type === 'pong' ? 'Move mouse/finger up and down to control your paddle' : 'Move mouse/finger to control your mallet'}
-              </p>
-            </motion.div>
-          )}
-
-          {/* ── PLAYING — Tic-Tac-Toe (Grid) ── */}
-          {view === 'playing' && gameState && gameState.type === 'tic_tac_toe' && (() => {
-            const ttt = gameState as TicTacToeState;
-            const mySymbol = ttt.symbols[user.id];
-            const isMyTurn = ttt.current_turn === user.id;
-
-            return (
-              <motion.div key="playing-ttt" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-sm mx-auto">
-                <div className="text-center mb-6">
-                  <h2 className="text-xl font-bold mb-2">Tic-Tac-Toe</h2>
-                  <motion.p
-                    className={`text-sm font-medium px-4 py-2 rounded-full inline-flex items-center gap-2 ${
-                      isMyTurn
-                        ? 'text-green-400 bg-green-500/10 border border-green-500/20'
-                        : 'text-muted bg-[var(--bg-card)] border border-themed'
+      {/* ── Lobby ── */}
+      {view === 'lobby' && (
+        <div className="flex-1 p-6 flex flex-col max-w-4xl mx-auto w-full">
+          <div className="mb-8">
+            <label className="block text-sm font-medium text-gray-300 mb-3">
+              Challenge a friend:
+            </label>
+            <div className="flex gap-4 overflow-x-auto pb-3">
+              {relationships.map((r) => {
+                const partner = r.partner;
+                if (!partner) return null;
+                const isSelected = selectedRel === r.id;
+                return (
+                  <button
+                    key={r.id}
+                    onClick={() => setSelectedRel(r.id)}
+                    className={`flex flex-col items-center flex-shrink-0 min-w-[5rem] transition-all ${
+                      isSelected ? 'scale-110' : 'opacity-60 hover:opacity-90'
                     }`}
-                    animate={isMyTurn ? { boxShadow: ['0 0 10px rgba(34,197,94,0.1)', '0 0 20px rgba(34,197,94,0.2)', '0 0 10px rgba(34,197,94,0.1)'] } : {}}
-                    transition={{ repeat: Infinity, duration: 2 }}
                   >
-                    {isMyTurn ? `Your turn (${mySymbol})` : `Waiting for ${partnerName}...`}
-                  </motion.p>
-                </div>
-
-                {/* Board with neon effects */}
-                <div className="grid grid-cols-3 gap-3 mb-6">
-                  {ttt.board.map((cell, i) => (
-                    <motion.button
-                      key={i}
-                      onClick={() => {
-                        if (isMyTurn && !cell && ttt.status === 'playing') {
-                          sendMove({ cell: i });
-                        }
-                      }}
-                      disabled={!isMyTurn || !!cell || ttt.status !== 'playing'}
-                      className={`aspect-square rounded-2xl border-2 text-4xl font-bold transition-all flex items-center justify-center ${
-                        cell === 'X'
-                          ? 'border-green-500/50 bg-green-500/10 text-green-400 shadow-md shadow-green-500/10'
-                          : cell === 'O'
-                            ? 'border-blue-500/50 bg-blue-500/10 text-blue-400 shadow-md shadow-blue-500/10'
-                            : isMyTurn
-                              ? 'border-themed bg-[var(--bg-card)] hover:border-purple-500/40 hover:bg-purple-500/5 hover:shadow-lg hover:shadow-purple-500/10 cursor-pointer'
-                              : 'border-themed bg-[var(--bg-card)] opacity-60'
+                    <div
+                      className={`w-14 h-14 rounded-full overflow-hidden border-2 ${
+                        isSelected
+                          ? 'border-pink-500 shadow-[0_0_12px_rgba(236,72,153,0.5)]'
+                          : 'border-transparent'
                       }`}
-                      whileTap={isMyTurn && !cell ? { scale: 0.92 } : {}}
-                      whileHover={isMyTurn && !cell ? { scale: 1.05 } : {}}
                     >
-                      <AnimatePresence>
-                        {cell && (
-                          <motion.span
-                            initial={{ scale: 0, rotate: -180 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 15 }}
-                          >
-                            {cell}
-                          </motion.span>
-                        )}
-                      </AnimatePresence>
-                    </motion.button>
-                  ))}
-                </div>
+                      <img
+                        src={(partner as any).avatar_url || '/placeholder.png'}
+                        alt={partner.display_name}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <span className="text-xs mt-2 truncate w-full text-center">
+                      {partner.display_name}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-                <div className="text-center text-xs text-muted">
-                  You are <span className="font-bold text-green-400">{mySymbol}</span> · {partnerName} is <span className="font-bold text-blue-400">{mySymbol === 'X' ? 'O' : 'X'}</span>
-                </div>
-              </motion.div>
-            );
-          })()}
-
-          {/* ── GAME OVER — with confetti and celebration ── */}
-          {view === 'game_over' && (
-            <motion.div
-              key="game_over"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="text-center py-12 relative overflow-hidden"
-            >
-              {/* Confetti particles for winner */}
-              {isMyWin && (
-                <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                  {Array.from({ length: 30 }).map((_, i) => (
-                    <motion.div
-                      key={i}
-                      className="absolute w-2 h-2 rounded-full"
-                      style={{
-                        left: `${10 + Math.random() * 80}%`,
-                        top: '-5%',
-                        backgroundColor: ['#22c55e', '#a855f7', '#3b82f6', '#f59e0b', '#ec4899', '#06b6d4'][i % 6],
-                      }}
-                      animate={{
-                        y: ['0vh', '110vh'],
-                        x: [0, (Math.random() - 0.5) * 100],
-                        rotate: [0, 360 * (Math.random() > 0.5 ? 1 : -1)],
-                        opacity: [1, 1, 0],
-                      }}
-                      transition={{
-                        duration: 2 + Math.random() * 2,
-                        delay: Math.random() * 1.5,
-                        ease: 'easeIn',
-                      }}
-                    />
-                  ))}
-                </div>
-              )}
-
-              <motion.div
-                className="text-7xl mb-6"
-                initial={{ scale: 0, rotate: -180 }}
-                animate={{ scale: [0, 1.3, 1], rotate: 0 }}
-                transition={{ type: 'spring', duration: 1 }}
-              >
-                {isDraw ? '🤝' : isMyWin ? '🏆' : '😤'}
-              </motion.div>
-
-              <motion.h2
-                className="text-3xl font-bold mb-2 gradient-text"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-              >
-                {isDraw ? 'It\'s a Draw!' : isMyWin ? 'You Win!' : 'You Lost!'}
-              </motion.h2>
-
-              {Object.keys(finalScores).length > 0 && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {availableGames.map((game) => {
+              const colors = GAME_COLORS[game.type] || GAME_COLORS.pong;
+              return (
                 <motion.div
-                  className="glass-card max-w-xs mx-auto mb-6 mt-6 relative overflow-hidden"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.6 }}
+                  key={game.type}
+                  whileHover={{ y: -4, scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  className="relative flex flex-col bg-white/5 border border-white/10 rounded-2xl p-6 overflow-hidden cursor-pointer group"
+                  onClick={() => startGame(game.type)}
                 >
-                  {/* Shimmer effect */}
-                  <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent"
-                    animate={{ x: ['-100%', '200%'] }}
-                    transition={{ repeat: Infinity, duration: 3, ease: 'linear' }}
+                  <div
+                    className="absolute inset-0 opacity-0 group-hover:opacity-15 transition-opacity duration-500"
+                    style={{ background: `linear-gradient(135deg, ${colors.from}, ${colors.to})` }}
                   />
-                  
-                  <div className="relative z-10 grid grid-cols-2 gap-4 text-center">
-                    <div>
-                      <motion.div
-                        className="text-4xl font-bold text-green-400"
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ delay: 0.8, type: 'spring' }}
-                      >
-                        {finalScores[user.id] || 0}
-                      </motion.div>
-                      <div className="text-xs text-muted mt-1">You</div>
-                    </div>
-                    <div>
-                      <motion.div
-                        className="text-4xl font-bold text-blue-400"
-                        initial={{ scale: 0 }}
-                        animate={{ scale: 1 }}
-                        transition={{ delay: 0.9, type: 'spring' }}
-                      >
-                        {finalScores[Object.keys(finalScores).find(k => k !== user.id) || ''] || 0}
-                      </motion.div>
-                      <div className="text-xs text-muted mt-1">{partnerName}</div>
-                    </div>
+                  <div className="text-4xl mb-4">{GAME_ICONS[game.type]}</div>
+                  <h3 className="text-lg font-bold mb-1">{game.title}</h3>
+                  <p className="text-sm text-gray-400 flex-1">{game.description}</p>
+                  <div className="mt-4 flex items-center justify-between text-xs text-gray-500 font-semibold uppercase tracking-wider">
+                    <span className="flex items-center gap-1">
+                      <Zap className="w-3.5 h-3.5 text-yellow-500" />
+                      {game.xp_reward} XP
+                    </span>
+                    <span>{game.estimated_minutes} min</span>
                   </div>
-
-                  {xpAwarded && (
-                    <motion.div
-                      className="mt-4 pt-4 border-t border-themed flex items-center justify-center gap-2"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      transition={{ delay: 1.1 }}
-                    >
-                      <Zap className="w-5 h-5 text-amber-400" />
-                      <span className="font-bold text-amber-400 text-lg">
-                        +{isDraw ? xpAwarded.both : (isMyWin ? xpAwarded.winner : xpAwarded.loser)} XP
-                      </span>
-                    </motion.div>
-                  )}
                 </motion.div>
-              )}
+              );
+            })}
+          </div>
+        </div>
+      )}
 
-              <motion.div
-                className="flex justify-center gap-4"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 1.2 }}
-              >
-                <button onClick={() => { setView('lobby'); setGameState(null); setPrevScores({}); }} className="btn-primary flex items-center gap-2">
-                  <Gamepad2 className="w-4 h-4" /> Play Again
-                </button>
-                <Link href="/dashboard">
-                  <button className="btn-secondary text-sm">Back to Home</button>
-                </Link>
-              </motion.div>
-            </motion.div>
+      {/* ── Waiting ── */}
+      {view === 'waiting' && (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <Loader2 className="w-14 h-14 animate-spin text-pink-500 mb-6" />
+          <h2 className="text-2xl font-bold mb-2">Waiting for opponent…</h2>
+          <p className="text-gray-400 text-sm">
+            An invite has been sent. The game starts when they join.
+          </p>
+        </div>
+      )}
+
+      {/* ── Playing ── */}
+      {view === 'playing' && gameState && (
+        <div className="flex-1 flex flex-col items-center py-4 px-2 w-full max-w-4xl mx-auto">
+          {/* HUD */}
+          <div className="flex justify-between w-full mb-3 px-6 items-center bg-white/5 rounded-xl border border-white/10 py-2.5">
+            <div className="text-2xl font-black px-4 py-1 rounded-lg bg-pink-500/20 text-pink-400 tabular-nums min-w-[3rem] text-center">
+              {hudScores.p1}
+            </div>
+            <div className="text-xs uppercase tracking-[0.2em] font-bold text-gray-500">
+              First to {(gameState as any).max_score || 5}
+            </div>
+            <div className="text-2xl font-black px-4 py-1 rounded-lg bg-blue-500/20 text-blue-400 tabular-nums min-w-[3rem] text-center">
+              {hudScores.p2}
+            </div>
+          </div>
+
+          {/* P2P status banner */}
+          {(gameState.type === 'pong' || gameState.type === 'air_hockey') && !isP2pConnected && (
+            <div className="w-full mb-3 py-2 px-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30 text-yellow-400 text-xs text-center">
+              Establishing peer-to-peer connection…
+            </div>
           )}
-        </AnimatePresence>
-      </div>
+
+          <div className="flex-1 w-full flex items-center justify-center touch-none">
+            {(gameState.type === 'pong' || gameState.type === 'air_hockey') && (
+              <canvas
+                ref={canvasRef}
+                width={(gameState as PongState).canvas.width}
+                height={(gameState as PongState).canvas.height}
+                className="max-w-full max-h-full object-contain border-2 border-white/10 bg-black/50 rounded-xl touch-none shadow-2xl"
+                onPointerMove={handlePointerMove}
+                onTouchMove={handleTouchMove}
+                style={{ cursor: 'none' }}
+              />
+            )}
+            {gameState.type === 'tic_tac_toe' && (
+              <div className="grid grid-cols-3 gap-2 bg-white/10 p-3 rounded-xl">
+                {gameState.board.map((cell, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => handleTicTacToeClick(idx)}
+                    className="w-20 h-20 sm:w-24 sm:h-24 bg-black/40 hover:bg-white/10 rounded-lg text-4xl flex items-center justify-center font-black transition-colors"
+                  >
+                    <span className={cell === 'X' ? 'text-pink-500' : 'text-blue-500'}>{cell}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Game over ── */}
+      {view === 'game_over' && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="flex-1 flex flex-col items-center justify-center p-6 text-center"
+        >
+          <Trophy className="w-20 h-20 text-yellow-400 mb-5 drop-shadow-[0_0_16px_rgba(250,204,21,0.5)]" />
+          <h2 className="text-4xl font-black mb-4">
+            {winner === user?.id ? '🎉 Victory!' : winner === 'draw' ? 'Draw!' : 'Defeat'}
+          </h2>
+          <div className="text-3xl font-black mb-8 flex items-center gap-6">
+            <span className={winner === user?.id ? 'text-pink-400' : 'text-gray-500'}>
+              {finalScores[user?.id || ''] ?? 0}
+            </span>
+            <span className="text-gray-600">—</span>
+            <span className={winner !== user?.id && winner !== 'draw' ? 'text-blue-400' : 'text-gray-500'}>
+              {finalScores[Object.keys(finalScores).find((k) => k !== user?.id) || ''] ?? 0}
+            </span>
+          </div>
+
+          <div className="bg-white/5 border border-white/10 p-5 rounded-2xl flex flex-col items-center mb-8 px-12">
+            <span className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+              XP Earned
+            </span>
+            <div className="flex items-center gap-2 text-2xl font-bold text-yellow-400">
+              <Zap className="w-6 h-6" />+
+              {winner === user?.id
+                ? xpAwarded?.winner
+                : winner === 'draw'
+                ? xpAwarded?.both
+                : xpAwarded?.loser}{' '}
+              XP
+            </div>
+          </div>
+
+          <button
+            onClick={() => setView('lobby')}
+            className="bg-gradient-to-r from-pink-500 to-purple-600 px-8 py-3 rounded-full font-bold shadow-lg hover:shadow-pink-500/40 transition-all hover:scale-105 active:scale-95"
+          >
+            Play Again
+          </button>
+        </motion.div>
+      )}
     </div>
   );
 }
 
 export default function LiveGamesPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center">
+          <Loader2 className="w-10 h-10 animate-spin text-pink-500" />
+        </div>
+      }
+    >
       <LiveGamesPageContent />
     </Suspense>
   );

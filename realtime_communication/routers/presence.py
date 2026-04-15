@@ -10,6 +10,7 @@ import asyncio
 
 from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.auth_service import get_current_user_id
+from realtime_communication.services.notification_service import send_notification
 
 router = APIRouter(prefix="/presence", tags=["Global Presence"])
 
@@ -84,12 +85,14 @@ async def global_presence_ws(websocket: WebSocket, user_id: str):
                 inviter_id = data.get("inviter_id")
                 accept = data.get("accept", False)
                 session_id = data.get("session_id")
+                game_type = data.get("game_type", "bonding_synchrony")
                 
                 # Notify the inviter
                 await presence_manager.send_to_user(inviter_id, {
                     "type": "invite_response",
                     "accept": accept,
                     "session_id": session_id,
+                    "game_type": game_type,
                     "responder_id": user_id
                 })
 
@@ -170,6 +173,15 @@ async def send_game_invite(req: InviteRequest, user_id: str = Depends(get_curren
     
     if not success:
         return {"status": "error", "message": "User is offline"}
+
+    # Push Notification for offline/app-in-background scenarios
+    await send_notification(
+        req.target_user_id,
+        "live_game_invite",
+        data={"session_id": session_id, "game_type": req.game_type},
+        sender=sender_name,
+        game=req.game_type.replace("_", " ").title()
+    )
     
     # Also notify the sender of the session_id so they can auto-route
     return {"status": "ok", "session_id": session_id}

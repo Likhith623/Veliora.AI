@@ -1,3 +1,4 @@
+//websocket.ts
 // ═══════════════════════════════════════════════════════════════
 // Veliora.AI — WebSocket Manager with Reconnect
 // Section 18: WebSocket Reference Card
@@ -292,7 +293,7 @@ export function createRoomWS(
 export interface PresenceWSHandlers {
   onGameInvite?: (data: { sender_id: string, sender_name: string, game_type: string, session_id: string }) => void;
   onGameInviteFailed?: (error: string) => void;
-  onInviteResponse?: (data: { accept: boolean, session_id: string, responder_id: string }) => void;
+  onInviteResponse?: (data: { accept: boolean, session_id: string, responder_id: string, game_type?: string }) => void;
   onIncomingCall?: (data: { caller_id: string, caller_name: string, call_type: string, relationship_id: string }) => void;
   onOpen?: () => void;
   onClose?: (event: CloseEvent) => void;
@@ -328,11 +329,18 @@ export function createPresenceWS(
 
 export interface LiveGameWSHandlers {
   onWaitingForOpponent?: () => void;
-  onGameStart?: (state: any) => void;
+  // Updated gameStart to include WebRTC initialization
+  onGameStart?: (state: any, isInitiator?: boolean, players?: string[], gameType?: string) => void;
   onState?: (state: any) => void;
+  // Fallback for non-latency-sensitive games
+  onSyncState?: (state: any, senderId: string) => void;
   onRoundResult?: (data: { match: boolean, ans_a: string, ans_b: string, state: any }) => void;
   onGameOver?: (winner: string, scores: Record<string, number>, xpAwarded: any) => void;
   onOpponentDisconnected?: (userId: string) => void;
+  // WebRTC handlers for P2P
+  onWebRTCOffer?: (offer: any, senderId: string) => void;
+  onWebRTCAnswer?: (answer: any, senderId: string) => void;
+  onWebRTCICECandidate?: (candidate: any, senderId: string) => void;
   onOpen?: () => void;
   onClose?: (event: CloseEvent) => void;
   onError?: (error: Event) => void;
@@ -355,10 +363,13 @@ export function createLiveGameWS(
           gameHandlers.onWaitingForOpponent?.();
           break;
         case 'game_start':
-          gameHandlers.onGameStart?.(data.state);
+          gameHandlers.onGameStart?.(data.state, data.is_initiator, data.players, data.game_type);
           break;
         case 'state':
           gameHandlers.onState?.(data.state);
+          break;
+        case 'sync_state':
+          gameHandlers.onSyncState?.(data.state, data.sender_id);
           break;
         case 'round_result':
           gameHandlers.onRoundResult?.(data);
@@ -368,6 +379,15 @@ export function createLiveGameWS(
           break;
         case 'opponent_disconnected':
           gameHandlers.onOpponentDisconnected?.(data.user_id);
+          break;
+        case 'webrtc_offer':
+          gameHandlers.onWebRTCOffer?.(data.offer, data.sender_id);
+          break;
+        case 'webrtc_answer':
+          gameHandlers.onWebRTCAnswer?.(data.answer, data.sender_id);
+          break;
+        case 'webrtc_ice_candidate':
+          gameHandlers.onWebRTCICECandidate?.(data.candidate, data.sender_id);
           break;
       }
     },
