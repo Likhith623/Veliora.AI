@@ -9,12 +9,19 @@ from realtime_communication.services.auth_service import get_current_user_id, ge
 from realtime_communication.models.schemas import CreateJoinCodeRequest, JoinByCodeRequest
 import secrets
 import json
+import httpx  # Added for SFU internal communication
+import asyncio # Added for async background cleanup
 
 router = APIRouter(prefix="/rooms", tags=["Family Rooms"])
+
+SFU_INTERNAL_URL = "http://127.0.0.1:4000"
 
 class FamilyRoomConnectionManager:
     def __init__(self):
         self.active_rooms: Dict[str, Set[WebSocket]] = {}
+        # Perfect Call Architecture State Management
+        self.call_participants: Dict[str, Set[str]] = {}  # room_id -> set of user_ids actively calling
+        self.room_modes: Dict[str, str] = {}              # room_id -> "p2p" | "sfu"
     
     async def connect(self, websocket: WebSocket, room_id: str):
         await websocket.accept()
@@ -492,11 +499,109 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
                 await manager.broadcast(room_id, payload, exclude=websocket)
                 
             elif msg_type == "call_join":
-                await manager.broadcast(room_id, {"type": "call_join", "user_id": user_id}, exclude=websocket)
+                if room_id not in manager.call_participants:
+                    manager.call_participants[room_id] = set()
+                manager.call_participants[room_id].add(user_id)
+                
+                # Dynamic architecture routing: Transition to SFU when 3rd user joins
+                if len(manager.call_participants[room_id]) >= 3 and manager.room_modes.get(room_id, "p2p") != "sfu":
+                    manager.room_modes[room_id] = "sfu"
+                    # Initiate the atomic switch protocol
+                    await manager.broadcast(room_id, {"type": "prepare_sfu_transition"})
+                else:
+                    if room_id not in manager.room_modes:
+                        manager.room_modes[room_id] = "p2p"
+                
+                await manager.broadcast(room_id, {
+                    "type": "call_join", 
+                    "user_id": user_id,
+                    "mode": manager.room_modes.get(room_id, "p2p"),
+                    "total_participants": len(manager.call_participants[room_id])
+                }, exclude=websocket)
                 
             elif msg_type == "call_leave":
-                await manager.broadcast(room_id, {"type": "call_leave", "user_id": user_id}, exclude=websocket)
+                if room_id in manager.call_participants and user_id in manager.call_participants[room_id]:
+                    manager.call_participants[room_id].discard(user_id)
+                    # We usually stay in SFU mode to avoid thrashing, or we could revert if len <= 2.
+                    # Staying SFU avoids 'break' disruptions for the remaining two.
+                    
+                # Clean up Mediasoup Headless resources strictly
+                async with httpx.AsyncClient() as client:
+                    try:
+                        await client.delete(f"{SFU_INTERNAL_URL}/room/{room_id}/peer/{user_id}")
+                    except Exception:
+                        pass
+                        
+                await manager.broadcast(room_id, {
+                    "type": "call_leave", 
+                    "user_id": user_id, 
+                    "total_participants": len(manager.call_participants.get(room_id, set()))
+                }, exclude=websocket)
                 
+            # --- SFU INTEGRATION : FastAPI is the explicit Control Plane ---
+            
+            elif msg_type == "sfu_get_producers":
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(f"{SFU_INTERNAL_URL}/room/{room_id}/producers")
+                    await websocket.send_json({"type": "sfu_existing_producers", "data": resp.json()})
+
+            elif msg_type == "sfu_get_router_rtp_capabilities":
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(f"{SFU_INTERNAL_URL}/room/{room_id}/capabilities")
+                    await websocket.send_json({"type": "sfu_router_rtp_capabilities", "data": resp.json()})
+
+            elif msg_type == "sfu_create_webrtc_transport":
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(f"{SFU_INTERNAL_URL}/room/{room_id}/peer/{user_id}/transport", json=message_data.get("data", {}))
+                    await websocket.send_json({"type": "sfu_webrtc_transport_created", "data": resp.json()})
+
+            elif msg_type == "sfu_connect_transport":
+                transport_id = message_data["data"]["transportId"]
+                dtls_params = message_data["data"]["dtlsParameters"]
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(f"{SFU_INTERNAL_URL}/peer/{user_id}/transport/{transport_id}/connect", json={"dtlsParameters": dtls_params})
+                    await websocket.send_json({"type": "sfu_transport_connected", "transportId": transport_id, "data": resp.json()})
+
+            elif msg_type == "sfu_produce":
+                transport_id = message_data["data"]["transportId"]
+                transaction_id = message_data.get("transactionId")
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(f"{SFU_INTERNAL_URL}/peer/{user_id}/transport/{transport_id}/produce", json={
+                        "kind": message_data["data"]["kind"],
+                        "rtpParameters": message_data["data"]["rtpParameters"]
+                    })
+                    res_data = resp.json()
+                    prod_id = res_data.get("id")
+                    
+                    # Return the exact transactionId so the frontend Promise can resolve legally
+                    await websocket.send_json({
+                        "type": "sfu_produced",
+                        "transportId": transport_id,
+                        "transactionId": transaction_id,
+                        "data": res_data
+                    })
+                    
+                    # Critically: Notify all OTHER participants that a new producer exists, so they can consume it.
+                    if prod_id:
+                        await manager.broadcast(room_id, {
+                            "type": "sfu_new_producer",
+                            "producerId": prod_id,
+                            "peerId": user_id,
+                            "kind": message_data["data"]["kind"]
+                        }, exclude=websocket)
+
+            elif msg_type == "sfu_consume":
+                transport_id = message_data["data"]["transportId"]
+                producer_id = message_data["data"]["producerId"]
+                rtp_caps = message_data["data"]["rtpCapabilities"]
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(f"{SFU_INTERNAL_URL}/room/{room_id}/peer/{user_id}/transport/{transport_id}/consume", json={
+                        "producerId": producer_id,
+                        "rtpCapabilities": rtp_caps
+                    })
+                    res_data = resp.json()
+                    await websocket.send_json({"type": "sfu_consumed", "producerId": producer_id, "data": res_data})
+
             elif msg_type == "message":
                 original_text = message_data.get("text", "")
                 content_type = message_data.get("content_type", "text")
@@ -547,11 +652,29 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
 
     except WebSocketDisconnect:
         manager.disconnect(websocket, room_id)
+        
+        # Clean up any lingering call state and SFU memory footprint to avoid ghost leaks
+        if hasattr(manager, "call_participants") and room_id in manager.call_participants:
+            if user_id in manager.call_participants[room_id]:
+                manager.call_participants[room_id].discard(user_id)
+                # Dispatch async delete without blocking
+                async def cleanup_peer():
+                    async with httpx.AsyncClient() as client:
+                        try:
+                            await client.delete(f"{SFU_INTERNAL_URL}/room/{room_id}/peer/{user_id}")
+                        except Exception:
+                            pass
+                asyncio.create_task(cleanup_peer())
+        
         # Notify room of disconnection
         try:
             await manager.broadcast(room_id, {
                 "type": "presence",
                 "status": "offline",
+                "user_id": user_id
+            })
+            await manager.broadcast(room_id, {
+                "type": "call_leave",
                 "user_id": user_id
             })
         except Exception:
