@@ -100,10 +100,12 @@ async def run_emotion_worker(
             # ── Poll audio queue with a short timeout so transcriptions
             #    can be processed even during audio silence ──────────────────
             chunk: bytes | None = None
+            timed_out = False
             try:
                 chunk = await asyncio.wait_for(queue.get(), timeout=0.1)
             except asyncio.TimeoutError:
                 # No audio this 100ms window — still drain transcription queue below
+                timed_out = True
                 pass
 
             # ── Drain any new Deepgram transcriptions ──────────────────────
@@ -117,23 +119,16 @@ async def run_emotion_worker(
                         break
 
             # ── FIX: Sentinel check — None item in queue means shut down ──
-            # This is distinct from the TimeoutError path (where chunk stays None).
-            # Only call task_done() when we actually dequeued an item.
-            if chunk is None:
+            if timed_out:
                 # Nothing dequeued this cycle (timeout) — keep polling
                 continue
 
             # chunk is a real bytes object or the sentinel
             # Sentinel: None pushed by the caller to signal shutdown
-            # (queue.get() succeeded, so we must call task_done)
             queue.task_done()
 
             if chunk is None:
                 # Sentinel received — break out of the loop
-                # NOTE: This branch is unreachable because we already `continue`d
-                # above when chunk is None from a timeout. Callers MUST push the
-                # actual bytes None (b'') as sentinel OR use CancelledError.
-                # Keeping this as an explicit guard for clarity.
                 break
 
             # ── Stream chunk into persistent FFmpeg process ────────────────
@@ -147,9 +142,12 @@ async def run_emotion_worker(
                     rolling_buffer = rolling_buffer[-MAX_BUFFER_SAMPLES:]
 
             # ── Debounced inference: run at most once per second ───────────
-            current_time = time.monotonic()  # FIX: monotonic is safer than time.time() for intervals
+            current_time = time.monotonic()  # safer than time.time() for intervals
+            
+            # Added `new_pcm.size > 0` condition so it only runs if NEW audio arrived!
             if (
-                rolling_buffer.size >= MIN_BUFFER_SAMPLES
+                new_pcm.size > 0
+                and rolling_buffer.size >= MIN_BUFFER_SAMPLES
                 and (current_time - last_inference_time > 1.0)
             ):
                 last_inference_time = current_time
@@ -183,6 +181,7 @@ async def run_emotion_worker(
                     text_emotion=text_res,
                     speech_emotion=speech_res,
                 )
+                final_emotion["speech_text"] = latest_transcribed_text or ""
 
                 # ── Persist fused emotion ──────────────────────────────────
                 set_emotion_state(redis_client, user_id, bot_id, final_emotion)

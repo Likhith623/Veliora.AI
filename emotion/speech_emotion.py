@@ -108,9 +108,15 @@ def get_speech_emotion(pcm_array: np.ndarray) -> dict:
         scores = torch.nn.functional.softmax(logits, dim=-1)
         score  = scores[0, predicted_id].item()
 
+        all_speech_emotions = {
+            _model.config.id2label[i].lower(): round(s.item() * 100, 2)
+            for i, s in enumerate(scores[0])
+        }
+
         return {
             "label": label.lower(),   # Normalize: HUBERT_VALENCE map handles both forms
             "score": round(score, 3),
+            "all_emotions": all_speech_emotions
         }
     except Exception as e:
         logger.error(f"Speech emotion inference error: {e}")

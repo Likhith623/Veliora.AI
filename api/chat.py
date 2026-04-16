@@ -121,7 +121,18 @@ async def send_message(
         text_emotion = await loop.run_in_executor(
             _emotion_executor, get_text_emotion, request.message
         )
-        logger.debug(f"Text emotion: {text_emotion} for user {user_id}")
+        
+        # Prepare a pretty log for the max label and top 3 percentages to avoid terminal spam
+        max_label = text_emotion.get('label')
+        max_score = text_emotion.get('score')
+        all_em = text_emotion.get('all_emotions', {})
+        if all_em:
+            top_3 = dict(sorted(all_em.items(), key=lambda item: item[1], reverse=True)[:3])
+            log_str = f"🧠 [ROBERTA] Max: '{max_label}' ({max_score*100:.1f}%) | Top 3: {top_3} | User: '{request.message[:50]}...'"
+        else:
+            log_str = f"🧠 [ROBERTA] Model Result: {text_emotion} -> User: '{request.message}'"
+        
+        logger.info(log_str)
 
         # ── Step 4: Fuse with latest speech emotion (if available) ───────────
         # Speech emotion is updated asynchronously by emotion_worker.py.
@@ -135,16 +146,19 @@ async def send_message(
             # We now have the exact speech_score available from our previous fusion.
             speech_raw   = latest_stored_emotion["speech_raw"]
             speech_score = latest_stored_emotion.get("speech_score", 0.0)
+            all_speech   = latest_stored_emotion.get("all_speech_emotions", {})
             
             speech_emotion_for_fusion = {
                 "label": speech_raw,
                 "score": float(speech_score),
+                "all_emotions": all_speech,
             }
 
         fused_emotion = fuse_emotions(
             text_emotion=text_emotion,
             speech_emotion=speech_emotion_for_fusion,
         )
+        fused_emotion["text_message"] = request.message
 
         # ── Step 5: Persist fused emotion to Redis ────────────────────────────
         set_emotion_state(redis_client, user_id, bot_id, fused_emotion)
@@ -164,6 +178,18 @@ async def send_message(
             # Cache user message and crisis response for history continuity
             await cache_message(user_id, bot_id, "user", request.message)
             await cache_message(user_id, bot_id, "bot", crisis_response)
+            
+            import uuid
+            redis_manager.store_chat(
+                user_id, bot_id, str(uuid.uuid4()),
+                chat_dict={
+                    "user_message": request.message,
+                    "bot_response": crisis_response,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "is_historical": "false"
+                }
+            )
+
             background_tasks.add_task(
                 publish_message_log, user_id, bot_id, request.message, crisis_response
             )
@@ -193,6 +219,17 @@ async def send_message(
         # ── Step 10: Cache messages in Redis context list ──────────────────────
         await cache_message(user_id, bot_id, "user", request.message)
         await cache_message(user_id, bot_id, "bot", bot_response)
+
+        import uuid
+        redis_manager.store_chat(
+            user_id, bot_id, str(uuid.uuid4()),
+            chat_dict={
+                "user_message": request.message,
+                "bot_response": bot_response,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "is_historical": "false"
+            }
+        )
 
         # ── Step 11: Publish to RabbitMQ (async background processing) ────────
         background_tasks.add_task(

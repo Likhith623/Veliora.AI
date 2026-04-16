@@ -111,14 +111,22 @@ def __fire_telemetry(user_id: str, bot_id: str, new_emotion: dict):
             supabase = get_supabase_admin()
             if not supabase:
                 return
-            supabase.table("emotion_telemetry").insert({
+            
+            payload = {
                 "user_id": user_id,
                 "bot_id": bot_id,
-                "fused_valence": new_emotion.get("fused_valence", 0.0),
-                "dominant_emotion": new_emotion.get("dominant_emotion", "neutral"),
+                "fused_valence": new_emotion.get("valence", 0.0),
+                "dominant_emotion": new_emotion.get("fused_emotion", "neutral"),
                 "text_score": new_emotion.get("text_score", 0.0),
-                "speech_score": new_emotion.get("speech_score", 0.0)
-            }).execute()
+                "speech_score": new_emotion.get("speech_score", 0.0),
+                "all_emotions": new_emotion.get("all_emotions", {}),
+                "all_speech_emotions": new_emotion.get("all_speech_emotions", {}),
+                "text_message": new_emotion.get("text_message", ""),
+                "speech_text": new_emotion.get("speech_text", "")
+            }
+            logger.info(f"📊 [TELEMETRY FIRE] Storing to Supabase: {payload}")
+            
+            supabase.table("emotion_telemetry").insert(payload).execute()
         except Exception as e:
             logger.error(f"Failed to log telemetry into Supabase: {e}")
     

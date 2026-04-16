@@ -144,6 +144,10 @@ CREATE TABLE public.emotion_telemetry (
   text_score double precision,
   speech_score double precision,
   created_at timestamp with time zone DEFAULT now(),
+  all_emotions jsonb,
+  text_message text,
+  all_speech_emotions jsonb DEFAULT '{}'::jsonb,
+  speech_text text,
   CONSTRAINT emotion_telemetry_pkey PRIMARY KEY (id),
   CONSTRAINT emotion_telemetry_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
 );
@@ -352,7 +356,7 @@ CREATE TABLE public.messages (
   language text,
   embedding USER-DEFINED,
   created_at timestamp with time zone DEFAULT now(),
-  activity_type text NOT NULL DEFAULT 'chat'::text CHECK (activity_type = ANY (ARRAY['chat'::text, 'game'::text, 'voice_note'::text, 'image_gen'::text, 'image_describe'::text, 'url_summary'::text, 'weather'::text, 'meme'::text, 'selfie'::text])),
+  activity_type text NOT NULL DEFAULT 'chat'::text CHECK (activity_type = ANY (ARRAY['chat'::text, 'game'::text, 'voice_note'::text, 'voice_call'::text, 'image_gen'::text, 'image_describe'::text, 'url_summary'::text, 'weather'::text, 'meme'::text, 'selfie'::text])),
   media_url text,
   CONSTRAINT messages_pkey PRIMARY KEY (id),
   CONSTRAINT messages_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)

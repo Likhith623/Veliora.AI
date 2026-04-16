@@ -32,6 +32,28 @@ _client = genai.Client(api_key=_settings.effective_google_api_key)
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # UTILITY
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# HELPER FOR GEMINI WITH RETRY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+def _gemini_generate_with_retry(prompt, model="gemini-2.0-flash"):
+    import time
+    import random
+    max_retries = 6
+    for attempt in range(max_retries):
+        try:
+            return _client.models.generate_content(model=model, contents=prompt)
+        except Exception as e:
+            if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+                if attempt == max_retries - 1:
+                    logger.error(f"Gemini API 429 Resource Exhausted after {max_retries} attempts.")
+                    raise e
+                delay = (2 ** attempt) + random.uniform(0.5, 2.0)
+                logger.warning(f"Gemini 429 error. Retrying in {delay:.2f}s (attempt {attempt+1}/{max_retries})")
+                time.sleep(delay)
+            else:
+                raise e
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def time_ago_human(past_time_str, now=None):
@@ -252,7 +274,7 @@ Bot : {bot_resp}
 OUTPUT:
 """
     try:
-        resp = _client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        resp = _gemini_generate_with_retry(prompt)
         text = resp.text.strip()
         if text.startswith("```"):
             text = text.split("```")[1]
@@ -333,9 +355,7 @@ none
 """
 
     try:
-        dec = _client.models.generate_content(
-            model="gemini-2.0-flash", contents=prompt
-        ).text.strip().lower()
+        dec = _gemini_generate_with_retry(prompt).text.strip().lower()
     except Exception as e:
         logger.error(f"Memory decision failed: {e}")
         return "Decision failed."
@@ -467,7 +487,7 @@ You are a Memory Consolidation Agent. Merge these into ONE concise memory (max 2
 Include all important keywords. Output only the merged memory.
 """
     try:
-        res = _client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        res = _gemini_generate_with_retry(prompt)
         return res.text.strip()
     except Exception as e:
         logger.error(f"Memory consolidation failed: {e}")

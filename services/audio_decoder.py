@@ -43,7 +43,7 @@ class PersistentFFmpegDecoder:
         self.process = await asyncio.create_subprocess_exec(
             "ffmpeg",
             "-hide_banner", "-loglevel", "error",
-            "-i",       "pipe:0",       # Streaming stdin input
+            "-i",       "pipe:0",       # Streaming stdin input (autodetect WebM/Opus)
             "-f",       "f32le",        # Raw 32-bit float little-endian output
             "-acodec",  "pcm_f32le",
             "-ar",      "16000",        # Resample to 16kHz for ML models

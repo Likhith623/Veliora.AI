@@ -153,11 +153,13 @@ def fuse_emotions(
         speech_score = float(speech_emotion.get("score") or 0.0)
         speech_valence = HUBERT_VALENCE.get(speech_label, 0.0)
         has_speech = True
+        all_speech_emotions = speech_emotion.get("all_emotions", {})
     else:
         speech_label = "n/a"
         speech_score = 0.0
         speech_valence = 0.0
         has_speech = False
+        all_speech_emotions = {}
 
     # ── Confidence-weighted blending ─────────────────────────────────────────
     if not has_speech or speech_score < 0.40:
@@ -232,4 +234,6 @@ def fuse_emotions(
         "text_weight":     round(text_weight, 3),
         "speech_weight":   round(speech_weight, 3),
         "masking_flag":    masking_flag,
+        "all_emotions":    text_emotion.get("all_emotions", {}),
+        "all_speech_emotions": all_speech_emotions,
     }

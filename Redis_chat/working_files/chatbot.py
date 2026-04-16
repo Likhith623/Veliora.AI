@@ -81,11 +81,17 @@ async def get_bot_response_combined(
     if current_emotion:
         emotion_label = current_emotion.get("fused_emotion", "neutral")
         emotion_score = current_emotion.get("confidence", 0.0)
+        all_emotions = current_emotion.get("all_emotions", {})
+        top_3_str = ""
+        if all_emotions:
+            top_3 = dict(sorted(all_emotions.items(), key=lambda item: item[1], reverse=True)[:3])
+            top_3_str = f" [Top 3 Emotions Detected: {top_3}]"
+        
         # Check standard negative emotions to trigger therapy/comfort mode
         if "sad" in emotion_label.lower() or "angry" in emotion_label.lower() or "anxious" in emotion_label.lower() or "fear" in emotion_label.lower():
-            emotion_block = f"\n\n**CRITICAL EMOTIONAL STATE:**\nThe user is currently feeling {emotion_label} (Confidence: {emotion_score:.2f}). TRIGGER THERAPY/COMFORT MODE. Be extremely gentle, empathetic, and supportive. Validate their feelings deeply before offering any advice."
+            emotion_block = f"\n\n**CRITICAL EMOTIONAL STATE:**\nThe user's dominant emotion is {emotion_label} (Confidence: {emotion_score*100:.1f}%).{top_3_str}\nTrigger Therapy/Comfort Mode. Be extremely gentle, empathetic, and supportive. Validate their feelings deeply before offering any advice."
         else:
-            emotion_block = f"\n\n[User's current emotional state: {emotion_label} ({emotion_score:.2f})]"
+            emotion_block = f"\n\n[User's current emotional state: {emotion_label} ({emotion_score*100:.1f}%)]{top_3_str}"
 
     # Format memory blocks
     rfm_block = (

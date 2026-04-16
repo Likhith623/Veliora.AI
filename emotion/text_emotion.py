@@ -87,9 +87,16 @@ def get_text_emotion(text: str) -> dict:
         scores = torch.nn.functional.softmax(logits, dim=-1)
         score  = scores[0, predicted_id].item()
 
+        # Compute percentages for all 28 categories
+        all_emotions = {
+            _model.config.id2label[i].lower(): round(s.item() * 100, 2)
+            for i, s in enumerate(scores[0])
+        }
+
         return {
             "label": label.lower(),   # Normalize to lowercase for fusion map lookup
             "score": round(score, 3),
+            "all_emotions": all_emotions
         }
     except Exception as e:
         logger.error(f"Text emotion inference error: {e}")

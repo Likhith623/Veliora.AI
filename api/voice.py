@@ -319,6 +319,16 @@ async def voice_call(websocket: WebSocket):
 
     system_prompt = get_bot_prompt(bot_id)
     call_active = True
+    
+    # ─── Start Emotion Worker for Voice ───
+    import time
+    transcription_queue = asyncio.Queue()
+    audio_queue = asyncio.Queue()
+    from services.redis_cache import get_redis_manager
+    manager = get_redis_manager()
+    from services.emotion_worker import run_emotion_worker
+    worker_task = asyncio.create_task(run_emotion_worker(audio_queue, manager.client, user_id, bot_id, transcription_queue=transcription_queue))
+
 
     async def receive_audio():
         """Receive audio from client and forward to Deepgram STT."""
@@ -328,6 +338,7 @@ async def voice_call(websocket: WebSocket):
                 data = await websocket.receive()
                 if "bytes" in data:
                     await stt.send_audio(data["bytes"])
+                    audio_queue.put_nowait(data["bytes"])
                 elif "text" in data:
                     msg = json.loads(data["text"])
                     if msg.get("type") == "end":
@@ -365,6 +376,9 @@ async def voice_call(websocket: WebSocket):
             # --- Process the transcript (was previously unreachable dead code) ---
             try:
                 logger.info(f"User said: {transcript}")
+                
+                # Pass transcript directly to the active emotion worker
+                transcription_queue.put_nowait((transcript, time.time()))
 
                 # Notify client of transcript
                 await websocket.send_json({
@@ -415,6 +429,27 @@ async def voice_call(websocket: WebSocket):
 
                 call_context.append({"role": "bot", "content": full_response})
 
+                # ─── Store Context directly into database queue immediately ───
+                import uuid
+                from datetime import datetime, timezone
+                chat_id = str(uuid.uuid4())
+                manager.store_chat(
+                    user_id=user_id,
+                    bot_id=bot_id,
+                    chat_id=chat_id,
+                    chat_dict={
+                        "user_message": transcript,
+                        "bot_response": full_response,
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "activity_type": "voice_call",
+                        "media_url": None,
+                        "is_historical": "false"
+                    }
+                )
+                
+                import asyncio
+                asyncio.create_task(award_xp(user_id=user_id, bot_id=bot_id, action="voice_interaction", custom_amount=10))
+                
                 # Notify client that response is complete
                 await websocket.send_json({
                     "type": "response_complete",
@@ -428,8 +463,11 @@ async def voice_call(websocket: WebSocket):
 
                 # Trigger memory storage and message log for DB persistence
                 from services.rabbitmq_service import publish_memory_task, publish_message_log
-                publish_memory_task(user_id, bot_id, transcript, full_response)
-                publish_message_log(user_id, bot_id, transcript, full_response, activity_type="voice_call")
+                import asyncio
+                asyncio.create_task(asyncio.to_thread(publish_memory_task, user_id, bot_id, transcript, full_response))
+                asyncio.create_task(asyncio.to_thread(
+                    publish_message_log, user_id, bot_id, transcript, full_response, "voice_call", None
+                ))
 
             except Exception as e:
                 logger.error(f"Response generation error: {e}")
@@ -465,13 +503,29 @@ async def voice_call(websocket: WebSocket):
     except Exception as e:
         logger.error(f"Voice call error: {e}")
     finally:
-        await stt.close()
+        call_active = False
+        import contextlib
+        with contextlib.suppress(Exception):
+            await stt.close()
+
+        # Stop the emotion worker gracefully
+        if 'audio_queue' in locals():
+            audio_queue.put_nowait(None)
+            
+        if 'worker_task' in locals() and not worker_task.done():
+            worker_task.cancel()
+            with contextlib.suppress(Exception):
+                await worker_task
 
         # Award voice call XP
         try:
             await award_xp(user_id, bot_id, "voice_call_start")
         except Exception:
             pass
+
+        # ─── Important: Sync the session back to Supabase so it does not ghost ───
+        from services.redis_cache import end_session_and_sync
+        await end_session_and_sync(user_id, bot_id)
 
         logger.info(f"Voice call ended: {user_id} ↔ {bot_id}")
 

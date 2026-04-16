@@ -104,6 +104,12 @@ async def voice_call_ultra_fast_endpoint(
             background_tasks.add_task(
                 publish_memory_task, user_id, bot_id, transcript, response_text
             )
+            
+            # Fire Ultra-Fast Emotion Processing (Missing from previously strict architecture upgrade)
+            from api._ultra_emotion import process_ultra_fast_emotion
+            background_tasks.add_task(
+                process_ultra_fast_emotion, user_id, bot_id, audio_content, transcript
+            )
 
         # Mirror EXACT XP calculations from reference_main legacy stack
         try:
