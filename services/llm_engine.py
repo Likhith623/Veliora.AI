@@ -1,3 +1,4 @@
+#llm_engine.py
 """
 Veliora.AI — LLM Engine (Gemini API)
 All AI processing via Gemini 1.5 Flash free tier.

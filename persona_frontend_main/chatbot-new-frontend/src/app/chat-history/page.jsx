@@ -783,8 +783,11 @@ const History = () => {
                   Chat History
                 </h1>
               </div>
-              <div className="flex items-center space-x-3">
-                <Link href="/details">
+              <div className="flex items-center space-x-3">                  <Link href="/dashboard">
+                    <button className="px-4 py-2 md:px-6 md:py-3 bg-purple-600/10 text-purple-600 dark:text-purple-300 dark:bg-purple-900/20 text-sm md:text-normal rounded-full flex items-center gap-2 transition-all backdrop-blur-md border border-purple-500/20 shadow-[0_4px_12px_0_rgba(168,85,247,0.15)] hover:scale-105">
+                      Mental Health
+                    </button>
+                  </Link>                <Link href="/details">
                   <button className="px-6 py-2 md:px-6 md:py-3 bg-gray-800/5 dark:bg-gray-800/5 text-black dark:text-white text-sm md:text-normal rounded-full flex items-center gap-2 transition-all backdrop-blur-md border dark:border-gray-700/20 shadow-[0_4px_12px_0_rgba(255,255,255,0.1)]">
                     Add new Friends
                   </button>

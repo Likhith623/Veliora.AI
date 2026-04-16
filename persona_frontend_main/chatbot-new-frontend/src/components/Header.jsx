@@ -78,6 +78,8 @@ export default function Header() {
 
         {/* Right Side - Navigation Links */}
         <div className="text-xl hidden sm:flex justify-end gap-8">
+          <NavLink href="/chat">Chat</NavLink>
+          <NavLink href="/dashboard">Mental Health</NavLink>
           <NavLink href="/join-us">Join Us</NavLink>
           <NavLink href="/about">About</NavLink>
           <NavLink href='#'>Blogs</NavLink>
@@ -121,6 +123,8 @@ export default function Header() {
             } backdrop-blur-2xl z-10 rounded-2xl shadow-lg p-4 mx-6`}
           >
             <div className="flex flex-col gap-4">
+              <NavLink href="/chat">Chat</NavLink>
+              <NavLink href="/dashboard">Mental Health Dashboard</NavLink>
               <NavLink href="/join-us">Join Us</NavLink>
               <NavLink href="/about">About</NavLink>
             </div>

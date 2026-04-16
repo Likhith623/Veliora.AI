@@ -53,7 +53,7 @@ async def get_bot_response_combined(
 
     fetch_start = time.perf_counter()
 
-    # Parallel fetch: recent chat, RFM memories, semantic memories
+    # Parallel fetch: recent chat, RFM memories, semantic memories, and emotion state
     recent_task = fetch_last_m_messages(
         redis_manager.client, user_id, bot_id, m=10
     )
@@ -61,18 +61,31 @@ async def get_bot_response_combined(
         redis_manager.client, user_id, bot_id
     )
 
+    from emotion.session_state import get_emotion_state
+    emotion_task = asyncio.to_thread(get_emotion_state, redis_manager.client, user_id, bot_id)
+
     if input_embedding:
         semantic_task = get_semantically_similar_memories(
             redis_manager.client, user_id, bot_id, input_embedding, cutoff=0.4
         )
-        recent, rfm, semantic = await asyncio.gather(
-            recent_task, rfm_task, semantic_task
+        recent, rfm, semantic, current_emotion = await asyncio.gather(
+            recent_task, rfm_task, semantic_task, emotion_task
         )
     else:
-        recent, rfm = await asyncio.gather(recent_task, rfm_task)
+        recent, rfm, current_emotion = await asyncio.gather(recent_task, rfm_task, emotion_task)
         semantic = []
 
     fetch_elapsed = time.perf_counter() - fetch_start
+
+    emotion_block = ""
+    if current_emotion:
+        emotion_label = current_emotion.get("fused_emotion", "neutral")
+        emotion_score = current_emotion.get("confidence", 0.0)
+        # Check standard negative emotions to trigger therapy/comfort mode
+        if "sad" in emotion_label.lower() or "angry" in emotion_label.lower() or "anxious" in emotion_label.lower() or "fear" in emotion_label.lower():
+            emotion_block = f"\n\n**CRITICAL EMOTIONAL STATE:**\nThe user is currently feeling {emotion_label} (Confidence: {emotion_score:.2f}). TRIGGER THERAPY/COMFORT MODE. Be extremely gentle, empathetic, and supportive. Validate their feelings deeply before offering any advice."
+        else:
+            emotion_block = f"\n\n[User's current emotional state: {emotion_label} ({emotion_score:.2f})]"
 
     # Format memory blocks
     rfm_block = (
@@ -107,7 +120,7 @@ async def get_bot_response_combined(
     if traits:
         traits_block = f"\n\n**CRITICAL BEHAVIOR TRAITS APPLIED:**\nYou must fundamentally embody these EXACT traits in this response: {traits}\nAdhere perfectly to this tone without breaking character."
 
-    prompt = f"""{persona_prompt}{traits_block}
+    prompt = f"""{persona_prompt}{traits_block}{emotion_block}
 
 **Memory Context (use to personalize your response):**
 

@@ -56,3 +56,9 @@ gradio_client>=1.0.0
 
 # ─── Image Processing & File Upload ───
 Pillow>=10.2.0
+
+# ─── Deep Learning & Emotion Inference (PyTorch & HuggingFace) ───
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+transformers>=4.35.0

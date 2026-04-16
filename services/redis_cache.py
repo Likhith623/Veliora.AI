@@ -1,3 +1,4 @@
+#rediscahche.py
 """
 Veliora.AI — Redis Stack Cache Service
 Replaces the old Upstash REST-based redis_cache.py with Redis Stack (redis-py).

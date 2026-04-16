@@ -179,6 +179,7 @@ from api.diary import router as diary_router
 from api.selfie import router as selfie_router
 from api.memory import router as memory_router
 from api.logs import router as logs_router
+from api.emotion_dashboard import router as emotion_dashboard_router
 from api.voice_ultra import router as voice_ultra_router
 
 app.include_router(auth_router)
@@ -191,6 +192,7 @@ app.include_router(diary_router)
 app.include_router(selfie_router)
 app.include_router(memory_router)
 app.include_router(logs_router)
+app.include_router(emotion_dashboard_router)
 app.include_router(voice_ultra_router)
 
 # -- Realtime Communication APIs (No distinct auth, uses Chatbot Auth) --

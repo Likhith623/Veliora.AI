@@ -1,0 +1,52 @@
+
+### 🔷 1. FRONTEND ARCHITECTURE
+
+*   **Chat UI Location:** Implemented primarily in `src/app/chat/page.js` within the `chatbot-new-frontend/` directory.
+*   **Voice Call UI:** The actual voice engine lives in the heavily optimized `src/components/VoiceCallUltra.jsx`. 
+*   **Microphone Capture:** It uses the standard browser `navigator.mediaDevices.getUserMedia`. It captures audio using a `MediaRecorder` configured specifically for `audio/webm;codecs=opus` (not raw PCM). 
+*   **WebSocket Connection:** Established natively via browser `WebSocket` targeting your `ws://<host>/api/voice/call?token=...` backend endpoint. 
+*   **Audio Streaming Format:** The application chunks the user's voice into tiny `Blob` (binary) intervals (`ondataavailable`) and shoots them directly over the WebSocket to the backend.
+*   **Frontend Tap Point:** You can intercept audio right inside `VoiceCallUltra.jsx` inside the `MediaRecorder.ondataavailable` event before the `ws.send(e.data)` fires, but **it is highly recommended to do emotion processing on the backend** to save client-side CPU/battery.
+
+### 🔷 2. BACKEND ARCHITECTURE
+
+*   **REST Chat Endpoint (chat.py):** `POST /api/chat/send`. Handles traditional text chat. Loads previous messages from Supabase databases into a sub-millisecond Redis cache.
+*   **WebSocket Voice Endpoint (voice.py):** `WS /api/voice/call`. Holds the socket open, spinning up two asynchronous loops simultaneously: `receive_audio()` (client → server) and `process_and_respond()` (server → client).
+*   **Memory / LLM Pipeline (llm_engine.py & Redis_chat):** Both text and voice eventually funnel into a combined memory engine (`get_bot_response_combined`). The system fetches semantic vector history and Recency-Frequency-Monetary (RFM) memory before sending a mega-prompt to the LLM (Gemini).
+*   **Injection Point:** The absolute best place to inject emotion context is right before the system merges the prompt and calls `generate_chat_response_stream()`. 
+
+### 🔷 3. VOICE PIPELINE (CRITICAL REVELATION)
+
+*   **The Flow:** Frontend Mic ➔ MediaRecorder (WebM/Opus bytes) ➔ WebSocket Binary Packet ➔ `api/voice.py: receive_audio()` ➔ Deepgram STT Stream ➔ Transcript ➔ Gemini LLM ➔ Cartesia TTS ➔ WebSocket Binary ➔ Frontend Speaker.
+*   **Audio Format Risk (WebM vs PCM):** Deepgram natively accepts WebM/Opus audio chunks on the edge, meaning your backend currently just passes the raw binary packets straight through without decoding them. 
+*   **Forking for STT:** Inside the `receive_audio()` `while` loop, you currently call `await stt.send_audio(data["bytes"])`.
+*   **Forking for HuBERT:** **Here lies your biggest architectural hurdle.** Speech emotion models like HuBERT *require* raw 16kHz PCM data (uncompressed audio arrays). Because you are receiving compressed WebM/Opus chunks from the frontend, you cannot just feed `data["bytes"]` into HuBERT. You must mathematically decode the WebM chunks into raw numpy arrays (using `ffmpeg` or PyAudio) memory-buffers *before* you can run emotion inference. 
+
+### 🔷 4. DATA FLOW MAP
+
+**TEXT PIPELINE:**
+User Type ➔ `POST /api/chat/send` ➔ **[📍 INSERT EMOTION TEXT MODEL HERE]** ➔ Store Emotion in Redis ➔ Fetch Pinecone/Supabase Memories ➔ Build LLM Prompt (Inject Emotion Text) ➔ Gemini ➔ Response ➔ User.
+
+**VOICE PIPELINE:**
+User Speak ➔ Browser Mic (Opus chunks) ➔ `WS /api/voice/call` 
+   ┣ *(Fork 1)* ➔ Deepgram STT (Accepts Opus natively) ➔ Transcript text
+   ┗ *(Fork 2)* ➔ **[📍 DECODE OPUS TO PCM]** ➔ **[📍 INSERT HuBERT SPEECH EMOTION]** ➔ Store emotion score in Redis
+   *(Merge)* ➔ Transcript + Redis Emotion Score ➔ Build Prompt ➔ Gemini ➔ Cartesia TTS ➔ User Speaker.
+
+### 🔷 5. INTEGRATION POINTS (EXACTLY WHERE TO PLUG IN)
+
+1.  **Where to plug Text Emotion:** Inside chat.py precisely before the `get_bot_response_combined()` variable is called. Run your text model against `request.message`, get a label, and pass it as a kwargs parameter.
+2.  **Where to plug Speech Emotion:** Inside voice.py in the `receive_audio()` loop. Create an `asyncio.Queue` that drops audio chunks into a background worker (to prevent blocking the socket). The worker decodes the audio and runs HuBERT. 
+3.  **Where to store Session Emotion:** Add it to your Redis mapping inside redis_cache.py. Since you already have `user_id:bot_id` contexts, attach a hash key `emotion_state: {"current": "happy", "confidence": 0.92, "history": [...]}`.
+4.  **Where to modify the LLM Prompt:** Modify bot_prompt.py. Update the `get_bot_prompt(bot_id)` function to dynamically pull the user's current baseline emotion from Redis and inject an instruction like: *"The user's voice tone currently indicates they are highly [emotion]. Adjust your tone appropriately."*
+
+### 🔷 6. STATE MANAGEMENT
+
+*   **Current State Engine:** Your system uses Redis for ultra-fast session state (to avoid database latency during voice calls), which then asynchronously syncs to Supabase via RabbitMQ messaging (`publish_memory_task`, `publish_message_log`) when the call ends.
+*   **Attaching the Context:** Inside voice.py, you maintain a `call_context` list. Simply append semantic emotion markers into the `{"role": "system", "content": "User sounds frustrated score 0.8"}` before it is stringified and sent to the LLM engine.
+
+### 🔷 7. RISKS / BREAKING POINTS (WARNINGS)
+
+*   **Socket Blocking (Critical):** The voice `WebSocket` runs in a real-time `asyncio` event loop. If you run a heavy NLP or HuBERT neural network *synchronously* inside `receive_audio()`, you will block the thread. Deepgram requires a steady stream of chunks; pausing for even 50ms to run a model will cause audio frame dropping and clipping. **You MUST run the emotion inferencing in a separate unawaited background task or separate microservice.**
+*   **Prompt Bloat:** The system already utilizes Semantic embeddings and RFM memory injection. Injecting massive logs of emotional history will bloat the Gemini context window and eat into response latency. Only inject the *sliding window* (e.g., the aggregate median emotion of the last 15 seconds), not the frame-by-frame history.
+*   **Do Not Touch:** Do NOT modify rabbitmq_service.py message syncing structures, or you will cause the asynchronous DB saves to fail and silently lose end-user chat history. Keep the emotion metadata strictly in the fast Redis layer for prompt injection, and only save a single string summary to the database at the end of the chat.

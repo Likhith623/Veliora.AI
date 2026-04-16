@@ -1,9 +1,10 @@
 import React from "react";
 import { FloatingDock } from "@/components/ui/floating-dock";
-import { IconUser, IconRobot, IconNotebook } from "@tabler/icons-react";
+import { IconUser, IconRobot, IconNotebook, IconBrain } from "@tabler/icons-react";
 import Profile from "./screens/Profile";
 import AddBot from "./screens/AddBot";
 import History from "@/app/chat-history/page";
+import DashboardPage from "@/app/dashboard/page";
 
 export function FloatingDockDemo() {
   const links = [
@@ -34,6 +35,15 @@ export function FloatingDockDemo() {
       href: "/chat-history", //render chat-history
       action: "profile",
       component: <History />,
+    },
+    {
+      title: "Mental Health",
+      icon: (
+        <IconBrain className="h-full w-full text-black/80 dark:text-black/80" />
+      ),
+      href: "/dashboard",
+      action: "dashboard",
+      component: <DashboardPage />,
     },
     {
       title: "Profile",

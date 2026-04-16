@@ -201,10 +201,10 @@ async def extract_memories(
         from google import genai
         from config.settings import get_settings
         settings = get_settings()
-        client = genai.Client(api_key=settings.effective_google_api_key)
+        genai_client = genai.Client(api_key=settings.effective_google_api_key)
 
         def _call_gemini():
-            return client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+            return genai_client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
 
         gemini_response = await asyncio.to_thread(_call_gemini)
         raw_text = gemini_response.text.strip()
