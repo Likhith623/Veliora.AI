@@ -311,12 +311,13 @@ function ValenceChart({ items, labelKey, t }) {
       </div>
 
       {/* Bars */}
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 8, paddingLeft: 38, height: 180, paddingBottom: 0 }}>
+      <div style={{ display: "flex", alignItems: "stretch", gap: 8, paddingLeft: 38, height: 180, paddingBottom: 0 }}>
         {items.map((item, i) => {
           const v   = item.avg_valence ?? 0;
           const n   = norm(v);
           const pal = emotionPalette(n);
-          const h   = Math.max(6, n * 100);
+          // Set a minimum height of 2% so even lowest scores remain visible as a sliver
+          const h   = Math.max(2, n * 100);
           const label = String(item[labelKey] ?? "").slice(-5);
           const isHov = hovered === i;
 
