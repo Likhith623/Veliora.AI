@@ -16,7 +16,7 @@ router = APIRouter(prefix="/emotion-dashboard", tags=["Mental Health Dashboard"]
 # ─────────────────────────────────────────────────────────────────
 
 @router.get("/{user_id}/analytics", response_model=Dict[str, Any])
-async def get_emotion_analytics(user_id: str) -> Dict[str, Any]:
+async def get_emotion_analytics(user_id: str, bot_id: str = None) -> Dict[str, Any]:
     """
     Enriched analytics: risk level, streaks, time-of-day breakdown,
     bot comparison stats. Feeds the new dashboard panels.
@@ -33,15 +33,16 @@ async def get_emotion_analytics(user_id: str) -> Dict[str, Any]:
     try:
         supabase = get_supabase_admin()
         thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).isoformat()
-        result = (
+        query = (
             supabase.table("emotion_telemetry")
             .select("*")
             .eq("user_id", user_id)
             .gte("created_at", thirty_days_ago)
-            .order("created_at", desc=True)
-            .limit(3000)
-            .execute()
         )
+        if bot_id and bot_id != "all":
+            query = query.eq("bot_id", bot_id)
+            
+        result = query.order("created_at", desc=True).limit(3000).execute()
         logs = result.data
         if not logs:
             return {

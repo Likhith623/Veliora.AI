@@ -632,8 +632,9 @@ Telemetry summary:
         # Validate required keys
         if all(k in parsed for k in ("narrative", "prediction", "suggestions")):
             return parsed
-        return fallback
+        fallback["narrative"] = f"JSON Validation Error: Missing required JSON keys (narrative, prediction, suggestions) from Gemini output. Raw: {raw_text}"; return fallback
 
     except Exception as e:
         logger.error(f"Dashboard insights generation failed: {e}")
-        return fallback
+        logger.error(f"Raw text was: {raw_text if 'raw_text' in locals() else 'None'}")
+        fallback["narrative"] = f"LLM Error: {e.__class__.__name__} - {str(e)}"; return fallback

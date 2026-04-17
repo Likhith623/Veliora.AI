@@ -740,7 +740,11 @@ export default function MentalHealthDashboard({ userId }) {
       // 1. Fetch analytics first
       let analyticsData = null;
       try {
-        const r = await fetch(`${BASE_URL}/emotion-dashboard/${userId}/analytics`);
+        const urlObj = new URL(`${BASE_URL}/emotion-dashboard/${userId}/analytics`);
+        if (selectedBot && selectedBot !== "all") {
+          urlObj.searchParams.append("bot_id", selectedBot);
+        }
+        const r = await fetch(urlObj.toString());
         analyticsData = await r.json();
         if (!cancelled) setAnalytics(analyticsData);
       } catch {}
@@ -751,6 +755,11 @@ export default function MentalHealthDashboard({ userId }) {
         const mergedPayload = {
           ...telemetry,
           ...(analyticsData || {}),
+          daily: aggData.daily,
+          weekly: aggData.weekly,
+          history: displayHistory,
+          recent_emotion: aggData.recent_emotion,
+          recent_valence: aggData.recent_valence,
         };
         const r = await fetch(`${BASE_URL}/api/logs/dashboard-insights`, {
           method: "POST",
@@ -758,14 +767,17 @@ export default function MentalHealthDashboard({ userId }) {
           body: JSON.stringify(mergedPayload),
         });
         const d = await r.json();
-        if (!cancelled) setInsights(d.insights);
+        if (!cancelled) {
+          setInsights(d.insights);
+          setFeedbackSent(false); // Reset feedback UI for the new bot view
+        }
       } catch {}
       if (!cancelled) setInsightsLoading(false);
     };
 
     run();
     return () => { cancelled = true; };
-  }, [telemetry, userId]);
+  }, [telemetry, userId, selectedBot, aggData, displayHistory]);
 
   const riskColor = analytics?.risk_level === "high"    ? "#f43f5e"
                   : analytics?.risk_level === "moderate" ? "#fb923c"
