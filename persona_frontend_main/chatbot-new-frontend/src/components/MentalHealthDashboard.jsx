@@ -1,3 +1,4 @@
+// MentalHealthDashboard.jsx
 "use client";
 
 import { useTheme } from "./theme-provider";
