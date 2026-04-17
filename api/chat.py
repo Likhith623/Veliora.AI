@@ -134,25 +134,13 @@ async def send_message(
         
         logger.info(log_str)
 
-        # ── Step 4: Fuse with latest speech emotion (if available) ───────────
-        # Speech emotion is updated asynchronously by emotion_worker.py.
-        # We read the last known state here for fusion.
-        # This achieves temporal sync: the same conversational turn's audio
-        # was already processed by the voice pipeline if a call is active.
-        latest_stored_emotion = get_emotion_state(redis_client, user_id, bot_id)
+        # ── Step 4: Text-Only Fusion for Chat ─────────────────────────────────
+        # Since this endpoint (/send) handles ONLY text-chat interactions (including activities),
+        # we explicitly pass speech_emotion=None. Voice calls handle their own audio/text 
+        # fusion via the voice WebSockets or ultra_fast endpoints.
+        # This fixes the issue of text messages incorrectly carrying over and storing 
+        # stale speech emotions from previous voice interactions in the Supabase telemetry table.
         speech_emotion_for_fusion = None
-        if latest_stored_emotion and latest_stored_emotion.get("speech_raw") not in (None, "n/a"):
-            # FIX: reconstruct the speech signal from its dedicated stored fields.
-            # We now have the exact speech_score available from our previous fusion.
-            speech_raw   = latest_stored_emotion["speech_raw"]
-            speech_score = latest_stored_emotion.get("speech_score", 0.0)
-            all_speech   = latest_stored_emotion.get("all_speech_emotions", {})
-            
-            speech_emotion_for_fusion = {
-                "label": speech_raw,
-                "score": float(speech_score),
-                "all_emotions": all_speech,
-            }
 
         fused_emotion = fuse_emotions(
             text_emotion=text_emotion,

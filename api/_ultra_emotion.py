@@ -19,22 +19,21 @@ async def process_ultra_fast_emotion(user_id: str, bot_id: str, audio_bytes: byt
         
         # 1. Decode Audio to 16kHz PCM Float32 using FFmpeg
         pcm_array = np.array([], dtype=np.float32)
-        with tempfile.NamedTemporaryFile(suffix=".webm", delete=True) as tf:
-            tf.write(audio_bytes)
-            tf.flush()
-            
-            proc = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-hide_banner", "-loglevel", "error", 
-                "-i", tf.name, "-f", "f32le", "-ar", "16000", "-ac", "1", "pipe:1",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.DEVNULL
-            )
-            stdout, _ = await proc.communicate()
-            if stdout:
-                # Align bytes to 4 boundaries
-                aligned_len = len(stdout) - (len(stdout) % 4)
-                if aligned_len > 0:
-                    pcm_array = np.frombuffer(stdout[:aligned_len], dtype=np.float32)
+        
+        proc = await asyncio.create_subprocess_exec(
+            "ffmpeg", "-hide_banner", "-loglevel", "error", 
+            "-i", "pipe:0", "-f", "f32le", "-acodec", "pcm_f32le", "-ar", "16000", "-ac", "1", "pipe:1",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL
+        )
+        stdout, _ = await proc.communicate(input=audio_bytes)
+        
+        if stdout:
+            # Align bytes to 4 boundaries
+            aligned_len = len(stdout) - (len(stdout) % 4)
+            if aligned_len > 0:
+                pcm_array = np.frombuffer(stdout[:aligned_len], dtype=np.float32)
 
         # 2. Run inferences in separate threads
         loop = asyncio.get_running_loop()
@@ -50,6 +49,7 @@ async def process_ultra_fast_emotion(user_id: str, bot_id: str, audio_bytes: byt
         # 3. Fuse and Persist
         final_emotion = fuse_emotions(text_res, speech_res)
         final_emotion["speech_text"] = transcribed_text or ""
+        final_emotion["text_message"] = transcribed_text or ""
         
         manager = get_redis_manager()
         rd = manager.client

@@ -64,53 +64,74 @@ const norm  = (v) => clamp((v + 1) / 2, 0, 1);
 
 const emotionPalette = (emo) => {
   const e = (emo || "").toLowerCase();
-  const is = (words) => words.some(w => e.includes(w));
-
-  if (is(["happy", "joy", "excit", "hope", "reliev", "glad", "laugh", "cheer"])) return {
-    grad:     "linear-gradient(to top, #059669, #34d399)",
-    gradH:    "linear-gradient(135deg, #059669, #34d399)",
-    glow:     "rgba(52,211,153,0.38)",
-    glowLight:"rgba(5,150,105,0.22)",
-    text:     "#34d399",
-    textLight:"#059669",
-    tag:      "rgba(52,211,153,0.12)",
-  };
-  if (is(["sad", "depress", "grief", "disappoint", "cry", "sorrow"])) return {
-    grad:     "linear-gradient(to top, #2563eb, #60a5fa)",
-    gradH:    "linear-gradient(135deg, #2563eb, #60a5fa)",
-    glow:     "rgba(96,165,250,0.38)",
-    glowLight:"rgba(37,99,235,0.20)",
-    text:     "#60a5fa",
-    textLight:"#2563eb",
-    tag:      "rgba(96,165,250,0.12)",
-  };
-  if (is(["ang", "frustrat", "annoy", "mad", "furious", "hate", "irritat"])) return {
-    grad:     "linear-gradient(to top, #be123c, #f43f5e)",
-    gradH:    "linear-gradient(135deg, #be123c, #f43f5e)",
-    glow:     "rgba(244,63,94,0.38)",
-    glowLight:"rgba(190,18,60,0.20)",
-    text:     "#f43f5e",
-    textLight:"#be123c",
-    tag:      "rgba(244,63,94,0.12)",
-  };
-  if (is(["anxi", "stress", "fear", "worr", "nervous", "panic", "tense"])) return {
-    grad:     "linear-gradient(to top, #ea580c, #fb923c)",
-    gradH:    "linear-gradient(135deg, #ea580c, #fb923c)",
-    glow:     "rgba(251,146,60,0.38)",
-    glowLight:"rgba(234,88,12,0.20)",
-    text:     "#fb923c",
-    textLight:"#ea580c",
-    tag:      "rgba(251,146,60,0.12)",
-  };
-  if (is(["calm", "content", "relax", "peace", "chill"])) return {
-    grad:     "linear-gradient(to top, #0284c7, #38bdf8)",
-    gradH:    "linear-gradient(135deg, #0284c7, #38bdf8)",
-    glow:     "rgba(56,189,248,0.38)",
-    glowLight:"rgba(2,132,199,0.20)",
-    text:     "#38bdf8",
-    textLight:"#0284c7",
-    tag:      "rgba(56,189,248,0.12)",
-  };
+  
+  // Exact mapping based on backend fusion.py GoEmotions & HuBERT labels
+  // Group 1: High Arousal Positive
+  if (["joy", "excitement", "amusement", "love", "admiration", "optimism", "pride", "relief", "happy", "hap"].some(w => e.includes(w))) {
+    return {
+      grad:     "linear-gradient(to top, #059669, #34d399)",
+      gradH:    "linear-gradient(135deg, #059669, #34d399)",
+      glow:     "rgba(52,211,153,0.38)",
+      glowLight:"rgba(5,150,105,0.22)",
+      text:     "#34d399",
+      textLight:"#059669",
+      tag:      "rgba(52,211,153,0.12)",
+    };
+  }
+  
+  // Group 2: Low Arousal Positive
+  if (["caring", "approval", "desire", "gratitude", "curiosity", "surprise"].some(w => e.includes(w))) {
+    return {
+      grad:     "linear-gradient(to top, #0284c7, #38bdf8)",
+      gradH:    "linear-gradient(135deg, #0284c7, #38bdf8)",
+      glow:     "rgba(56,189,248,0.38)",
+      glowLight:"rgba(2,132,199,0.20)",
+      text:     "#38bdf8",
+      textLight:"#0284c7",
+      tag:      "rgba(56,189,248,0.12)",
+    };
+  }
+  
+  // Group 3: Low Arousal Negative (Sadness/Grief)
+  if (["sadness", "sad", "grief", "disappointment", "remorse", "boredom"].some(w => e.includes(w))) {
+    return {
+      grad:     "linear-gradient(to top, #2563eb, #60a5fa)",
+      gradH:    "linear-gradient(135deg, #2563eb, #60a5fa)",
+      glow:     "rgba(96,165,250,0.38)",
+      glowLight:"rgba(37,99,235,0.20)",
+      text:     "#60a5fa",
+      textLight:"#2563eb",
+      tag:      "rgba(96,165,250,0.12)",
+    };
+  }
+  
+  // Group 4: High Arousal Negative (Anger/Disgust)
+  if (["anger", "angry", "ang", "annoyance", "disapproval", "disgust", "embarrassment"].some(w => e.includes(w))) {
+    return {
+      grad:     "linear-gradient(to top, #be123c, #f43f5e)",
+      gradH:    "linear-gradient(135deg, #be123c, #f43f5e)",
+      glow:     "rgba(244,63,94,0.38)",
+      glowLight:"rgba(190,18,60,0.20)",
+      text:     "#f43f5e",
+      textLight:"#be123c",
+      tag:      "rgba(244,63,94,0.12)",
+    };
+  }
+  
+  // Group 5: High Arousal Negative (Anxiety/Fear)
+  if (["fear", "nervousness", "stress", "anxi", "panic"].some(w => e.includes(w))) {
+    return {
+      grad:     "linear-gradient(to top, #ea580c, #fb923c)",
+      gradH:    "linear-gradient(135deg, #ea580c, #fb923c)",
+      glow:     "rgba(251,146,60,0.38)",
+      glowLight:"rgba(234,88,12,0.20)",
+      text:     "#fb923c",
+      textLight:"#ea580c",
+      tag:      "rgba(251,146,60,0.12)",
+    };
+  }
+  
+  // Group 6: Neutral / Ambiguous (Fallback)
   return {
     grad:     "linear-gradient(to top, #6d28d9, #a78bfa)",
     gradH:    "linear-gradient(135deg, #6d28d9, #a78bfa)",
@@ -123,42 +144,15 @@ const emotionPalette = (emo) => {
 };
 
 /* ─────────────────────────────────────────────
-   DEMO DATA (replace with real fetch)
+   EMPTY STATE DATA
 ───────────────────────────────────────────── */
-const DEMO = {
-  daily: [
-    { date: "04-10", avg_valence: 0.42 },
-    { date: "04-11", avg_valence: -0.15 },
-    { date: "04-12", avg_valence: 0.61 },
-    { date: "04-13", avg_valence: 0.78 },
-    { date: "04-14", avg_valence: 0.23 },
-    { date: "04-15", avg_valence: 0.55 },
-    { date: "04-16", avg_valence: 0.69 },
-  ],
-  weekly: [
-    { week_start: "W13", avg_valence: 0.33 },
-    { week_start: "W14", avg_valence: 0.51 },
-    { week_start: "W15", avg_valence: -0.08 },
-    { week_start: "W16", avg_valence: 0.72 },
-  ],
-  by_bot: [
-    { bot_id: "Reflect", avg_valence: 0.65 },
-    { bot_id: "Calm",    avg_valence: 0.81 },
-    { bot_id: "Focus",   avg_valence: 0.29 },
-    { bot_id: "Sleep",   avg_valence: -0.12 },
-  ],
-  recent_emotion: "Calm",
-  recent_valence: 0.69,
-  history: [
-    { bot_id:"Calm",    timestamp:"2024-04-16T09:12:00Z", text:"I've been feeling more centred after our breathing exercises. It really helped to sit with the discomfort instead of avoiding it.", emotion:"Content",   valence: 0.72 },
-    { bot_id:"Reflect", timestamp:"2024-04-15T20:44:00Z", text:"Today was hard. I kept replaying the argument in my head even though I know it's not productive. Exhausted.", emotion:"Anxious",   valence:-0.28 },
-    { bot_id:"Focus",   timestamp:"2024-04-15T14:30:00Z", text:"Managed to get into a flow state for two hours. Small win but I'll take it.", emotion:"Hopeful",   valence: 0.55 },
-    { bot_id:"Sleep",   timestamp:"2024-04-14T23:10:00Z", text:"Couldn't sleep again. Racing thoughts about work deadlines.", emotion:"Stressed",   valence:-0.41 },
-    { bot_id:"Calm",    timestamp:"2024-04-14T10:05:00Z", text:"The morning walk really helped shift my mood. Feeling lighter.", emotion:"Calm",      valence: 0.68 },
-    { bot_id:"Reflect", timestamp:"2024-04-13T19:22:00Z", text:"Grateful for the small things today. Sunshine, good coffee, a kind message from a friend.", emotion:"Joyful",    valence: 0.81 },
-    { bot_id:"Focus",   timestamp:"2024-04-12T16:15:00Z", text:"Procrastinated most of the day. Feeling guilty but trying to be gentle with myself.", emotion:"Neutral",    valence: 0.10 },
-    { bot_id:"Sleep",   timestamp:"2024-04-11T22:55:00Z", text:"Slept seven hours for the first time this week. Body feels less like concrete.", emotion:"Relieved",   valence: 0.60 },
-  ],
+const EMPTY_STATE = {
+  daily: [{ date: "Today", avg_valence: 0.0, dominant: "neutral" }],
+  weekly: [{ week_start: "This Week", avg_valence: 0.0 }],
+  by_bot: [],
+  recent_emotion: "Neutral",
+  recent_valence: 0.0,
+  history: [],
 };
 
 /* ─────────────────────────────────────────────
@@ -595,12 +589,12 @@ export default function MentalHealthDashboard({ userId }) {
         const data = await res.json();
         
         if (userId === "guest" || !data.history || data.history.length === 0) {
-          setTelemetry(DEMO);
+          setTelemetry(data || EMPTY_STATE);
         } else {
           setTelemetry(data);
         }
       } catch {
-        setTelemetry(DEMO);
+        setTelemetry(EMPTY_STATE);
       } finally {
         setLoading(false);
       }
@@ -678,12 +672,13 @@ export default function MentalHealthDashboard({ userId }) {
   const chartData = useMemo(() => {
     if (!telemetry) return [];
     if (view === "weekly") return aggData.weekly;
-    if (view === "bot")    return telemetry.by_bot || [];
-    return aggData.daily;
-  }, [telemetry, view, aggData]);
-
-  const labelKey = view === "bot" ? "bot_id" : view === "weekly" ? "week_start" : "date";
-
+      if (view === "bot") {
+        const bots = telemetry.by_bot || [];
+        if (selectedBot === "all") return bots;
+        return bots.filter(b => b.bot_id === selectedBot);
+      }
+      return aggData.daily;
+    }, [telemetry, view, aggData, selectedBot]);
   const trend = useMemo(() => {
     if (!aggData.daily || aggData.daily.length < 2) return 0;
     return (aggData.daily.at(-1)?.avg_valence ?? 0) - (aggData.daily.at(-2)?.avg_valence ?? 0);
@@ -713,6 +708,7 @@ export default function MentalHealthDashboard({ userId }) {
   ];
 
   const chartTitles = { daily: "Daily valence trend", weekly: "Weekly valence trend", bot: "Per-bot breakdown" };
+  const labelKey = view === "weekly" ? "week_start" : view === "bot" ? "bot_id" : "date";
 
   return (
     <div style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "system-ui,-apple-system,sans-serif", overflowX: "hidden", position: "relative", transition: "background 0.5s, color 0.5s" }}>
@@ -856,8 +852,8 @@ export default function MentalHealthDashboard({ userId }) {
         {/* ── BOT BREAKDOWN (bot view only) ── */}
         {view === "bot" && (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 10 }}>
-            {(telemetry.by_bot || []).map((bot, i) => (
-              <BotCard key={bot.bot_id} bot={bot} t={t} delay={60 + i * 60} />
+            {chartData.map((bot, i) => (
+              <BotCard key={i} bot={bot} t={t} delay={i * 80} />
             ))}
           </div>
         )}

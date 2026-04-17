@@ -4057,7 +4057,6 @@ const Dashboard = ({
       timestamp: currentTime,
     };
     setMessages((prev) => [...prev, newUserMsg]);
-    setHasConversations(true);
 
     // Smooth scrolling
     const timeoutId = setTimeout(() => {

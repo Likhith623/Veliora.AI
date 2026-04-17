@@ -40,6 +40,7 @@ async def voice_call_ultra_fast_endpoint(
             try:
                 transcript = dg_data["results"]["channels"][0]["alternatives"][0]["transcript"]
             except KeyError:
+                logger.error(f"Deepgram error: {dg_data}")
                 transcript = ""
             
             if not transcript or transcript.strip() == "":
