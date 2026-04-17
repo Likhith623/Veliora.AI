@@ -517,5 +517,20 @@ async def log_message(
     }
     if media_url:
         chat_record["media_url"] = media_url
+
+    # --- Inject activity emotion detection ---
+    if activity_type not in ("chat", "game") and user_input and user_input.strip():
+        try:
+            from emotion.text_emotion import get_text_emotion
+            from emotion.fusion import fuse_emotions
+            from emotion.session_state import set_emotion_state
+            text_emo = get_text_emotion(user_input)
+            fused = fuse_emotions(text_emotion=text_emo, speech_emotion=None)
+            fused["text_message"] = f"[{activity_type.upper()}] {user_input}"
+            set_emotion_state(redis_manager.client, user_id, bot_id, fused)
+        except Exception as e:
+            print(f"Error computing activity emotion: {e}")
+    # -----------------------------------------
+
         
     redis_manager.store_chat(user_id, bot_id, chat_id, chat_record)

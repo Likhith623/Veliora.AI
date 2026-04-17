@@ -853,7 +853,7 @@ async def start_game(
     text_emotion = await loop.run_in_executor(_emotion_executor, get_text_emotion, f"Start the game! My name is {user_name}.")
     redis_client = get_redis_manager().client
     fused_emotion = fuse_emotions(text_emotion=text_emotion, speech_emotion=None)
-    fused_emotion["text_message"] = f"Started game: {game['name']}"
+    fused_emotion["text_message"] = f"[GAME] Started: {game['name']}"
     set_emotion_state(redis_client, user_id, request.bot_id, fused_emotion)
     evaluate_dual_alert(redis_client, user_id, request.bot_id, fused_emotion, f"Started game: {game['name']}")
 
@@ -960,7 +960,7 @@ async def game_action(
     from services.redis_cache import get_redis_manager
     redis_client = get_redis_manager().client
     fused_emotion = fuse_emotions(text_emotion=text_emotion, speech_emotion=None)
-    fused_emotion["text_message"] = request.action
+    fused_emotion["text_message"] = f"[GAME] {request.action}"
     set_emotion_state(redis_client, user_id, request.bot_id, fused_emotion)
     evaluate_dual_alert(redis_client, user_id, request.bot_id, fused_emotion, request.action)
 
