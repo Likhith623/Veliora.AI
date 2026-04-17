@@ -1,0 +1,2 @@
+sed -i '' 's/const \[dark, setDark\]             = useState(true);/const { theme } = useTheme();\n  const dark = theme === "dark" || theme === undefined;/g' ./persona_frontend_main/chatbot-new-frontend/src/components/MentalHealthDashboard.jsx
+sed -i '' 's/import React, {/import { useTheme } from ".\/theme-provider";\nimport React, {/g' ./persona_frontend_main/chatbot-new-frontend/src/components/MentalHealthDashboard.jsx

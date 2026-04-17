@@ -24,7 +24,8 @@ async def get_mental_health_dashboard(user_id: str, bot_id: str = None) -> Dict[
                 "weekly": [{"week_start": "This Week", "avg_valence": 0.0}],
                 "by_bot": [],
                 "recent_emotion": "Neutral",
-                "recent_valence": 0.0
+                "recent_valence": 0.0,
+                "history": []
             }
             
         supabase = get_supabase_admin()
@@ -47,13 +48,15 @@ async def get_mental_health_dashboard(user_id: str, bot_id: str = None) -> Dict[
                 "weekly": [{"week_start": "This Week", "avg_valence": 0.0}],
                 "by_bot": [],
                 "recent_emotion": "Neutral",
-                "recent_valence": 0.0
+                "recent_valence": 0.0,
+                "history": []
             }
             
         # 2. Aggregations
         daily_map = {}
         weekly_map = {}
         bot_map = {}
+        history = []
         
         for l in logs:
             # Parse created_at
@@ -64,13 +67,23 @@ async def get_mental_health_dashboard(user_id: str, bot_id: str = None) -> Dict[
             
             b_id = l.get("bot_id", "Unknown")
             val = float(l.get("fused_valence", 0.0))
+            dom = l.get("dominant_emotion", "neutral")
+            
+            text_msg = l.get("text_message") or l.get("speech_text") or "No text content"
+            
+            history.append({
+                "timestamp": l["created_at"],
+                "bot_id": b_id,
+                "emotion": dom,
+                "valence": val,
+                "text": text_msg
+            })
             
             # Daily
             if date_str not in daily_map:
                 daily_map[date_str] = {"total_valence": 0, "count": 0, "emotions": {}}
             daily_map[date_str]["total_valence"] += val
             daily_map[date_str]["count"] += 1
-            dom = l.get("dominant_emotion", "neutral")
             daily_map[date_str]["emotions"][dom] = daily_map[date_str]["emotions"].get(dom, 0) + 1
             
             # Weekly
@@ -118,7 +131,8 @@ async def get_mental_health_dashboard(user_id: str, bot_id: str = None) -> Dict[
             "weekly": weekly_series[-4:],   # Last 4 weeks
             "by_bot": bot_series,
             "recent_emotion": logs[0].get("dominant_emotion", "neutral"),
-            "recent_valence": round(logs[0].get("fused_valence", 0.0), 2)
+            "recent_valence": round(logs[0].get("fused_valence", 0.0), 2),
+            "history": history
         }
         
     except Exception as e:

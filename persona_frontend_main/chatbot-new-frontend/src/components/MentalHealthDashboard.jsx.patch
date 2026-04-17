@@ -1,0 +1,67 @@
+--- persona_frontend_main/chatbot-new-frontend/src/components/MentalHealthDashboard.jsx
++++ persona_frontend_main/chatbot-new-frontend/src/components/MentalHealthDashboard.jsx
+@@ -588,18 +588,68 @@
+     [telemetry, selectedBot]
+   );
+ 
++  // Recalculate daily and weekly based on displayHistory
++  const aggData = useMemo(() => {
++    if (selectedBot === "all") {
++      return { daily: telemetry?.daily || [], weekly: telemetry?.weekly || [], recent_emotion: telemetry?.recent_emotion || "Neutral", recent_valence: telemetry?.recent_valence || 0 };
++    }
++    if (displayHistory.length === 0) {
++      return { daily: [], weekly: [], recent_emotion: "Neutral", recent_valence: 0 };
++    }
++    const dailyMap = {};
++    const weeklyMap = {};
++    
++    displayHistory.forEach(l => {
++      const dt = new Date(l.timestamp);
++      const dateStr = dt.toISOString().split("T")[0];
++      const day = dt.getDay(); // 0 is Sunday
++      const diff = dt.getDate() - day + (day === 0 ? -6 : 1); // adjust when day is sunday
++      const weekStart = new Date(dt.setDate(diff)).toISOString().split("T")[0];
++      
++      if (!dailyMap[dateStr]) dailyMap[dateStr] = { total: 0, count: 0 };
++      dailyMap[dateStr].total += l.valence;
++      dailyMap[dateStr].count += 1;
++      
++      if (!weeklyMap[weekStart]) weeklyMap[weekStart] = { total: 0, count: 0 };
++      weeklyMap[weekStart].total += l.valence;
++      weeklyMap[weekStart].count += 1;
++    });
++    
++    const daily = Object.keys(dailyMap).sort().map(k => ({ date: k, avg_valence: dailyMap[k].total / dailyMap[k].count })).slice(-7);
++    const weekly = Object.keys(weeklyMap).sort().map(k => ({ week_start: k, avg_valence: weeklyMap[k].total / weeklyMap[k].count })).slice(-4);
++    
++    return {
++      daily,
++      weekly,
++      recent_emotion: displayHistory[0]?.emotion || "Neutral",
++      recent_valence: displayHistory[0]?.valence || 0
++    };
++  }, [telemetry, displayHistory, selectedBot]);
++
+   const chartData = useMemo(() => {
+     if (!telemetry) return [];
+-    if (view === "weekly") return telemetry.weekly;
++    if (view === "weekly") return aggData.weekly;
+     if (view === "bot")    return telemetry.by_bot;
+-    return telemetry.daily;
+-  }, [telemetry, view]);
++    return aggData.daily;
++  }, [telemetry, view, aggData]);
+ 
+   const labelKey = view === "bot" ? "bot_id" : view === "weekly" ? "week_start" : "date";
+ 
+   const trend = useMemo(() => {
+-    if (!telemetry?.daily || telemetry.daily.length < 2) return 0;
+-    return (telemetry.daily.at(-1)?.avg_valence ?? 0) - (telemetry.daily.at(-2)?.avg_valence ?? 0);
+-  }, [telemetry]);
++    if (!aggData.daily || aggData.daily.length < 2) return 0;
++    return (aggData.daily[aggData.daily.length - 1]?.avg_valence || 0) - (aggData.daily[aggData.daily.length - 2]?.avg_valence || 0);
++  }, [aggData]);
+ 
+-  const recentPal = telemetry ? emotionPalette(norm(telemetry.recent_valence)) : emotionPalette(0.5);
++  const recentPal = emotionPalette(norm(aggData.recent_valence));
+   const recentTextColor = dark ? recentPal.text : recentPal.textLight;
