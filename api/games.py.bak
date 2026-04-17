@@ -1,5 +1,3 @@
-import asyncio
-import re
 """
 Veliora.AI — Games Routes
 Interactive text-games with personas acting as Game Masters.
@@ -664,7 +662,6 @@ def _get_game_master_prompt(game: dict, bot_id: str, turn: int, max_turns: int) 
         f"🚨 CRITICAL SYSTEM DIRECTIVE: ACTIVE {game['category'].upper()} ACTIVITY 🚨\n"
         f"You are NOW the GAME MASTER for the activity: '{game['name']}'.\n"
         f"Game Description: {game['description']}\n"
-        f"Game Setup / Topic provided by User: {game.get('topic', 'No specific topic')}\n"
         f"Current Turn: {turn} of {max_turns}\n"
         f"=======================================================\n"
         f"NEVER stray from this topic setup! You MUST stay strictly on the topic of THIS activity. "
@@ -771,7 +768,6 @@ async def start_game(
     Start a new game session. Sets game state in Redis.
     Gemini generates the opening message as Game Master.
     """
-    import asyncio
     from services.redis_cache import set_game_state, get_game_state, cache_message, has_active_session, load_session_from_supabase, get_context, clear_game_state
     from services.supabase_client import create_game_session, get_user_profile, update_game_session
     from services.llm_engine import generate_chat_response
@@ -824,8 +820,6 @@ async def start_game(
         "max_turns": game["max_turns"],
         "category": game["category"],
         "description": game["description"],
-        "topic": getattr(request, 'topic', 'No specific topic'),
-        "topic": getattr(request, "topic", "No specific topic"),
         "total_xp": 0,
     }
     await set_game_state(user_id, game_state)
@@ -842,33 +836,11 @@ async def start_game(
     gm_prompt = _get_game_master_prompt(game, request.bot_id, 1, game["max_turns"])
     bot_prompt = get_bot_prompt(request.bot_id)
 
-    loop = asyncio.get_running_loop()
-    from api.chat import _emotion_executor
-    from emotion.text_emotion import get_text_emotion
-    from emotion.fusion import fuse_emotions
-    from emotion.session_state import set_emotion_state, get_intervention_cooldown, evaluate_dual_alert
-    from services.redis_cache import get_redis_manager
-    from services.vector_search import semantic_search
-
-    text_emotion = await loop.run_in_executor(_emotion_executor, get_text_emotion, f"Start the game! My name is {user_name}.")
-    redis_client = get_redis_manager().client
-    fused_emotion = fuse_emotions(text_emotion=text_emotion, speech_emotion=None)
-    fused_emotion["text_message"] = f"Started game: {game['name']}"
-    set_emotion_state(redis_client, user_id, request.bot_id, fused_emotion)
-    evaluate_dual_alert(redis_client, user_id, request.bot_id, fused_emotion, f"Started game: {game['name']}")
-
-    semantic_memory = await semantic_search(f"Start the game! My name is {user_name}.", user_id, request.bot_id)
-
     opening = await generate_chat_response(
         system_prompt=f"{bot_prompt}\n\n{gm_prompt}",
         context=chat_context,
         user_message=f"Start the game! My name is {user_name}.",
-        game_state=game_state,
-        semantic_memory=semantic_memory,
     )
-    
-    # Strip [GAME] prefix if generated
-    opening = re.sub(r'^\s*\[GAME\]\s*', '', opening).strip()
 
     # Cache messages to Redis context so the LLM remembers
     await cache_message(user_id, request.bot_id, "user", f"Started game: {game['name']}")
@@ -913,7 +885,7 @@ async def game_action(
     from emotion.text_emotion import get_text_emotion
     from emotion.fusion import fuse_emotions
     from emotion.session_state import set_emotion_state, get_intervention_cooldown, evaluate_dual_alert
-    from services.vector_search import semantic_search
+    from services.vector_search import search_memories
     from api.chat import _emotion_executor
     from services.supabase_client import update_game_session
     from services.background_tasks import award_xp
@@ -946,8 +918,6 @@ async def game_action(
         "name": game_state["game_name"],
         "description": game_state["description"],
         "category": game_state["category"],
-        "topic": game_state.get('topic', 'No specific topic'),
-        "topic": game_state.get("topic", ""),
     }
     gm_prompt = _get_game_master_prompt(game_info, request.bot_id, current_turn, max_turns)
 
@@ -965,7 +935,7 @@ async def game_action(
     evaluate_dual_alert(redis_client, user_id, request.bot_id, fused_emotion, request.action)
 
     # ── Semantic Context ──
-    semantic_memory = await semantic_search(request.action, user_id, request.bot_id)
+    semantic_memory = await loop.run_in_executor(_emotion_executor, search_memories, user_id, request.bot_id, request.action)
 
     # Generate response
     response_text = await generate_chat_response(

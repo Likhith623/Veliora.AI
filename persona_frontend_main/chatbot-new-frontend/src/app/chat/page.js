@@ -3954,7 +3954,7 @@ const Dashboard = ({
 
       // Add response
       const activityMessage = {
-        text: data.response,
+        text: data.opening_message || data.bot_response || data.response,
         sender: "bot",
         id: `activity_${Date.now()}`,
         feedback: "",
@@ -4050,13 +4050,6 @@ const Dashboard = ({
 
     // Optimistic UI for text games
     const tempId = Date.now().toString();
-    const newUserMsg = {
-      id: tempId,
-      text: userMessage,
-      sender: "user",
-      timestamp: currentTime,
-    };
-    setMessages((prev) => [...prev, newUserMsg]);
 
     // Smooth scrolling
     const timeoutId = setTimeout(() => {
@@ -4087,7 +4080,7 @@ const Dashboard = ({
 
       // Add bot response to chat
       const botResponse = {
-        text: data.response || "...",
+        text: data.bot_response || data.response || "...",
         sender: "bot",
         id: data.session_id || `activity_${Date.now()}`,
         feedback: "",
