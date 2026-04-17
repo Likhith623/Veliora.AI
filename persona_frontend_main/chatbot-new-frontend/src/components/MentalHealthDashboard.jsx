@@ -62,8 +62,11 @@ const BASE_URL =
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const norm  = (v) => clamp((v + 1) / 2, 0, 1);
 
-const emotionPalette = (n) => {
-  if (n > 0.65) return {
+const emotionPalette = (emo) => {
+  const e = (emo || "").toLowerCase();
+  const is = (words) => words.some(w => e.includes(w));
+
+  if (is(["happy", "joy", "excit", "hope", "reliev", "glad", "laugh", "cheer"])) return {
     grad:     "linear-gradient(to top, #059669, #34d399)",
     gradH:    "linear-gradient(135deg, #059669, #34d399)",
     glow:     "rgba(52,211,153,0.38)",
@@ -72,7 +75,16 @@ const emotionPalette = (n) => {
     textLight:"#059669",
     tag:      "rgba(52,211,153,0.12)",
   };
-  if (n < 0.38) return {
+  if (is(["sad", "depress", "grief", "disappoint", "cry", "sorrow"])) return {
+    grad:     "linear-gradient(to top, #2563eb, #60a5fa)",
+    gradH:    "linear-gradient(135deg, #2563eb, #60a5fa)",
+    glow:     "rgba(96,165,250,0.38)",
+    glowLight:"rgba(37,99,235,0.20)",
+    text:     "#60a5fa",
+    textLight:"#2563eb",
+    tag:      "rgba(96,165,250,0.12)",
+  };
+  if (is(["ang", "frustrat", "annoy", "mad", "furious", "hate", "irritat"])) return {
     grad:     "linear-gradient(to top, #be123c, #f43f5e)",
     gradH:    "linear-gradient(135deg, #be123c, #f43f5e)",
     glow:     "rgba(244,63,94,0.38)",
@@ -80,6 +92,24 @@ const emotionPalette = (n) => {
     text:     "#f43f5e",
     textLight:"#be123c",
     tag:      "rgba(244,63,94,0.12)",
+  };
+  if (is(["anxi", "stress", "fear", "worr", "nervous", "panic", "tense"])) return {
+    grad:     "linear-gradient(to top, #ea580c, #fb923c)",
+    gradH:    "linear-gradient(135deg, #ea580c, #fb923c)",
+    glow:     "rgba(251,146,60,0.38)",
+    glowLight:"rgba(234,88,12,0.20)",
+    text:     "#fb923c",
+    textLight:"#ea580c",
+    tag:      "rgba(251,146,60,0.12)",
+  };
+  if (is(["calm", "content", "relax", "peace", "chill"])) return {
+    grad:     "linear-gradient(to top, #0284c7, #38bdf8)",
+    gradH:    "linear-gradient(135deg, #0284c7, #38bdf8)",
+    glow:     "rgba(56,189,248,0.38)",
+    glowLight:"rgba(2,132,199,0.20)",
+    text:     "#38bdf8",
+    textLight:"#0284c7",
+    tag:      "rgba(56,189,248,0.12)",
   };
   return {
     grad:     "linear-gradient(to top, #6d28d9, #a78bfa)",
@@ -315,7 +345,8 @@ function ValenceChart({ items, labelKey, t }) {
         {items.map((item, i) => {
           const v   = item.avg_valence ?? 0;
           const n   = norm(v);
-          const pal = emotionPalette(n);
+          const domEmo = item.dominant || item.emotion || "neutral";
+          const pal = emotionPalette(domEmo);
           // Set a minimum height of 2% so even lowest scores remain visible as a sliver
           const h   = Math.max(2, n * 100);
           const label = String(item[labelKey] ?? "").slice(-5);
@@ -339,8 +370,7 @@ function ValenceChart({ items, labelKey, t }) {
                   backdropFilter: "blur(12px)", whiteSpace: "nowrap",
                   boxShadow: "0 4px 20px rgba(0,0,0,0.25)", zIndex: 20,
                   animation: "tooltipFade 0.15s ease",
-                }}>
-                  {v >= 0 ? "+" : ""}{v.toFixed(3)}
+                }}>                  <div style={{ fontWeight: 600, marginBottom: 2, textTransform: "capitalize", color: pal.text }}>{domEmo}</div>                  {v >= 0 ? "+" : ""}{v.toFixed(3)}
                 </div>
               )}
 
@@ -424,7 +454,7 @@ function BotCard({ bot, t, delay = 0 }) {
   }, [delay]);
 
   const n = norm(bot.avg_valence);
-  const pal = emotionPalette(n);
+  const pal = emotionPalette(bot.dominant || "neutral");
   const textColor = t === LIGHT ? pal.textLight : pal.text;
 
   return (
@@ -477,7 +507,7 @@ function MessageRow({ h, t, idx }) {
   }, [idx]);
 
   const n = norm(h.valence);
-  const pal = emotionPalette(n);
+  const pal = emotionPalette(h.emotion);
   const textColor = t === LIGHT ? pal.textLight : pal.text;
 
   const ts = (() => {
@@ -659,7 +689,7 @@ export default function MentalHealthDashboard({ userId }) {
     return (aggData.daily.at(-1)?.avg_valence ?? 0) - (aggData.daily.at(-2)?.avg_valence ?? 0);
   }, [aggData]);
 
-  const recentPal = emotionPalette(norm(aggData.recent_valence));
+  const recentPal = emotionPalette(aggData.recent_emotion || "neutral");
   const recentTextColor = dark ? recentPal.text : recentPal.textLight;
 
   /* Loading */
@@ -808,7 +838,13 @@ export default function MentalHealthDashboard({ userId }) {
 
           {/* Legend */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 16, justifyContent: "center", marginTop: 18, paddingTop: 16, borderTop: `1px solid ${t.border}` }}>
-            {[{ color: "#34d399", label: "Positive (>0.65)" }, { color: "#a78bfa", label: "Neutral (0.38–0.65)" }, { color: "#f43f5e", label: "Negative (<0.38)" }].map(({ color, label }) => (
+            {[
+              { color: "#34d399", label: "Happy / Calm" }, 
+              { color: "#60a5fa", label: "Sad / Grief" },
+              { color: "#f43f5e", label: "Anger / Frustration" },
+              { color: "#fb923c", label: "Anxiety / Fear" },
+              { color: "#a78bfa", label: "Neutral" }
+            ].map(({ color, label }) => (
               <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, color: t.textMuted }}>
                 <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
                 {label}
