@@ -561,3 +561,79 @@ async def generate_text_meme(
 #         return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 #     except (KeyError, IndexError):
 #         return "A funny cartoon scene with vibrant colors"
+
+
+# ─────────────────────────────────────────────────────────────────
+# NEW: Dashboard AI Insights Generator
+# ─────────────────────────────────────────────────────────────────
+
+async def generate_dashboard_insights(telemetry_summary: dict) -> dict:
+    """
+    Feed the user's last 7-14 days of emotion telemetry to Gemini
+    and receive a structured clinical analysis with:
+      1. narrative  – plain-language summary of emotional state
+      2. prediction – likely near-term trajectory
+      3. suggestions – list of 2-3 actionable steps
+    Returns a dict with those three keys, safe for JSON serialisation.
+    """
+    settings = get_settings()
+
+    prompt = f"""You are a compassionate clinical mental-health analyst reviewing AI companion conversation data.
+
+Analyse the following emotional telemetry summary for a user and respond in STRICT JSON with exactly these keys:
+{{
+  "narrative": "<2-3 sentence plain-language description of the user's recent emotional state>",
+  "prediction": "<1 actionable sentence linking a specific time-of-day behavioral pattern to a clear, prescriptive recommendation (e.g. 'Your evenings tend to feel harder — consider shorter sessions after 8pm.')>",
+  "suggestions": ["<actionable step 1>", "<actionable step 2>", "<actionable step 3>"]
+}}
+
+Rules:
+- Be warm, non-clinical, and supportive in tone.
+- Base everything only on the data provided; do not invent facts.
+- Keep each suggestion under 12 words.
+- Output ONLY the JSON object. No markdown fences, no preamble.
+
+Telemetry summary:
+{json.dumps(telemetry_summary, indent=2)}
+"""
+
+    payload = {
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {
+            "temperature": 0.55,
+            "topP": 0.92,
+            "maxOutputTokens": 512,
+        },
+    }
+
+    url = _get_url(settings.GEMINI_MODEL)
+
+    fallback = {
+        "narrative": "Not enough data yet to generate insights. Keep chatting!",
+        "prediction": "Insights will appear after a few more sessions.",
+        "suggestions": [
+            "Continue your regular check-ins.",
+            "Try a calming conversation with a support bot.",
+            "Reflect on one positive moment from today.",
+        ],
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            response = await client.post(url, headers=_get_headers(), json=payload)
+            response.raise_for_status()
+            data = response.json()
+
+        raw_text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        # Strip accidental markdown fences
+        raw_text = raw_text.replace("```json", "").replace("```", "").strip()
+        parsed = json.loads(raw_text)
+
+        # Validate required keys
+        if all(k in parsed for k in ("narrative", "prediction", "suggestions")):
+            return parsed
+        return fallback
+
+    except Exception as e:
+        logger.error(f"Dashboard insights generation failed: {e}")
+        return fallback

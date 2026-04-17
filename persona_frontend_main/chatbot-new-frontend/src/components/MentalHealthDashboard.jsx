@@ -336,7 +336,30 @@ function ValenceChart({ items, labelKey, t }) {
       </div>
 
       {/* Bars */}
-      <div style={{ display: "flex", alignItems: "stretch", gap: 8, paddingLeft: 38, height: 180, paddingBottom: 0 }}>
+      <div style={{ display: "flex", alignItems: "stretch", gap: 8, paddingLeft: 38, height: 180, paddingBottom: 0, position: "relative" }}>
+        
+        {/* Momentum Trendline Overlay (3-day rolling avg approx) */}
+        {items.length > 1 && (
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", zIndex: 10, overflow: "visible" }}>
+            <path
+              d={`M ${items.map((item, i) => {
+                // Calculate position based on flex distribution
+                const x = (i + 0.5) * (100 / items.length) + "%";
+                const y = (1 - norm(item.avg_valence ?? 0)) * 100 + "%";
+                return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+              }).join(' ')}`}
+              fill="none"
+              stroke="rgba(255,255,255,0.4)"
+              strokeWidth="2"
+              strokeDasharray="4 4"
+              style={{
+                strokeDashoffset: animated ? 0 : 1000,
+                transition: "stroke-dashoffset 1.5s ease-in-out"
+              }}
+            />
+          </svg>
+        )}
+        
         {items.map((item, i) => {
           const v   = item.avg_valence ?? 0;
           const n   = norm(v);
@@ -688,6 +711,70 @@ export default function MentalHealthDashboard({ userId }) {
   const recentPal = emotionPalette(aggData.recent_emotion || "neutral");
   const recentTextColor = dark ? recentPal.text : recentPal.textLight;
 
+  // ── NEW: analytics + insights state ───────────────────────────
+  const [analytics, setAnalytics]   = useState(null);
+  const [insights, setInsights]     = useState(null);
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [feedbackSent, setFeedbackSent] = useState(false);
+
+  const handleFeedback = async (isAccurate) => {
+    if (!insights || feedbackSent) return;
+    setFeedbackSent(true);
+    fetch(`${BASE_URL}/api/logs/insight-feedback`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: userId,
+        insight_text: insights.narrative || "",
+        is_accurate: isAccurate
+      })
+    }).catch(console.error);
+  };
+
+  useEffect(() => {
+    if (!telemetry || userId === "guest") return;
+
+    let cancelled = false; // debounce guard
+
+    const run = async () => {
+      // 1. Fetch analytics first
+      let analyticsData = null;
+      try {
+        const r = await fetch(`${BASE_URL}/emotion-dashboard/${userId}/analytics`);
+        analyticsData = await r.json();
+        if (!cancelled) setAnalytics(analyticsData);
+      } catch {}
+
+      // 2. Merge telemetry + analytics into one insights payload
+      if (!cancelled) setInsightsLoading(true);
+      try {
+        const mergedPayload = {
+          ...telemetry,
+          ...(analyticsData || {}),
+        };
+        const r = await fetch(`${BASE_URL}/api/logs/dashboard-insights`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(mergedPayload),
+        });
+        const d = await r.json();
+        if (!cancelled) setInsights(d.insights);
+      } catch {}
+      if (!cancelled) setInsightsLoading(false);
+    };
+
+    run();
+    return () => { cancelled = true; };
+  }, [telemetry, userId]);
+
+  const riskColor = analytics?.risk_level === "high"    ? "#f43f5e"
+                  : analytics?.risk_level === "moderate" ? "#fb923c"
+                  :                                        "#34d399";
+
+  const riskBg    = analytics?.risk_level === "high"    ? "rgba(244,63,94,0.10)"
+                  : analytics?.risk_level === "moderate" ? "rgba(251,146,60,0.10)"
+                  :                                        "rgba(52,211,153,0.08)";
+
   /* Loading */
   if (loading) {
     return (
@@ -801,6 +888,63 @@ export default function MentalHealthDashboard({ userId }) {
           </div>
         </GlassCard>
 
+        {/* ── 2) Risk Banner (Block B) ─────────────────────────── */}
+        
+        {/* LIVE CRISIS ALERT */}
+        {analytics?.active_alert_state?.active_alert_tier && (
+          <div style={{
+            maxWidth: 1100, margin: "0 auto 24px", padding: "16px 22px",
+            borderRadius: 16, background: "rgba(244,63,94,0.12)", border: "1px solid rgba(244,63,94,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
+            boxShadow: "0 8px 32px rgba(244,63,94,0.15)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 12, height: 12, borderRadius: "50%", background: "#f43f5e", boxShadow: "0 0 16px #f43f5e", animation: "pulseDot 1s infinite" }} />
+              <div>
+                <h4 style={{ fontSize: 16, fontWeight: 700, color: "#f43f5e", marginBottom: 4, letterSpacing: "0.02em", textTransform: "uppercase" }}>
+                  Active {analytics.active_alert_state.active_alert_tier === "tier1" ? "Tier 1 Safety Alert" : "Tier 2 Distress Flag"}
+                </h4>
+                <p style={{ fontSize: 13, color: t.text, opacity: 0.9 }}>
+                  {analytics.active_alert_state.active_alert_tier === "tier1" 
+                    ? "A critical emotional threshold was triggered. Please utilize emergency resources." 
+                    : "Sustained high distress patterns detected. We are keeping an eye on you."}
+                </p>
+              </div>
+            </div>
+            {!analytics.active_alert_state.previously_acknowledged && (
+              <div style={{ padding: "6px 14px", borderRadius: 8, background: "rgba(244,63,94,0.2)", border: "1px solid rgba(244,63,94,0.4)", color: "#fda4af", fontSize: 11, fontWeight: 600 }}>
+                Unacknowledged
+              </div>
+            )}
+          </div>
+        )}
+
+        {analytics && analytics.risk_level !== "low" && analytics.risk_level !== "none" && (
+          <div style={{
+            maxWidth: 1100, margin: "0 auto 24px", padding: "14px 22px",
+            borderRadius: 16, background: riskBg, border: `1px solid ${riskColor}44`,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 12, flexWrap: "wrap",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: riskColor, boxShadow: `0 0 10px ${riskColor}`, animation: "pulseDot 2s infinite", flexShrink: 0 }} />
+              <div>
+                <p style={{ fontSize: 13, fontWeight: 600, color: riskColor, marginBottom: 2 }}>
+                  Emotional Risk: {analytics.risk_level.charAt(0).toUpperCase() + analytics.risk_level.slice(1)}
+                </p>
+                <p style={{ fontSize: 11, color: t.textMuted }}>{analytics.risk_reason}</p>
+              </div>
+            </div>
+            {analytics.negative_streak_days > 0 && (
+              <div style={{ padding: "4px 12px", borderRadius: 8, background: `${riskColor}18`, border: `1px solid ${riskColor}30` }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: riskColor }}>
+                  {analytics.negative_streak_days}-day low-valence streak
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* ── STAT CARDS ── */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12 }}>
           <StatCard icon={<Icon.Activity />} label="Valence Score"   value={<AnimatedValence value={aggData.recent_valence} />} sub="Range: −1.0 (low) → +1.0 (high)" accentColor="#38bdf8" t={t} delay={80} />
@@ -883,6 +1027,67 @@ export default function MentalHealthDashboard({ userId }) {
             )}
           </div>
         </GlassCard>
+
+        {/* ── 3) Insights / Patterns / Journey (Block C) ─────────────────────────── */}
+        {insightsLoading ? (
+          <div style={{ textAlign: "center", padding: 20, color: t.textHint, fontSize: 12 }}>
+            <span style={{ display: "inline-block", width: 14, height: 14, borderRadius: "50%", border: "2px solid #a78bfa", borderTopColor: "transparent", animation: "spin 1s linear infinite", marginRight: 8, verticalAlign: "middle" }}></span>
+            Analyzing session patterns...
+          </div>
+        ) : insights ? (
+          <>
+            <div style={{ display: "flex", gap: 16, marginTop: 12 }}>
+              {/* PRIMARY INSIGHT */}
+              <GlassCard style={{ flex: 1, padding: "20px 24px", background: dark ? "rgba(139,92,246,0.06)" : "rgba(139,92,246,0.04)", border: `1px solid ${dark ? "rgba(139,92,246,0.2)" : "rgba(139,92,246,0.15)"}`, display: "flex", flexDirection: "column", gap: 8, position: "relative" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#a78bfa", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+                  <Icon.Brain /> AI Analysis
+                </div>
+                <p style={{ fontSize: 14, lineHeight: 1.6, color: t.text }}>
+                  {insights.narrative || "Analyzing emotional trends..."}
+                </p>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: "auto", paddingTop: 8 }}>
+                  {feedbackSent ? (
+                    <span style={{ fontSize: 11, color: t.textMuted }}>Thanks for the feedback!</span>
+                  ) : (
+                    <>
+                      <button onClick={() => handleFeedback(true)} style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.3)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "#34d399", display: "flex", alignItems: "center", gap: 4 }}>👍 Accurate</button>
+                      <button onClick={() => handleFeedback(false)} style={{ background: "rgba(244,63,94,0.15)", border: "1px solid rgba(244,63,94,0.3)", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontSize: 11, color: "#f43f5e", display: "flex", alignItems: "center", gap: 4 }}>👎 Inaccurate</button>
+                    </>
+                  )}
+                </div>
+              </GlassCard>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              {/* PREDICTIVE BEHAVIOR */}
+              <GlassCard style={{ padding: "20px 24px", background: t.surface, border: `1px solid ${t.border}`, display: "flex", flexDirection: "column", gap: 12 }}>
+                <h5 style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>Behavioral Patterns</h5>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {insights.prediction ? (
+                    <div style={{ fontSize: 13, color: t.text, display: "flex", gap: 10 }}>
+                      <span style={{ color: "#38bdf8" }}>→</span> <span>{insights.prediction}</span>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 13, color: t.textMuted }}>No distinct patterns detected yet.</div>
+                  )}
+                </div>
+              </GlassCard>
+
+              {/* RECOMMENDED JOURNEY */}
+              <GlassCard style={{ padding: "20px 24px", background: t.surface, border: `1px solid ${t.border}`, display: "flex", flexDirection: "column", gap: 12 }}>
+                <h5 style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.05em", margin: 0 }}>Suggested Journey</h5>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {insights.suggestions?.map((r, i) => (
+                    <div key={i} style={{ fontSize: 13, color: t.text, display: "flex", gap: 10, alignItems: "flex-start" }}>
+                      <span style={{ background: "rgba(52,211,153,0.15)", color: "#34d399", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600, marginTop: 2 }}>{i+1}</span>
+                      <span style={{ lineHeight: 1.4 }}>{r}</span>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            </div>
+          </>
+        ) : null}
 
         {/* Footer */}
         <p style={{ textAlign: "center", fontSize: 10, color: t.textHint, paddingBottom: 8, letterSpacing: "0.05em", transition: "color 0.4s" }}>

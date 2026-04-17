@@ -316,6 +316,15 @@ CREATE TABLE public.gratitude_entries_realtime (
   CONSTRAINT gratitude_entries_realtime_author_id_fkey FOREIGN KEY (author_id) REFERENCES public.profiles_realtime(id),
   CONSTRAINT gratitude_entries_realtime_about_user_id_fkey FOREIGN KEY (about_user_id) REFERENCES public.profiles_realtime(id)
 );
+CREATE TABLE public.insight_feedbacks (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  insight_text text NOT NULL,
+  is_accurate boolean NOT NULL,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT insight_feedbacks_pkey PRIMARY KEY (id),
+  CONSTRAINT insight_feedbacks_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id)
+);
 CREATE TABLE public.matching_queue_realtime (
   id uuid NOT NULL DEFAULT uuid_generate_v4(),
   user_id uuid NOT NULL,

@@ -378,3 +378,22 @@ def evaluate_dual_alert(
             return result
 
     return result
+def get_active_alert_state(redis_client, user_id: str, bot_id: str) -> dict:
+    """
+    Returns the current alert state for a user-bot pair.
+    Called by the analytics endpoint to surface live crisis state to the dashboard.
+    """
+    cooldown = get_intervention_cooldown(redis_client, user_id, bot_id)
+    ts_key = f"alert_cooldown_ts:{user_id}:{bot_id}"
+    ack_key = f"crisis_acknowledged:{user_id}:{bot_id}"
+    try:
+        ts_raw = redis_client.get(ts_key)
+        triggered_at = ts_raw.decode() if isinstance(ts_raw, bytes) else ts_raw
+        was_acknowledged = redis_client.exists(ack_key)
+    except Exception:
+        triggered_at, was_acknowledged = None, False
+    return {
+        "active_alert_tier": cooldown,        # "tier1" | "tier2" | None
+        "alert_triggered_at": triggered_at,
+        "previously_acknowledged": bool(was_acknowledged),
+    }
