@@ -44,7 +44,19 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p' }
     let active = true;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const constraints = {
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+          video: {
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 30, max: 30 }
+          }
+        };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (!active) return;
         setLocalStream(stream);
         streamRef.current = stream;
@@ -191,8 +203,20 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p' }
                  const videoTrack = streamRef.current.getVideoTracks()[0];
                  const audioTrack = streamRef.current.getAudioTracks()[0];
                  
-                 if (videoTrack) await sendTransport.produce({ track: videoTrack });
-                 if (audioTrack) await sendTransport.produce({ track: audioTrack });
+                 if (videoTrack) {
+                     await sendTransport.produce({ 
+                         track: videoTrack,
+                         encodings: [
+                             { maxBitrate: 100000, scaleResolutionDownBy: 4 }, // Low Quality (e.g. 160x120)
+                             { maxBitrate: 300000, scaleResolutionDownBy: 2 }, // Medium Quality (e.g. 320x240)
+                             { maxBitrate: 900000, scaleResolutionDownBy: 1 }  // High Quality (e.g. 640x480)
+                         ],
+                         codecOptions: { videoGoogleStartBitrate: 300 }
+                     });
+                 }
+                 if (audioTrack) {
+                     await sendTransport.produce({ track: audioTrack });
+                 }
             }
         } 
         else if (!recvTransportRef.current) {

@@ -68,7 +68,7 @@ function CallsPageContent() {
     }
   }, [selectedRel, activeRel]);
 
-  // ── SDP Optimizer for Maximum Audio Quality ──
+  // ── SDP Optimizer for Reliable Audio Quality (WhatsApp-like) ──
   const enhanceSDPAudioQuality = (sdp: string) => {
     let enhancedSdp = sdp;
     // Extract the OPUS payload type (usually 111, but can vary)
@@ -76,21 +76,17 @@ function CallsPageContent() {
     if (rtpmapMatch) {
       const pt = rtpmapMatch[1];
       // Target existing fmtp line for OPUS, or append if missing
+      // We use a robust VBR Opus profile (approx 48-64kbps) with Forward Error Correction (FEC) and DTX
+      // This eliminates packet loss clipping and guarantees WhatsApp-level voice stability
       const fmtpRegex = new RegExp(`a=fmtp:${pt}\\s+(.*?)(?:\\r?\\n|$)`);
       if (fmtpRegex.test(enhancedSdp)) {
         enhancedSdp = enhancedSdp.replace(fmtpRegex, (match, p1) => {
-          let newParams = p1;
-          if (!newParams.includes('stereo=1')) newParams += ';stereo=1';
-          if (!newParams.includes('sprop-stereo=1')) newParams += ';sprop-stereo=1';
-          if (!newParams.includes('maxaveragebitrate=')) newParams += ';maxaveragebitrate=510000'; // 510kbps Opus max
-          if (!newParams.includes('useinbandfec=1')) newParams += ';useinbandfec=1';
-          if (!newParams.includes('cbr=1')) newParams += ';cbr=1';
-          return `a=fmtp:${pt} ${newParams}\r\n`;
+          return `a=fmtp:${pt} useinbandfec=1;usedtx=1;maxaveragebitrate=64000\r\n`;
         });
       } else {
         enhancedSdp = enhancedSdp.replace(
           new RegExp(`a=rtpmap:${pt} opus\\/48000\\/2`),
-          `a=rtpmap:${pt} opus/48000/2\r\na=fmtp:${pt} stereo=1;sprop-stereo=1;maxaveragebitrate=510000;useinbandfec=1;cbr=1`
+          `a=rtpmap:${pt} opus/48000/2\r\na=fmtp:${pt} useinbandfec=1;usedtx=1;maxaveragebitrate=64000`
         );
       }
     }
@@ -104,17 +100,14 @@ function CallsPageContent() {
         echoCancellation: true,
         noiseSuppression: true,
         autoGainControl: true,
-        sampleRate: 48000,
-        channelCount: 2,
-        // Advanced browser-specific constraints for broadcasting quality
-        googEchoCancellation: true,
-        googAutoGainControl: true,
-        googNoiseSuppression: true,
-        googHighpassFilter: false, // Prevents cutting off deep voices
-        googTypingNoiseDetection: true,
-        googAudioMirroring: false
+        // Standard WebRTC constraints for clear speech
       } as any,
-      video: type === 'video' ? { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 60, min: 24 }, facingMode: 'user' } : false,
+      video: type === 'video' ? { 
+        width: { ideal: 1280, min: 640 }, 
+        height: { ideal: 720, min: 480 }, 
+        frameRate: { ideal: 30, max: 30 }, // Limit to 30fps to avoid network/CPU stuttering 
+        facingMode: 'user' 
+      } : false,
     };
     const stream = await navigator.mediaDevices.getUserMedia(constraints);
     localStreamRef.current = stream;

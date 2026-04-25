@@ -33,7 +33,7 @@ module.exports = {
           mimeType: 'video/VP8',
           clockRate: 90000,
           parameters: {
-            'x-google-start-bitrate': 1000
+            'x-google-start-bitrate': 300
           }
         },
         {
@@ -42,7 +42,7 @@ module.exports = {
           clockRate: 90000,
           parameters: {
             'profile-id': 2,
-            'x-google-start-bitrate': 1000
+            'x-google-start-bitrate': 300
           }
         },
         {
@@ -53,7 +53,7 @@ module.exports = {
             'packetization-mode': 1,
             'profile-level-id': '42e01f',
             'level-asymmetry-allowed': 1,
-            'x-google-start-bitrate': 1000
+            'x-google-start-bitrate': 300
           }
         }
       ]
@@ -66,8 +66,8 @@ module.exports = {
           announcedIp: process.env.MEDIASOUP_ANNOUNCED_IP || '127.0.0.1' 
         }
       ],
-      maxIncomingBitrate: 1500000,
-      initialAvailableOutgoingBitrate: 1000000
+      maxIncomingBitrate: 2500000,
+      initialAvailableOutgoingBitrate: 600000
     }
   }
 };
