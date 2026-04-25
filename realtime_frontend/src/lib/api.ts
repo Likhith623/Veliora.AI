@@ -712,21 +712,45 @@ export const api = {
   // ═════════════════════════════════════════════════════════════
 
   // 16.1 Get My XP — GET /xp/me
-  getMyXP: () => get('/xp/me'),
+  getMyXP: () => get('/xp/me').then(res => {
+    const data = res.xp || res;
+    return {
+      user_id: data.user_id,
+      total_xp: data.current_xp ?? data.total_xp ?? 0,
+      level: Math.floor((data.current_xp ?? 0) / 100) + 1,
+      level_label: 'Level ' + (Math.floor((data.current_xp ?? 0) / 100) + 1),
+      xp_to_next_level: 100 - ((data.current_xp ?? 0) % 100),
+      streak_days: data.streak_days || 0,
+      streak_multiplier: 1.0,
+      care_score: data.care_score || 0
+    };
+  }),
 
   // 16.2 Gift XP — POST /xp/gift
   giftXP: (data: {
     recipient_id: string;
     amount: number;
     message?: string;
-    relationship_id?: string;
-  }) => post('/xp/gift', data),
+  }) => post('/xp/gift', {
+    receiver_id: data.recipient_id,
+    amount: data.amount
+  }),
 
   // 16.3 XP Leaderboard — GET /xp/leaderboard
   getXPLeaderboard: () => get('/xp/leaderboard'),
 
   // 16.4 XP Transactions — GET /xp/transactions
-  getXPTransactions: () => get('/xp/transactions'),
+  getXPTransactions: () => get('/xp/transactions').then(res => {
+    const txs = res.transactions || res;
+    return {
+      count: res.count || txs.length,
+      transactions: txs.map((tx: any) => ({
+        ...tx,
+        xp_earned: tx.transaction_type === 'gifted_out' ? -tx.amount : tx.amount,
+        action: (tx.transaction_type.replace(/_/g, ' ') + ' (' + tx.source + ')').toUpperCase()
+      }))
+    };
+  }),
 
   // 16.5 Get User XP — GET /xp/{user_id}
   getUserXP: (userId: string) => get(`/xp/${userId}`),

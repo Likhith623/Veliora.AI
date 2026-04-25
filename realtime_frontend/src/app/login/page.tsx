@@ -2,7 +2,7 @@
 
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Globe, Eye, EyeOff, ArrowRight, Shield, Heart, Sparkles, Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/AuthContext";
 import toast from "react-hot-toast";
@@ -10,7 +10,13 @@ import toast from "react-hot-toast";
 const FLOATING_FLAGS = ["🇮🇳", "🇧🇷", "🇯🇵", "🇰🇪", "🇩🇪", "🇲🇽"];
 
 export default function LoginPage() {
-  const { login } = useAuth();
+  const { login, user, isLoading } = useAuth();
+  
+  useEffect(() => {
+    if (!isLoading && user) {
+      window.location.href = "/dashboard";
+    }
+  }, [user, isLoading]);
   const [showPassword, setShowPassword] = useState(false);
   const [form, setForm] = useState({ email: "", password: "" });
   const [loading, setLoading] = useState(false);

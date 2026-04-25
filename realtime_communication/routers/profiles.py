@@ -302,7 +302,9 @@ async def get_relationships(user_id: str, current_user: str = Depends(get_option
             **rel,
             "partner": partner_data,
             "my_role": my_role,
-            "partner_role": partner_role
+            "partner_role": partner_role,
+            "shared_xp": rel.get("bond_points", 0),
+            "level_label": f"Level {rel.get('level', 1)}"
         })
     
     return {"relationships": enriched}

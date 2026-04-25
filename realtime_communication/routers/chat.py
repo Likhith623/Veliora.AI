@@ -16,7 +16,7 @@ import json
 
 from realtime_communication.models.schemas import (
     SendMessageRequest, CreatePollRequest, VotePollRequest,
-    ReactRequest, ForwardMessageRequest, GiftXPRequest
+    ReactRequest, ForwardMessageRequest, GiftXPRequest, GiftXPInChatRequest
 )
 from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.translation_service import translate_text, extract_facts_from_message, detect_language
@@ -670,34 +670,46 @@ async def forward_message(
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/gift-xp")
-async def gift_xp_in_chat(req: GiftXPRequest, current_user: str = Depends(get_current_user_id)):
+async def gift_xp_in_chat(req: GiftXPInChatRequest, current_user: str = Depends(get_current_user_id)):
     """Gift XP to chat partner. Creates a system message showing the gift."""
-    result = await gift_xp(current_user, req.receiver_id, req.amount)
+    db = get_supabase()
+    
+    # Find relationship
+    rel = db.table("relationships_realtime") \
+        .select("id, user_a_id, user_b_id") \
+        .eq("id", req.relationship_id) \
+        .eq("status", "active") \
+        .execute()
+    
+    if not rel.data:
+        raise HTTPException(status_code=404, detail="Relationship not found")
+        
+    rel_data = rel.data[0]
+    if current_user not in [rel_data["user_a_id"], rel_data["user_b_id"]]:
+        raise HTTPException(status_code=403, detail="Not your relationship")
+        
+    receiver_id = rel_data["user_b_id"] if current_user == rel_data["user_a_id"] else rel_data["user_a_id"]
+    
+    result = await gift_xp(current_user, receiver_id, req.amount)
     
     if "error" in result:
         raise HTTPException(status_code=400, detail=result["error"])
-    
-    # Find relationship
-    db = get_supabase()
-    rel = db.table("relationships_realtime") \
-        .select("id") \
-        .or_(
-            f"and(user_a_id.eq.{current_user},user_b_id.eq.{req.receiver_id}),"
-            f"and(user_a_id.eq.{req.receiver_id},user_b_id.eq.{current_user})"
-        ) \
-        .eq("status", "active") \
-        .execute()
+
     
     if rel.data:
         sender = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
         sender_name = sender.data[0]["display_name"] if sender.data else "Someone"
         
+        msg_text = f"🎁 {sender_name} gifted {req.amount} XP!"
+        if req.message:
+            msg_text += f"\n\"{req.message}\""
+            
         # Create a system message
         msg = db.table("messages_realtime_comunicatio_realtime").insert({
             "relationship_id": rel.data[0]["id"],
             "sender_id": current_user,
             "content_type": "xp_gift",
-            "original_text": f"🎁 {sender_name} gifted {req.amount} XP!",
+            "original_text": msg_text,
         }).execute()
         
         if msg.data:

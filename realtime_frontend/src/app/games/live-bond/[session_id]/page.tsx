@@ -11,7 +11,7 @@ import toast from 'react-hot-toast';
 export default function LiveBondGame() {
   const { session_id } = useParams();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, refreshUser, refreshXP, refreshRelationships } = useAuth();
   
   const [ws, setWs] = useState<ManagedWebSocket | null>(null);
   const [status, setStatus] = useState<'waiting' | 'playing' | 'round_result' | 'finished'>('waiting');
@@ -49,6 +49,9 @@ export default function LiveBondGame() {
       onGameOver: (winner, scores) => {
         setGameState((prev: any) => ({ ...prev, scores, winner, status: 'finished' }));
         setStatus('finished');
+        refreshUser();
+        refreshXP();
+        refreshRelationships();
       },
       onOpponentDisconnected: () => {
         toast.error("Your partner disconnected.");

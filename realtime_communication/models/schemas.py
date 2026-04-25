@@ -187,6 +187,12 @@ class GiftXPRequest(BaseModel):
     receiver_id: str
     amount: int = Field(gt=0)
 
+class GiftXPInChatRequest(BaseModel):
+    relationship_id: str
+    amount: int = Field(gt=0)
+    message: Optional[str] = None
+
+
 class PrivacySettingsUpdate(BaseModel):
     profile_visibility: Optional[str] = None
     show_last_active: Optional[bool] = None

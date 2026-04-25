@@ -86,9 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshNotifications();
       refreshXP();
 
-      // Supabase real-time subscription for instant push notifications
+      // Supabase real-time subscription for instant push notifications and gamification sync
       const channel = supabase
-        .channel('notifications')
+        .channel(`user_data_sync_${user.id}`)
         .on(
           'postgres_changes',
           {
@@ -99,6 +99,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           },
           (payload) => {
             setNotifications(prev => [payload.new as Notification, ...prev]);
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'profiles_realtime',
+            filter: `id=eq.${user.id}`,
+          },
+          () => {
+            refreshUser();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: 'UPDATE',
+            schema: 'public',
+            table: 'realtime_xp_realtime',
+            filter: `user_id=eq.${user.id}`,
+          },
+          () => {
+            refreshXP();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'relationships_realtime',
+            filter: `user_a_id=eq.${user.id}`,
+          },
+          () => {
+            refreshRelationships();
+          }
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'relationships_realtime',
+            filter: `user_b_id=eq.${user.id}`,
+          },
+          () => {
+            refreshRelationships();
           }
         )
         .subscribe();

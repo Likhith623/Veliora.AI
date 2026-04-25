@@ -174,7 +174,7 @@ export default function Home() {
                   PERSONA.AI
                 </button>
               </Link>
-              <Link href="/realtime">
+              <Link href="http://localhost:3000/login">
                 <button
                   className={`px-6 py-3 rounded-full text-white text-sm sm:text-base transition-all backdrop-blur-md border ${
                     theme === "dark"

@@ -170,6 +170,27 @@ async def gift_xp(sender_id: str, receiver_id: str, amount: int) -> dict:
         "amount": amount,
     }
 
+async def award_relationship_points(relationship_id: str, bond_points: int, care_score_inc: int = 1):
+    """Award bond points to a relationship and update users' total bond points and care score."""
+    db = get_supabase()
+    rel = db.table("relationships_realtime").select("bond_points, user_a_id, user_b_id").eq("id", relationship_id).execute()
+    if rel.data:
+        new_bp = rel.data[0].get("bond_points", 0) + bond_points
+        db.table("relationships_realtime").update({"bond_points": new_bp}).eq("id", relationship_id).execute()
+        
+        uid_a = rel.data[0]["user_a_id"]
+        uid_b = rel.data[0]["user_b_id"]
+        
+        for uid in [uid_a, uid_b]:
+            profile = db.table("profiles_realtime").select("total_bond_points, care_score").eq("id", uid).execute()
+            if profile.data:
+                p_data = profile.data[0]
+                db.table("profiles_realtime").update({
+                    "total_bond_points": (p_data.get("total_bond_points") or 0) + bond_points,
+                    "care_score": min(100, (p_data.get("care_score") or 0) + care_score_inc)
+                }).eq("id", uid).execute()
+        
+        await check_and_level_up(relationship_id)
 
 async def get_friend_leaderboard(user_id: str) -> list[dict]:
     """Get XP leaderboard of user's friends (active relationships)."""
@@ -207,6 +228,8 @@ async def get_friend_leaderboard(user_id: str) -> list[dict]:
             "avatar_config": prof.get("avatar_config"),
             "country": prof.get("country"),
             "current_xp": xp_data.get("current_xp", 0),
+            "total_xp": xp_data.get("current_xp", 0),
+            "level": (xp_data.get("current_xp", 0) // 100) + 1,
             "games_won": xp_data.get("games_won", 0),
             "contests_won": xp_data.get("contests_won", 0),
             "streak_days": xp_data.get("streak_days", 0),

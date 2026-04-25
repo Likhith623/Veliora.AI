@@ -43,7 +43,7 @@ const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
 export default function ChatPage() {
   const params = useParams();
   const relationshipId = params.relationshipId as string;
-  const { user } = useAuth();
+  const { user, relationships, refreshUser, refreshXP, refreshRelationships } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -87,6 +87,16 @@ export default function ChatPage() {
     };
     if (relationshipId && user) loadChat();
   }, [relationshipId, user]);
+
+  // ── Sync gamification stats from global state ──
+  useEffect(() => {
+    if (chatData && relationships.length > 0) {
+      const updatedRel = relationships.find(r => r.id === relationshipId);
+      if (updatedRel) {
+        setChatData(prev => prev ? { ...prev, ...updatedRel } : null);
+      }
+    }
+  }, [relationships, relationshipId]);
 
   // ── WebSocket connection ──
   useEffect(() => {
@@ -252,6 +262,9 @@ export default function ChatPage() {
       setShowGiftXP(false);
       setGiftAmount(50);
       setGiftMessage('');
+      refreshUser();
+      refreshXP();
+      refreshRelationships();
     } catch (err: any) {
       toast.error(err.message || 'Failed to gift XP');
     }

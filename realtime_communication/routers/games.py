@@ -6,7 +6,7 @@ from datetime import datetime
 from realtime_communication.models.schemas import StartGameRequest, GameActionRequest
 from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.auth_service import get_current_user_id
-from realtime_communication.services.xp_service import award_xp, check_and_level_up
+from realtime_communication.services.xp_service import award_xp, check_and_level_up, award_relationship_points
 from realtime_communication.services.notification_service import send_notification
 
 router = APIRouter(prefix="/games", tags=["Games"])
@@ -435,11 +435,7 @@ async def game_action(req: GameActionRequest, user_id: str = Depends(get_current
         
         # Award bond points to relationship
         if session_data.get("relationship_id"):
-            rel = db.table("relationships_realtime").select("bond_points").eq("id", session_data["relationship_id"]).execute()
-            if rel.data:
-                new_bp = rel.data[0].get("bond_points", 0) + bond_points
-                db.table("relationships_realtime").update({"bond_points": new_bp}).eq("id", session_data["relationship_id"]).execute()
-                await check_and_level_up(session_data["relationship_id"])
+            await award_relationship_points(session_data["relationship_id"], bond_points, 1)
         
         # Award XP to all players
         for player in session_data.get("players", []):

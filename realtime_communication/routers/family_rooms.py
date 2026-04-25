@@ -300,9 +300,13 @@ async def send_room_message(room_id: str, req: RoomMessageRequest, user_id: str 
     
     if message.data:
         try:
+            # Fetch profile for real-time display
+            profile = db.table("profiles_realtime").select("display_name, avatar_config, country").eq("id", user_id).execute()
+            msg_with_profile = {**message.data[0], "profiles": profile.data[0] if profile.data else None}
+            
             await manager.broadcast(room_id, {
                 "type": "new_message",
-                "message": message.data[0]
+                "message": msg_with_profile
             })
         except Exception:
             pass
@@ -644,10 +648,14 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
                 }).execute()
                 
                 if new_msg.data:
+                    # Fetch profile info for real-time display
+                    profile = db.table("profiles_realtime").select("display_name, avatar_config, country").eq("id", user_id).execute()
+                    msg_with_profile = {**new_msg.data[0], "profiles": profile.data[0] if profile.data else None}
+                    
                     # Broadcast the message
                     await manager.broadcast(room_id, {
                         "type": "new_message",
-                        "message": new_msg.data[0]
+                        "message": msg_with_profile
                     })
 
     except WebSocketDisconnect:

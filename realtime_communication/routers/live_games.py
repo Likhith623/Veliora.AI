@@ -15,7 +15,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, De
 from realtime_communication.models.schemas import CreateLiveGameRequest
 from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.auth_service import get_current_user_id
-from realtime_communication.services.xp_service import award_xp, check_and_level_up
+from realtime_communication.services.xp_service import award_xp, check_and_level_up, award_relationship_points
 from realtime_communication.services.notification_service import send_notification
 from realtime_communication.routers.presence import presence_manager
 
@@ -352,11 +352,7 @@ async def _finish_game(session_id: str, state: dict, winner: str, player_ids: li
     session = db.table("game_sessions_realtime").select("relationship_id").eq("id", session_id).execute()
     if session.data and session.data[0].get("relationship_id"):
         rel_id = session.data[0]["relationship_id"]
-        rel = db.table("relationships_realtime").select("bond_points").eq("id", rel_id).execute()
-        if rel.data:
-            new_bp = rel.data[0].get("bond_points", 0) + 5
-            db.table("relationships_realtime").update({"bond_points": new_bp}).eq("id", rel_id).execute()
-            await check_and_level_up(rel_id)
+        await award_relationship_points(rel_id, 5, 1)
     
     # Update realtime_xp game stats
     for uid in [pa_id, pb_id]:
