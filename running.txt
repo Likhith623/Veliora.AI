@@ -1,0 +1,9 @@
+for your WebRTC voice/video calls to work:
+ cd mediasoup_server && node index.js
+
+
+Start infrastructure (Redis, RabbitMQ).
+Start the Media Server (mediasoup_server).
+Start the Backend (main.py).
+Start Frontend 1 (persona_frontend).
+Start Frontend 2 (realtime_frontend).

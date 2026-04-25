@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/lib/AuthContext';
-import { createLiveGameWS, ManagedWebSocket } from '@/lib/websocket';
+import { createBondGameWS, ManagedWebSocket } from '@/lib/websocket';
 import { Loader2, Heart, Sparkles, X, Trophy } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -22,7 +22,7 @@ export default function LiveBondGame() {
   useEffect(() => {
     if (!user?.id || !session_id) return;
 
-    const socket = createLiveGameWS(session_id as string, user.id, {
+    const socket = createBondGameWS(session_id as string, user.id, {
       onWaitingForOpponent: () => setStatus('waiting'),
       onGameStart: (state) => {
         setGameState(state);
@@ -30,15 +30,17 @@ export default function LiveBondGame() {
         setMyAnswer(null);
       },
       onState: (state) => {
-        setGameState(state);
-        // If we transitioned to a new question, clear things up
-        if (state.status === 'finished') {
-          setStatus('finished');
-        } else if (status !== 'round_result') {
-          setStatus('playing');
-          // If the question advanced, clear my local answer tracking if it's no longer in state
-          if (!state.answers[user.id]) setMyAnswer(null);
-        }
+        setGameState((prev: any) => {
+          // If we transitioned to a new question, clear things up
+          if (state.status === 'finished') {
+            setStatus('finished');
+          } else if (!prev || prev.current_q !== state.current_q) {
+            setStatus('playing');
+            // If the question advanced, clear my local answer tracking if it's no longer in state
+            if (!state.answers[user.id]) setMyAnswer(null);
+          }
+          return state;
+        });
       },
       onRoundResult: (data) => {
         setRoundData(data);

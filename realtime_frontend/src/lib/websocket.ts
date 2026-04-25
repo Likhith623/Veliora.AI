@@ -393,3 +393,45 @@ export function createLiveGameWS(
     },
   }, 3);
 }
+
+export function createBondGameWS(
+  sessionId: string,
+  userId: string,
+  gameHandlers: LiveGameWSHandlers
+): ManagedWebSocket {
+  const url = `${WS_BASE}/games/ws/${sessionId}/${userId}`;
+
+  return createWsWithReconnect(url, {
+    onOpen: gameHandlers.onOpen,
+    onClose: gameHandlers.onClose,
+    onError: gameHandlers.onError,
+    onMessage: (data) => {
+      switch (data.type) {
+        case 'waiting_for_opponent':
+          gameHandlers.onWaitingForOpponent?.();
+          break;
+        case 'opponent_joined':
+          // Can optionally handle this if needed
+          break;
+        case 'game_start':
+          gameHandlers.onGameStart?.(data.state, data.is_initiator, data.players, data.game_type);
+          break;
+        case 'state':
+          gameHandlers.onState?.(data.state);
+          break;
+        case 'sync_state':
+          gameHandlers.onSyncState?.(data.state, data.sender_id);
+          break;
+        case 'round_result':
+          gameHandlers.onRoundResult?.(data);
+          break;
+        case 'game_over':
+          gameHandlers.onGameOver?.(data.winner, data.scores, data.xp_awarded);
+          break;
+        case 'opponent_disconnected':
+          gameHandlers.onOpponentDisconnected?.(data.user_id);
+          break;
+      }
+    },
+  }, 3);
+}

@@ -638,12 +638,17 @@ export default function MentalHealthDashboard({ userId }) {
 
   // Recalculate daily/weekly when we select a specific bot
   const aggData = useMemo(() => {
+    let overallValence = 0;
+    if (displayHistory && displayHistory.length > 0) {
+      overallValence = displayHistory.reduce((sum, h) => sum + (h.valence || 0), 0) / displayHistory.length;
+    }
+
     if (selectedBot === "all") {
       return { 
         daily: telemetry?.daily || [], 
         weekly: telemetry?.weekly || [], 
         recent_emotion: telemetry?.recent_emotion || "Neutral", 
-        recent_valence: telemetry?.recent_valence || 0 
+        recent_valence: overallValence 
       };
     }
     
@@ -689,7 +694,7 @@ export default function MentalHealthDashboard({ userId }) {
       daily,
       weekly,
       recent_emotion: displayHistory[0]?.emotion || "Neutral",
-      recent_valence: displayHistory[0]?.valence || 0
+      recent_valence: overallValence
     };
   }, [telemetry, displayHistory, selectedBot]);
 
