@@ -296,7 +296,7 @@ export interface PresenceWSHandlers {
   onGameInvite?: (data: { sender_id: string, sender_name: string, game_type: string, session_id: string }) => void;
   onGameInviteFailed?: (error: string) => void;
   onInviteResponse?: (data: { accept: boolean, session_id: string, responder_id: string, game_type?: string }) => void;
-  onIncomingCall?: (data: { caller_id: string, caller_name: string, call_type: string, relationship_id: string }) => void;
+  onIncomingCall?: (data: { caller_id: string, caller_name: string, call_type: string, relationship_id?: string, room_id?: string }) => void;
   onGlobalNotification?: (data: any) => void;
   onOpen?: () => void;
   onClose?: (event: CloseEvent) => void;

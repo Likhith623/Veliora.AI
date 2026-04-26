@@ -138,7 +138,7 @@ io.on('connection', (socket) => {
       // Broadcast to others
       socket.to(userRoomId).emit('newProducer', {
         producerId: producer.id,
-        peerId: socket.id,
+        peerId: peer.userId,
         kind: producer.kind
       });
 
@@ -225,13 +225,32 @@ io.on('connection', (socket) => {
         if (peer) {
           peer.transports.forEach(t => t.close());
           room.peers.delete(socket.id);
-          socket.to(userRoomId).emit('userLeft', { peerId: socket.id });
+          socket.to(userRoomId).emit('userLeft', { peerId: peer.userId });
           if (room.peers.size === 0) {
             rooms.delete(userRoomId);
           }
         }
       }
     }
+  });
+
+  socket.on('getProducers', (data, callback) => {
+    const room = rooms.get(userRoomId);
+    if (!room) return callback([]);
+    
+    const producersList = [];
+    for (const [peerId, peer] of room.peers.entries()) {
+      if (peerId !== socket.id) {
+        for (const [producerId, producer] of peer.producers.entries()) {
+          producersList.push({
+            producerId,
+            peerId: peer.userId,
+            kind: producer.kind
+          });
+        }
+      }
+    }
+    callback(producersList);
   });
 });
 

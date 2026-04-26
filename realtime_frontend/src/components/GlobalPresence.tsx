@@ -24,7 +24,8 @@ export default function GlobalPresence() {
     caller_id: string;
     caller_name: string;
     call_type: string;
-    relationship_id: string;
+    relationship_id?: string;
+    room_id?: string;
   } | null>(null);
 
   useEffect(() => {
@@ -57,7 +58,7 @@ export default function GlobalPresence() {
       },
       onIncomingCall: (data) => {
         // If already on the calls page with that relationship, ignore the global alert
-        if (window.location.pathname.includes('/calls') && window.location.search.includes(data.relationship_id)) {
+        if (data.relationship_id && window.location.pathname.includes('/calls') && window.location.search.includes(data.relationship_id)) {
           return;
         }
         setCallAlert(data);
@@ -195,7 +196,11 @@ export default function GlobalPresence() {
                 </button>
                 <button 
                   onClick={() => {
-                    router.push(`/calls?rel=${callAlert.relationship_id}&type=${callAlert.call_type}&incoming=true`);
+                    if (callAlert.room_id) {
+                      router.push(`/family-rooms?joinRoom=${callAlert.room_id}&callType=${callAlert.call_type}`);
+                    } else {
+                      router.push(`/calls?rel=${callAlert.relationship_id}&type=${callAlert.call_type}&incoming=true`);
+                    }
                     setCallAlert(null);
                   }}
                   className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs font-semibold hover:shadow-[0_0_20px_rgba(74,222,128,0.4)] transition flex items-center justify-center gap-1.5"

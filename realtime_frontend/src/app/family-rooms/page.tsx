@@ -2,7 +2,8 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
-import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import {
   ArrowLeft, Users, Globe, Heart, Plus, MessageCircle, Loader2,
   Sparkles, Crown, Send, Wifi, X, Video, Phone
@@ -54,7 +55,10 @@ const ROOM_THEMES: Record<string, { icon: string; color: string }> = {
   general: { icon: '💬', color: 'from-familia-500/20 to-bond-500/20' },
 };
 
-export default function FamilyRoomsPage() {
+function FamilyRoomsPage() {
+  const searchParams = useSearchParams();
+  const joinRoomId = searchParams.get('joinRoom');
+  const joinCallType = searchParams.get('callType');
   const { user } = useAuth();
   const [view, setView] = useState<RoomView>('list');
   const [rooms, setRooms] = useState<FamilyRoom[]>([]);
@@ -91,6 +95,17 @@ export default function FamilyRoomsPage() {
         setIsLoading(true);
         const data = await api.getRooms();
         setRooms(data.rooms || []);
+        if (joinRoomId && data.rooms) {
+          const roomToJoin = data.rooms.find((r: any) => r.id === joinRoomId);
+          if (roomToJoin) {
+            setSelectedRoom(roomToJoin);
+            setView('chat');
+            if (joinCallType) {
+              setCallType(joinCallType as 'audio' | 'video');
+              setIsCallActive(true);
+            }
+          }
+        }
       } catch (err: any) {
         console.error('Failed to load rooms:', err);
       } finally {
@@ -523,32 +538,18 @@ export default function FamilyRoomsPage() {
                  />
               )}
 
-              {/* Incoming Call Banner */}
-              {callRingData && !isCallActive && (
-                <div className="m-4 p-4 rounded-xl bg-gradient-to-r from-familia-500/20 to-bond-500/20 border border-familia-500/40 flex items-center justify-between animate-pulse shadow-[0_0_20px_rgba(236,72,153,0.3)]">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-familia-500/30 flex items-center justify-center">
-                      {callRingData.call_type === 'video' ? <Video className="w-5 h-5 text-white" /> : <Phone className="w-5 h-5 text-white" />}
-                    </div>
-                    <div>
-                      <h4 className="font-bold">Incoming Group Call</h4>
-                      <p className="text-xs text-white/80">Someone started a {callRingData.call_type} call in {selectedRoom.room_name}!</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button onClick={() => setCallRingData(null)} className="px-4 py-2 rounded-lg bg-red-500/80 hover:bg-red-500 text-white font-bold text-sm transition">Decline</button>
-                    <button onClick={() => { setCallType(callRingData.call_type); setIsCallActive(true); setCallRingData(null); }} className="px-4 py-2 rounded-lg bg-green-500/80 hover:bg-green-500 text-white font-bold text-sm transition">Join</button>
-                  </div>
-                </div>
-              )}
-              
               <div className="flex-1 overflow-y-auto space-y-4 mb-4 mt-2">
                 <div className="flex justify-end mb-2 gap-2">
-                  {!isCallActive && (
+                  {!isCallActive && !callRingData && (
                     <>
                       <button onClick={() => { setCallType('audio'); setIsCallActive(true); roomWsRef.current?.send({ type: 'start_group_call', call_type: 'audio', sender_id: user?.id }); }} className="text-xs px-3 py-1 rounded-lg bg-[var(--bg-card)] border border-themed hover:bg-[var(--bg-card-hover)] flex items-center gap-1"><Phone className="w-3 h-3" /> Audio Call</button>
                       <button onClick={() => { setCallType('video'); setIsCallActive(true); roomWsRef.current?.send({ type: 'start_group_call', call_type: 'video', sender_id: user?.id }); }} className="text-xs px-3 py-1 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 flex items-center gap-1"><Video className="w-3 h-3" /> Video Call</button>
                     </>
+                  )}
+                  {!isCallActive && callRingData && (
+                    <button onClick={() => { setCallType(callRingData.call_type); setIsCallActive(true); }} className="text-xs px-3 py-1 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 flex items-center gap-1 animate-pulse">
+                      {callRingData.call_type === 'video' ? <Video className="w-3 h-3" /> : <Phone className="w-3 h-3" />} Join Ongoing Call
+                    </button>
                   )}
                   {selectedRoom.is_moderator && (
                     <button onClick={() => openCodesModal(selectedRoom)} className="text-xs px-3 py-1 rounded-lg bg-[var(--bg-card)] border border-themed hover:bg-[var(--bg-card-hover)]">Manage Invite Codes</button>
@@ -692,5 +693,13 @@ export default function FamilyRoomsPage() {
       )}
       </div>
     </div>
+  );
+}
+
+export default function FamilyRoomsPageWrapper() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <FamilyRoomsPage />
+    </Suspense>
   );
 }

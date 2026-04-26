@@ -1,7 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Video, VideoOff, Mic, MicOff, PhoneOff, User, Loader2 } from 'lucide-react';
+import { Loader2, PhoneOff, Mic, MicOff, Video, VideoOff, User } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Device } from 'mediasoup-client';
+import { io, Socket } from 'socket.io-client';
 
 interface GroupCallProps {
   roomId: string;
@@ -13,7 +14,7 @@ interface GroupCallProps {
   callType?: 'audio' | 'video';
 }
 
-export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', callType = 'video' }: GroupCallProps) {
+export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'sfu', callType = 'video' }: GroupCallProps) {
   // --- STATE ---
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
@@ -25,9 +26,9 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const streamRef = useRef<MediaStream | null>(null);
-  
-  // Promise-based callback map for native asynchronous WebRTC negotiation over WebSockets
-  const pendingRequestsRef = useRef<Map<string, (val: any) => void>>(new Map());
+  const peerMapRef = useRef<Record<string, string>>({});
+  const sfuSocketRef = useRef<Socket | null>(null);
+  const consumeQueueRef = useRef<Promise<void>>(Promise.resolve());
   
   // Custom P2P Mesh Trackers
   const peerConnectionsRef = useRef<Record<string, RTCPeerConnection>>({});
@@ -62,9 +63,49 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
         setLocalStream(stream);
         streamRef.current = stream;
         
-        // Boot straight into P2P if mode is 'p2p'
+        // Boot straight into the active mode
         if (mode === 'p2p') {
            ws.send({ type: "call_join" }); // Tell FastAPI we are ready for P2P
+        } else if (mode === 'sfu' || mode === 'transitioning') {
+           ws.send({ type: "call_join" }); 
+           
+           // NATIVE SFU CONNECTION: Connect directly to Mediasoup Server Node.js
+           const socket = io('http://localhost:3016');
+           sfuSocketRef.current = socket;
+           
+           socket.on('connect', () => {
+             console.log("🟢 Connected to Mediasoup SFU");
+             socket.emit('joinRoom', { roomId, userId }, async (response: any) => {
+               const { rtpCapabilities } = response;
+               const device = new Device();
+               await device.load({ routerRtpCapabilities: rtpCapabilities });
+               deviceRef.current = device;
+               
+               socket.emit('createWebRtcTransport', { sender: true }, (opts: any) => handleTransportCreated(opts, true));
+               socket.emit('createWebRtcTransport', { sender: false }, (opts: any) => handleTransportCreated(opts, false));
+               
+               // Fetch existing producers already in the room
+               socket.emit('getProducers', {}, (producers: any[]) => {
+                 for (const p of producers) {
+                   consumeSFUTrack(p.producerId, p.peerId);
+                 }
+               });
+             });
+           });
+           
+           socket.on('newProducer', ({ producerId, peerId, kind }: any) => {
+             if (peerId !== socket.id) {
+                 consumeSFUTrack(producerId, peerId);
+             }
+           });
+           
+           socket.on('userLeft', ({ peerId }: any) => {
+             setRemoteStreams(prev => {
+               const next = { ...prev };
+               delete next[peerId];
+               return next;
+             });
+           });
         }
       } catch (err) {
         console.error('Failed to get local media:', err);
@@ -78,73 +119,8 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
     if (!ws) return;
     
     const handleWsMessage = async (msg: any) => {
-        // ---- CONTROL PLANE: Transition Logic ----
-        if (msg.type === "prepare_sfu_transition") {
-            console.log("🔥 Make-Before-Break: Activating SFU Transition Engine");
-            setActiveMode("transitioning");
-            // Kickstart Mediasoup Handshake
-            ws.send({ type: "sfu_get_router_rtp_capabilities" });
-        }
-        
-        // ---- MEDIA PLANE: Mediasoup SFU Signaling ----
-        else if (msg.type === "sfu_router_rtp_capabilities") {
-            const rtpCaps = msg.data.rtpCapabilities;
-            const device = new Device();
-            await device.load({ routerRtpCapabilities: rtpCaps });
-            deviceRef.current = device;
-            
-            // Ask FastAPI to provision a Send & Recv Transport on Mediasoup
-            ws.send({ type: "sfu_create_webrtc_transport", data: { producing: true, consuming: false }});
-            ws.send({ type: "sfu_create_webrtc_transport", data: { producing: false, consuming: true }});
-        }
-        
-        else if (msg.type === "sfu_webrtc_transport_created") {
-            handleTransportCreated(msg.data.transportOptions);
-        }
-        
-        else if (msg.type === "sfu_transport_connected") {
-            // Acknowledge connect
-        }
-        
-        else if (msg.type === "sfu_produced") {
-            const { transactionId } = msg;
-            console.log("SFU Track producing:", msg.data.id);
-            
-            // Resolve the Promise awaiting the true Mediasoup ID
-            if (transactionId && pendingRequestsRef.current.has(transactionId)) {
-                pendingRequestsRef.current.get(transactionId)!({ id: msg.data.id });
-                pendingRequestsRef.current.delete(transactionId);
-            }
-            
-            // If we successfully produced both audio and video, we ask for existing remote producers
-            if (activeMode === 'transitioning') {
-                ws.send({ type: "sfu_get_producers" });
-            }
-        }
-        
-        else if (msg.type === "sfu_existing_producers") {
-            // These are producers that were already in the room when we transitioned
-            const producers = msg.data.producers;
-            for (const p of producers) {
-                if (p.peerId !== userId) {
-                   consumeSFUTrack(p.producerId, p.peerId);
-                }
-            }
-        }
-        
-        else if (msg.type === "sfu_new_producer") {
-            // Dynamically consume new incoming SFU participants
-            if (msg.peerId !== userId && (activeMode === 'sfu' || activeMode === 'transitioning')) {
-                consumeSFUTrack(msg.producerId, msg.peerId);
-            }
-        }
-        
-        else if (msg.type === "sfu_consumed") {
-            handleConsumerCreated(msg);
-        }
-        
         // ---- FALLBACK MEDIA PLANE: WebRTC P2P Mesh ----
-        else if (msg.type === 'call_join' && msg.user_id !== userId && activeMode === 'p2p') {
+        if (msg.type === 'call_join' && msg.user_id !== userId && activeMode === 'p2p') {
              initiateP2PConnection(msg.user_id);
         }
         else if (msg.type === 'webrtc_offer' && msg.from_user_id !== userId && activeMode === 'p2p') {
@@ -172,38 +148,27 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
 
   // ---- SFU IMPLEMENTATION (Mediasoup Client) ----
   
-  const handleTransportCreated = async (transportOptions: any) => {
+  const handleTransportCreated = async (transportOptions: any, isSender: boolean) => {
     const device = deviceRef.current;
-    if (!device) return;
+    const socket = sfuSocketRef.current;
+    if (!device || !socket) return;
 
     try {
-        // If we haven't created Send yet
-        if (!sendTransportRef.current) {
+        if (isSender) {
             const sendTransport = device.createSendTransport(transportOptions);
             sendTransportRef.current = sendTransport;
             
             sendTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
-                ws.send({ type: "sfu_connect_transport", data: { transportId: sendTransport.id, dtlsParameters }});
-                // We fake the callback since we trust FastAPI WebSocket delivery. In prod, wait for ACK.
-                callback();
+                socket.emit('connectWebRtcTransport', { transportId: sendTransport.id, dtlsParameters }, () => callback());
             });
 
             sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback, errback) => {
-                const transactionId = Math.random().toString(36).substr(2, 9);
-                
-                // Store the callback in the queue mapping awaiting the true server response
-                pendingRequestsRef.current.set(transactionId, (responseIdData) => {
-                    callback(responseIdData);
-                });
-                
-                ws.send({ 
-                    type: "sfu_produce", 
-                    transactionId, 
-                    data: { transportId: sendTransport.id, kind, rtpParameters }
+                socket.emit('produce', { transportId: sendTransport.id, kind, rtpParameters, appData }, ({ id, error }: any) => {
+                    if (error) errback(new Error(error));
+                    else callback({ id });
                 });
             });
             
-            // Start producing automatically
             if (streamRef.current) {
                  const videoTrack = streamRef.current.getVideoTracks()[0];
                  const audioTrack = streamRef.current.getAudioTracks()[0];
@@ -224,14 +189,19 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
                  }
             }
         } 
-        else if (!recvTransportRef.current) {
+        else {
             const recvTransport = device.createRecvTransport(transportOptions);
             recvTransportRef.current = recvTransport;
             
             recvTransport.on('connect', ({ dtlsParameters }, callback, errback) => {
-                ws.send({ type: "sfu_connect_transport", data: { transportId: recvTransport.id, dtlsParameters }});
-                callback();
+                socket.emit('connectWebRtcTransport', { transportId: recvTransport.id, dtlsParameters }, () => callback());
             });
+            
+            // Drain any producers that were fetched before this transport was ready
+            if (pendingRemoteProducersRef.current.length > 0) {
+                pendingRemoteProducersRef.current.forEach(p => consumeSFUTrack(p.producerId, p.peerId));
+                pendingRemoteProducersRef.current = [];
+            }
         }
     } catch(err) {
         console.error("SFU Transport Error: ", err);
@@ -241,56 +211,54 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
   const consumeSFUTrack = async (producerId: string, peerId: string) => {
       const device = deviceRef.current;
       const recvTransport = recvTransportRef.current;
-      if (!device || !recvTransport) {
+      const socket = sfuSocketRef.current;
+      
+      if (!device || !recvTransport || !socket) {
           pendingRemoteProducersRef.current.push({ producerId, peerId, kind: 'unknown' });
           return;
       }
-      ws.send({
-          type: "sfu_consume",
-          data: {
-              transportId: recvTransport.id,
-              producerId,
-              rtpCapabilities: device.rtpCapabilities
-          }
+      
+      peerMapRef.current[producerId] = peerId;
+      
+      socket.emit('consume', {
+          producerId,
+          rtpCapabilities: device.rtpCapabilities
+      }, ({ id, kind, rtpParameters, error }: any) => {
+          if (error) return console.error(error);
+          
+          consumeQueueRef.current = consumeQueueRef.current.then(async () => {
+              try {
+                  const consumer = await recvTransport.consume({
+                     id, producerId, kind, rtpParameters
+                  });
+                  
+                  const { track } = consumer;
+                  setRemoteStreams(prev => {
+                      const newStream = prev[peerId] ? prev[peerId].clone() : new MediaStream();
+                      newStream.addTrack(track);
+                      return { ...prev, [peerId]: newStream };
+                  });
+                  
+                  socket.emit('resumeConsumer', { consumerId: id });
+                  
+                  if (activeMode === 'transitioning') {
+                      console.log("✅ SFU Stream Secured. Tearing down P2P cleanly...");
+                      tearDownP2P();
+                      setActiveMode('sfu');
+                  }
+                  
+              } catch(err) {
+                  console.error("Consumer creation failed", err);
+              }
+          }).catch(err => console.error("Consume Queue Error: ", err));
       });
-  };
-  
-  const handleConsumerCreated = async (msg: any) => {
-     const recvTransport = recvTransportRef.current;
-     if (!recvTransport) return;
-     
-     const { id, producerId, kind, rtpParameters } = msg.data;
-     try {
-         const consumer = await recvTransport.consume({
-            id, producerId, kind, rtpParameters
-         });
-         
-         const { track } = consumer;
-         // Find peerId by querying the pending lists or relying on metadata
-         // React stream mapping
-         setRemoteStreams(prev => {
-              const newStream = prev[producerId] ? prev[producerId].clone() : new MediaStream();
-              newStream.addTrack(track);
-              return { ...prev, [producerId]: newStream }; // We use producerId as proxy key for display
-         });
-         
-         // Trigger the Make-Before-Break Atomic Switch
-         if (activeMode === 'transitioning') {
-             console.log("✅ SFU Stream Secured. Tearing down P2P cleanly...");
-             tearDownP2P();
-             setActiveMode('sfu');
-         }
-         
-     } catch (err) {
-        console.error("Consumer creation failed", err);
-     }
   };
 
 
   // ---- P2P IMPLEMENTATION (Mesh) ----
   
   const ICE_SERVERS = {
-      iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'turn:127.0.0.1:3478'] }]
+      iceServers: [{ urls: ['stun:stun.l.google.com:19302'] }]
   };
 
   const initiateP2PConnection = async (remoteUserId: string) => {
@@ -406,6 +374,7 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
     tearDownP2P();
     if (sendTransportRef.current) sendTransportRef.current.close();
     if (recvTransportRef.current) recvTransportRef.current.close();
+    if (sfuSocketRef.current) sfuSocketRef.current.disconnect();
     ws.send({ type: "call_leave" });
     onLeave();
   };
@@ -414,10 +383,10 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
 
   return (
     <motion.div 
-      initial={{ height: 0, opacity: 0 }}
-      animate={{ height: 'auto', opacity: 1 }}
-      exit={{ height: 0, opacity: 0 }}
-      className="bg-[#0f111a] border-b border-themed p-4 relative z-10"
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      exit={{ opacity: 0, scale: 0.95 }}
+      className="fixed inset-0 z-[100] bg-[#0a0a0a] flex flex-col p-6 overflow-y-auto"
     >
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-sm font-semibold flex items-center gap-2">
@@ -431,9 +400,12 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className={`flex-1 ${Object.keys(remoteStreams).length === 0 ? 'flex justify-center items-center max-w-4xl mx-auto w-full' : 
+        Object.keys(remoteStreams).length === 1 ? 'grid grid-cols-1 md:grid-cols-2 gap-4 max-w-6xl mx-auto w-full' : 
+        Object.keys(remoteStreams).length === 2 ? 'grid grid-cols-2 md:grid-cols-2 gap-4 max-w-6xl mx-auto w-full' : 
+        'grid grid-cols-2 md:grid-cols-3 gap-4 max-w-7xl mx-auto w-full'}`}>
         {callType === 'video' ? (
-          <div className="relative aspect-video bg-black rounded-xl overflow-hidden shadow-lg border border-white/10 group">
+          <div className={`relative bg-black rounded-2xl overflow-hidden shadow-2xl border border-white/10 group ${Object.keys(remoteStreams).length === 0 ? 'w-full aspect-video max-h-[70vh]' : 'aspect-video w-full'} ${Object.keys(remoteStreams).length === 2 ? 'col-span-2 md:col-span-1 md:row-span-2' : ''}`}>
             <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
             <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
               <User className="w-3 h-3" /> You
@@ -448,11 +420,11 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
             </div>
           </div>
         ) : (
-          <div className="relative aspect-video bg-[#1a1d2d] rounded-xl flex flex-col items-center justify-center shadow-lg border border-white/10">
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-familia-500 to-bond-500 flex items-center justify-center shadow-lg border-4 border-[#1a1d2d]">
-              <User className="w-8 h-8 text-white opacity-80" />
+          <div className={`relative bg-[#1a1d2d] rounded-2xl flex flex-col items-center justify-center shadow-2xl border border-white/10 ${Object.keys(remoteStreams).length === 0 ? 'w-full aspect-video max-h-[70vh]' : 'aspect-video w-full'} ${Object.keys(remoteStreams).length === 2 ? 'col-span-2 md:col-span-1 md:row-span-2' : ''}`}>
+            <div className="w-24 h-24 rounded-full bg-gradient-to-br from-familia-500 to-bond-500 flex items-center justify-center shadow-2xl border-4 border-[#1a1d2d]">
+              <User className="w-10 h-10 text-white opacity-90" />
             </div>
-            <div className="mt-2 bg-black/60 backdrop-blur text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
+            <div className="mt-4 bg-black/60 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2">
               <User className="w-3 h-3" /> You
             </div>
             <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
@@ -470,7 +442,7 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
               initial={{ scale: 0.8, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
-              className="relative aspect-video bg-[#1a1d2d] rounded-xl overflow-hidden shadow-lg border border-white/5"
+              className={`relative bg-[#1a1d2d] rounded-2xl overflow-hidden shadow-2xl border border-white/5 aspect-video w-full ${Object.keys(remoteStreams).length === 2 ? 'h-full' : ''}`}
             >
               <video
                 ref={el => { if (el) remoteVideoRefs.current[pid] = el; }}
@@ -478,9 +450,20 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', 
                 playsInline
                 className="w-full h-full object-cover transform scale-x-[-1]"
               />
-              <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
-                <User className="w-3 h-3" /> {getMemberConfig(pid).display_name}
-              </div>
+              {stream.getVideoTracks().length === 0 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1a1d2d]">
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-br from-gray-700 to-gray-900 flex items-center justify-center shadow-2xl border-4 border-[#1a1d2d]">
+                    {getMemberConfig(pid).avatar_url ? (
+                      <img src={getMemberConfig(pid).avatar_url} className="w-full h-full object-cover rounded-full" />
+                    ) : (
+                      <User className="w-10 h-10 text-white opacity-80" />
+                    )}
+                  </div>
+                  <div className="mt-4 bg-black/60 backdrop-blur text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2">
+                    <User className="w-3 h-3" /> {getMemberConfig(pid).display_name || 'Member'}
+                  </div>
+                </div>
+              )}
             </motion.div>
           ))}
         </AnimatePresence>

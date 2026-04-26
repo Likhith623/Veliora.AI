@@ -12,6 +12,7 @@ import secrets
 import json
 import httpx  # Added for SFU internal communication
 import asyncio # Added for async background cleanup
+from realtime_communication.routers.presence import presence_manager
 
 router = APIRouter(prefix="/rooms", tags=["Family Rooms"])
 
@@ -525,24 +526,50 @@ async def websocket_family_room(websocket: WebSocket, room_id: str, user_id: str
                 }
                 await manager.broadcast(room_id, payload, exclude=websocket)
                 
+            elif msg_type == "start_group_call":
+                call_type = message_data.get("call_type", "video")
+                sender_id = message_data.get("sender_id", user_id)
+                await manager.broadcast(room_id, {
+                    "type": "start_group_call",
+                    "call_type": call_type,
+                    "sender_id": sender_id
+                }, exclude=websocket)
+                
+                try:
+                    db = get_supabase()
+                    room_res = db.table("family_room_members").select("user_id").eq("room_id", room_id).execute()
+                    if room_res.data:
+                        caller_prof = db.table("profiles").select("display_name").eq("id", sender_id).execute()
+                        caller_name = caller_prof.data[0].get("display_name", "Someone") if caller_prof.data else "Someone"
+                        
+                        room_data = db.table("family_rooms").select("room_name").eq("id", room_id).execute()
+                        room_name = room_data.data[0].get("room_name", "a group") if room_data.data else "a group"
+
+                        for member in room_res.data:
+                            target_id = member.get("user_id")
+                            if target_id and target_id != sender_id:
+                                await presence_manager.send_to_user(target_id, {
+                                    "type": "incoming_call",
+                                    "caller_id": sender_id,
+                                    "caller_name": f"{caller_name} (in {room_name})",
+                                    "call_type": call_type,
+                                    "room_id": room_id
+                                })
+                except Exception as e:
+                    print(f"Error broadcasting global group call: {e}")
+                
             elif msg_type == "call_join":
                 if room_id not in manager.call_participants:
                     manager.call_participants[room_id] = set()
                 manager.call_participants[room_id].add(user_id)
                 
-                # Dynamic architecture routing: Transition to SFU when 3rd user joins
-                if len(manager.call_participants[room_id]) >= 3 and manager.room_modes.get(room_id, "p2p") != "sfu":
-                    manager.room_modes[room_id] = "sfu"
-                    # Initiate the atomic switch protocol
-                    await manager.broadcast(room_id, {"type": "prepare_sfu_transition"})
-                else:
-                    if room_id not in manager.room_modes:
-                        manager.room_modes[room_id] = "p2p"
+                # Always use SFU for optimized WhatsApp-style calls with no lag
+                manager.room_modes[room_id] = "sfu"
                 
                 await manager.broadcast(room_id, {
                     "type": "call_join", 
                     "user_id": user_id,
-                    "mode": manager.room_modes.get(room_id, "p2p"),
+                    "mode": "sfu",
                     "total_participants": len(manager.call_participants[room_id])
                 }, exclude=websocket)
                 
