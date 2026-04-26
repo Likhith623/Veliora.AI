@@ -1,5 +1,5 @@
 # ============================================================
-# Familia Frontend — Next.js 15 on GCP Cloud Run
+# Veliora.AI Frontend — Next.js 15 on GCP Cloud Run
 # Multi-stage build with standalone output
 # ============================================================
 

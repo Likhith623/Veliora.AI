@@ -7,11 +7,11 @@ import BottomNav from '@/components/BottomNav';
 import GlobalPresence from '@/components/GlobalPresence';
 
 export const metadata: Metadata = {
-  title: 'Familia — Real People. Real Bonds. No Borders.',
+  title: 'Veliora.AI — Real People. Real Bonds. No Borders.',
   description: 'Connect with real people across cultures. Build meaningful relationships through AI-powered translation, bonding contests & cultural games. No bots, just genuine human connection.',
   keywords: 'cross-cultural, human connection, translation, family, mentor, global friendship, penpal, cultural exchange',
   openGraph: {
-    title: 'Familia — Real People. Real Bonds. No Borders.',
+    title: 'Veliora.AI — Real People. Real Bonds. No Borders.',
     description: 'Build a global family through real human connection. AI translates, humans bond.',
     type: 'website',
   },

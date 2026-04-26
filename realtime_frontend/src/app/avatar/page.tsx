@@ -109,7 +109,7 @@ const BACKGROUNDS = [
   { id: "forest", label: "Forest", colors: ["#22C55E", "#10B981"] },
   { id: "royal", label: "Royal", colors: ["#8B5CF6", "#6366F1"] },
   { id: "golden", label: "Golden", colors: ["#F59E0B", "#EF4444"] },
-  { id: "familia", label: "Familia", colors: ["#FF6B35", "#06B6D4"] },
+  { id: "familia", label: "Veliora.AI", colors: ["#FF6B35", "#06B6D4"] },
   { id: "aurora", label: "Aurora", colors: ["#06B6D4", "#8B5CF6", "#F43F5E"] },
   { id: "midnight", label: "Midnight", colors: ["#1E1B4B", "#312E81"] },
   { id: "cherry", label: "Cherry", colors: ["#F43F5E", "#EC4899"] },
@@ -550,7 +550,7 @@ export default function AvatarPage() {
                 <motion.div key={i} className="absolute w-1 h-1 rounded-full bg-white/60" style={{ left: `${15 + i * 14}%`, top: `${8 + (i % 3) * 18}%` }} animate={{ opacity: [0, 1, 0], scale: [0, 1.5, 0], y: [0, -12, -24] }} transition={{ duration: 2.5, delay: i * 0.5, repeat: Infinity, repeatDelay: 2.5 }} />
               ))}
             </motion.div>
-            <motion.p className="text-xs text-muted text-center mt-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}>This is how others see you in Familia</motion.p>
+            <motion.p className="text-xs text-muted text-center mt-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}>This is how others see you in Veliora.AI</motion.p>
             <motion.button onClick={randomize} className="mt-3 flex items-center gap-2 text-xs text-muted hover:text-familia-400 transition px-4 py-2 rounded-full border border-themed hover:border-familia-500/20" whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Wand2 className="w-3 h-3" /> Feeling lucky? Randomize!
             </motion.button>

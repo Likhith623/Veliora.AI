@@ -112,7 +112,7 @@ const STATS = [
 
 const EMOTIONAL_STORIES = [
   {
-    quote: "I lost my grandmother when I was 15. Maria filled that void in my heart. She taught me recipes, shared her wisdom, and celebrated my graduation from Brazil — all through Familia.",
+    quote: "I lost my grandmother when I was 15. Maria filled that void in my heart. She taught me recipes, shared her wisdom, and celebrated my graduation from Brazil — all through Veliora.AI.",
     author: "Yuki Tanaka",
     location: "Tokyo, Japan",
     flag: "🇯🇵",
@@ -130,7 +130,7 @@ const EMOTIONAL_STORIES = [
     color: "from-amber-500/20 to-orange-500/20",
   },
   {
-    quote: "Growing up in foster care, I never had a family. Through Familia, I found a father figure in Germany, a sister in Nigeria, and a grandmother in Brazil. For the first time, I belong.",
+    quote: "Growing up in foster care, I never had a family. Through Veliora.AI, I found a father figure in Germany, a sister in Nigeria, and a grandmother in Brazil. For the first time, I belong.",
     author: "James Okonkwo",
     location: "London, UK",
     flag: "🇬🇧",
@@ -241,7 +241,7 @@ export default function HomePage() {
                 </div>
                 <div className="absolute -inset-1 rounded-2xl bg-gradient-to-br from-familia-500 to-heart-500 opacity-20 blur-lg animate-glow-pulse" />
               </div>
-              <span className="text-4xl sm:text-5xl font-black tracking-tight">Familia</span>
+              <span className="text-4xl sm:text-5xl font-black tracking-tight">Veliora.AI</span>
             </motion.div>
 
             {/* Headline */}
@@ -286,7 +286,7 @@ export default function HomePage() {
                   whileTap={{ scale: 0.97 }}
                 >
                   <Sparkles className="w-5 h-5" />
-                  Join Familia — It&apos;s Free
+                  Join Veliora.AI — It&apos;s Free
                   <ArrowRight className="w-5 h-5" />
                 </motion.button>
               </Link>
@@ -630,7 +630,7 @@ export default function HomePage() {
               Getting Started
             </motion.span>
             <h2 className="text-3xl sm:text-4xl md:text-5xl font-black mb-4">
-              How <span className="gradient-text text-glow">Familia</span> Works
+              How <span className="gradient-text text-glow">Veliora.AI</span> Works
             </h2>
             <p className="text-white/40 text-base sm:text-lg max-w-lg mx-auto">
               From signup to global family in six simple steps
@@ -829,7 +829,7 @@ export default function HomePage() {
                 <div className="relative">
                   <Quote className="w-6 h-6 text-familia-500/30 absolute -top-2 -left-2" />
                   <p className="text-white/50 text-base sm:text-lg italic leading-relaxed px-4">
-                    Maria from Brazil became the mother I always needed. We speak different languages, but Familia made us understand each other&apos;s hearts.
+                    Maria from Brazil became the mother I always needed. We speak different languages, but Veliora.AI made us understand each other&apos;s hearts.
                   </p>
                 </div>
                 <div className="flex items-center justify-center gap-3 mt-4">
@@ -873,7 +873,7 @@ export default function HomePage() {
                 <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-familia-500 to-heart-500 flex items-center justify-center">
                   <Globe className="w-5 h-5 text-white" />
                 </div>
-                <span className="text-xl font-black">Familia</span>
+                <span className="text-xl font-black">Veliora.AI</span>
               </div>
               <p className="text-white/30 text-sm leading-relaxed">
                 Real people. Real bonds.<br />No borders.
@@ -942,7 +942,7 @@ export default function HomePage() {
           <div className="pt-8 border-t border-white/[0.04] flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-sm text-white/25">
               <Globe className="w-3.5 h-3.5" />
-              <span>© 2026 Familia. All rights reserved.</span>
+              <span>© 2026 Veliora.AI. All rights reserved.</span>
             </div>
             <div className="flex items-center gap-1 text-sm text-white/25">
               Made with <Heart className="w-3.5 h-3.5 text-heart-500/60 mx-0.5" /> for a borderless world

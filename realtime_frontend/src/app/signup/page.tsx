@@ -53,7 +53,7 @@ export default function SignUpPage() {
         timezone: timezone,
       });
       
-      toast.success("Welcome to Familia! 🎉");
+      toast.success("Welcome to Veliora.AI! 🎉");
       window.location.href = "/dashboard";
     } catch (err: any) {
       console.error("Signup error:", err);
@@ -89,7 +89,7 @@ export default function SignUpPage() {
             >
               <Globe className="w-5 h-5 text-white" />
             </motion.div>
-            <span className="text-2xl font-bold">Familia</span>
+            <span className="text-2xl font-bold">Veliora.AI</span>
           </Link>
           <h1 className="text-3xl font-bold mb-2">Join the Family 🌍</h1>
           <p className="text-muted">Create your account to start connecting</p>

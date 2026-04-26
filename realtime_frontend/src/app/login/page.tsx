@@ -29,7 +29,7 @@ export default function LoginPage() {
     
     try {
       await login(form.email, form.password);
-      toast.success("Welcome back to Familia!");
+      toast.success("Welcome back to Veliora.AI!");
       window.location.href = "/dashboard";
     } catch (err: any) {
       console.error(err);
@@ -100,7 +100,7 @@ export default function LoginPage() {
             >
               <Globe className="w-5 h-5 text-white" />
             </motion.div>
-            <span className="text-2xl font-bold tracking-tight">Familia</span>
+            <span className="text-2xl font-bold tracking-tight">Veliora.AI</span>
           </Link>
           <h1 className="text-3xl font-bold mb-2">Welcome Back 👋</h1>
           <p className="text-muted">Your global family is waiting for you</p>
@@ -207,7 +207,7 @@ export default function LoginPage() {
         <p className="text-center text-muted text-sm mt-6">
           Don&apos;t have an account?{" "}
           <Link href="/signup" className="text-familia-400 hover:text-familia-300 font-medium transition">
-            Join Familia
+            Join Veliora.AI
           </Link>
         </p>
       </motion.div>

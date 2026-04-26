@@ -59,7 +59,7 @@ export default function DashboardPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-center glass-card max-w-md">
           <Globe className="w-12 h-12 mx-auto mb-4 text-familia-400" />
-          <h2 className="text-xl font-bold mb-2">Welcome to Familia</h2>
+          <h2 className="text-xl font-bold mb-2">Welcome to Veliora.AI</h2>
           <p className="text-muted mb-6">Please log in to access your dashboard</p>
           <Link href="/login">
             <button className="btn-primary w-full">Log In</button>
@@ -81,7 +81,7 @@ export default function DashboardPage() {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-familia-500 to-heart-500 flex items-center justify-center">
               <Globe className="w-4 h-4 text-white" />
             </div>
-            <span className="font-bold text-lg">Familia</span>
+            <span className="font-bold text-lg">Veliora.AI</span>
           </div>
 
           <div className="flex items-center gap-2">

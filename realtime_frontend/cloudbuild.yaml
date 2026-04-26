@@ -1,5 +1,5 @@
 # ============================================================
-# Familia — Cloud Build config for frontend
+# Veliora.AI — Cloud Build config for frontend
 # Passes build args for NEXT_PUBLIC_* env vars
 # ============================================================
 
