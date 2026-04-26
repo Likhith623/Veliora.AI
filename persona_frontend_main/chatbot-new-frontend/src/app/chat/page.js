@@ -3305,16 +3305,40 @@ array, it assigns the value of `selectedTraits` to `traitsString`. */
                 selectedBotId,
               ) && (
                 <div className="mt-6 mb-6">
-                  <h1 className="text-white text-lg font-bold mb-2">Traits</h1>
-                  <div className="flex flex-wrap gap-3">
-                    {selectedTraits.map((trait, index) => (
-                      <button
-                        key={index}
-                        className="text-gray-700 dark:text-gray-200 rounded-full px-4 py-2 text-base bg-gray-100 dark:bg-gray-700"
-                      >
-                        {trait}
-                      </button>
-                    ))}
+                  <div className="flex justify-between items-center mb-2">
+                    <h1 className="text-black dark:text-white text-lg font-bold">Personality & Language</h1>
+                    <button 
+                      onClick={() => router.push('/traits')}
+                      className="text-xs bg-gray-200 dark:bg-white/20 hover:bg-gray-300 dark:hover:bg-white/30 text-black dark:text-white px-3 py-1 rounded-full transition-colors flex items-center gap-1"
+                      title="Edit Traits & Language"
+                    >
+                      ✏️ Edit
+                    </button>
+                  </div>
+                  
+                  <div className="mb-3">
+                    <p className="text-gray-600 dark:text-gray-400 text-xs mb-1 uppercase tracking-wider font-semibold">Traits</p>
+                    <div className="flex flex-wrap gap-2">
+                      {Array.isArray(selectedTraits) && selectedTraits.length > 0 ? selectedTraits.map((trait, index) => (
+                        <span
+                          key={index}
+                          className="text-gray-800 dark:text-gray-200 rounded-full px-3 py-1 text-sm bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-600 shadow-sm"
+                        >
+                          {trait}
+                        </span>
+                      )) : (
+                        <span className="text-gray-500 dark:text-gray-400 text-sm italic">Default</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-gray-600 dark:text-gray-400 text-xs mb-1 uppercase tracking-wider font-semibold">Language</p>
+                    <div className="flex flex-wrap gap-2">
+                      <span className="text-gray-800 dark:text-gray-200 rounded-full px-3 py-1 text-sm bg-blue-50 dark:bg-blue-900/40 border border-blue-200 dark:border-blue-800 shadow-sm">
+                        {selectedLanguage || "English"}
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}
