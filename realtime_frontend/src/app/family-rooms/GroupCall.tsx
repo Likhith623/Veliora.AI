@@ -160,9 +160,9 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, callType = 'vi
           setRemoteStreams(prev => {
             const existing = prev[peerId];
             if (existing) {
-              existing.addTrack(track);
-              // Force React to see this as a new reference
-              return { ...prev, [peerId]: existing };
+              const newStream = new MediaStream(existing.getTracks());
+              newStream.addTrack(track);
+              return { ...prev, [peerId]: newStream };
             } else {
               const newStream = new MediaStream();
               newStream.addTrack(track);
@@ -301,6 +301,7 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, callType = 'vi
       const vRef = remoteVideoRefs.current[id];
       if (vRef && vRef.srcObject !== stream) {
         vRef.srcObject = stream;
+        vRef.play().catch(e => console.warn('Remote video play blocked:', e));
       }
     });
   }, [remoteStreams]);
@@ -506,7 +507,7 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, callType = 'vi
         <AnimatePresence>
           {peersToDisplay.map(([pid, stream]) => {
             const memberInfo = getMemberConfig(pid);
-            const hasVideo = stream.getVideoTracks().some(t => t.enabled && !t.muted);
+            const hasVideo = stream.getVideoTracks().length > 0;
 
             return (
               <motion.div
