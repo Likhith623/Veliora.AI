@@ -3552,6 +3552,8 @@ const Dashboard = ({
   setMessages,
   isActivitiesOpen,
   setIsActivitiesOpen,
+  traits,
+  language,
 }) => {
   const { selectedBotId } = useBot();
   const { userDetails } = useUser();
@@ -4978,8 +4980,8 @@ const shouldSendWeeklyVoice = () => {
       custom_bot_name: selectedBotDetails?.name || "",
       user_name: userDetails.name || "",
       user_gender: userDetails.gender || "",
-      language: "",
-      traits: "",
+      language: language || "",
+      traits: Array.isArray(traits) ? traits.join(", ") : (traits || ""),
       previous_conversation: convertToOpenAIFormat(messages),
       email: userDetails.email || "",
       request_time: currentTime.toISOString(),

@@ -69,7 +69,7 @@ useEffect(() => {
         return prevTraits.filter((t) => t !== trait);
       }
       if (prevTraits.length >= 2) {
-        return prevTraits; // Don't add more traits if already at limit
+        return [prevTraits[1], trait]; // Replace oldest trait if already at limit
       }
       return [...prevTraits, trait];
     });

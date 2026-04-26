@@ -196,7 +196,7 @@ async def send_message(
         # ── Step 8: Generate memory-enhanced LLM response ────────────────────
         user_name = current_user.get("name", "Friend")
         result = await get_bot_response_combined(
-            redis_manager, user_id, bot_id, request.message, user_name, request.traits
+            redis_manager, user_id, bot_id, request.message, user_name, request.traits, request.language
         )
         bot_response = result["response"]
 

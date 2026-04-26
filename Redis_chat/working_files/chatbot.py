@@ -41,7 +41,7 @@ def _build_persona_context(bot_id: str, user_name: str = "Friend") -> str:
 
 async def get_bot_response_combined(
     redis_manager, user_id: str, bot_id: str, user_input: str,
-    user_name: str = "Friend", traits: str = None
+    user_name: str = "Friend", traits: str = None, language: str = "english"
 ) -> dict:
     """
     Combined RFM + Semantic memory retrieval → Generate response.
@@ -126,7 +126,9 @@ async def get_bot_response_combined(
     if traits:
         traits_block = f"\n\n**CRITICAL BEHAVIOR TRAITS APPLIED:**\nYou must fundamentally embody these EXACT traits in this response: {traits}\nAdhere perfectly to this tone without breaking character."
 
-    prompt = f"""{persona_prompt}{traits_block}{emotion_block}
+    language_block = f"\n\n**RESPONSE LANGUAGE:**\nYou must respond entirely in the {language} language."
+
+    prompt = f"""{persona_prompt}{traits_block}{language_block}{emotion_block}
 
 **Memory Context (use to personalize your response):**
 
