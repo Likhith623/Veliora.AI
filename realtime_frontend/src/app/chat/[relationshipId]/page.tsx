@@ -8,7 +8,7 @@ import {
   ArrowLeft, Send, Heart, Smile, Gamepad2, Trophy, Info,
   Sparkles, Flame, Gift, Loader2, X, CheckCheck, Phone, Video,
   Image as ImageIcon, Mic, MoreHorizontal, Reply, Forward, Trash2,
-  BarChart3
+  BarChart3, Languages
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { createChatWS, type ManagedWebSocket } from '@/lib/websocket';
@@ -227,21 +227,25 @@ export default function ChatPage() {
     const mediaType = file.type.startsWith('image/') ? 'image' as const :
                       file.type.startsWith('video/') ? 'video' as const : 'voice' as const;
 
-    try {
-      toast.loading('Uploading...', { id: 'upload' });
-      const uploadRes = await api.uploadMedia(file, relationshipId, mediaType);
-      await api.sendMessage({
-        relationship_id: relationshipId,
-        original_text: '',
-        content_type: mediaType,
-        ...(mediaType === 'image' ? { image_url: uploadRes.url } :
-            mediaType === 'video' ? { video_url: uploadRes.url } :
-            { voice_url: uploadRes.url }),
-      });
-      toast.success('Sent!', { id: 'upload' });
-    } catch (err: any) {
-      toast.error(err.message || 'Upload failed', { id: 'upload' });
-    }
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64Data = event.target?.result as string;
+      try {
+        toast.loading('Uploading...', { id: 'upload' });
+        await api.sendMessage({
+          relationship_id: relationshipId,
+          original_text: '',
+          content_type: mediaType,
+          ...(mediaType === 'image' ? { image_url: base64Data } :
+              mediaType === 'video' ? { video_url: base64Data } :
+              { voice_url: base64Data }),
+        });
+        toast.success('Sent!', { id: 'upload' });
+      } catch (err: any) {
+        toast.error(err.message || 'Upload failed', { id: 'upload' });
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   // ── React to message ──
@@ -259,6 +263,46 @@ export default function ChatPage() {
       );
     } catch (err: any) {
       toast.error('Failed to react');
+    }
+  };
+
+  // ── Translate message ──
+  const handleTranslate = async (messageId: string, text: string) => {
+    try {
+      const savedSettings = localStorage.getItem("familia_translation");
+      let prefLangName = "English";
+      if (savedSettings) {
+        prefLangName = JSON.parse(savedSettings).preferredLanguage || "English";
+      }
+      
+      const LANG_MAP: Record<string, string> = {
+        "English": "en", "Hindi": "hi", "Portuguese": "pt",
+        "Japanese": "ja", "Spanish": "es", "Korean": "ko",
+        "French": "fr", "German": "de", "Chinese": "zh",
+        "Arabic": "ar", "Russian": "ru", "Italian": "it",
+        "Tamil": "ta", "Telugu": "te", "Bengali": "bn",
+        "Turkish": "tr", "Thai": "th", "Vietnamese": "vi",
+        "Dutch": "nl", "Polish": "pl", "Swedish": "sv",
+        "Indonesian": "id", "Malay": "ms", "Swahili": "sw",
+        "Urdu": "ur", "Persian": "fa", "Hebrew": "he",
+        "Greek": "el", "Czech": "cs", "Romanian": "ro",
+      };
+      
+      const targetCode = LANG_MAP[prefLangName] || "en";
+      
+      const res = await api.translate({
+        text,
+        source_language: "",
+        target_language: targetCode
+      });
+      
+      setMessages(prev => prev.map(m => 
+        m.id === messageId 
+          ? { ...m, translated_text: res.translated_text } 
+          : m
+      ));
+    } catch (err: any) {
+      toast.error('Failed to translate');
     }
   };
 
@@ -634,6 +678,17 @@ export default function ChatPage() {
                       <div className="mt-1 mx-0.5 p-2 rounded-lg bg-purple-500/10 border border-purple-500/20 text-[11px] text-purple-300">
                         {msg.idiom_explanation}
                       </div>
+                    )}
+
+                    {/* Translate Button */}
+                    {!isMe && msg.original_text && (
+                      <button
+                        onClick={() => handleTranslate(msg.id, msg.original_text)}
+                        className="flex items-center gap-1 mt-1 mx-1 text-[10px] text-muted hover:text-familia-400 transition"
+                        title={`Translate`}
+                      >
+                        <Languages className="w-3 h-3" /> Translate
+                      </button>
                     )}
                   </div>
                 </div>

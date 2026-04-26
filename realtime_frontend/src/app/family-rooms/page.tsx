@@ -6,7 +6,7 @@ import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, useRef, Suspense } from 'react';
 import {
   ArrowLeft, Users, Globe, Heart, Plus, MessageCircle, Loader2,
-  Sparkles, Crown, Send, Wifi, X, Video, Phone
+  Sparkles, Crown, Send, Wifi, X, Video, Phone, Languages
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { createRoomWS, type ManagedWebSocket } from '@/lib/websocket';
@@ -246,6 +246,45 @@ function FamilyRoomsPage() {
       toast.error(err.message || 'Failed to create room');
     } finally {
       setIsCreating(false);
+    }
+  };
+
+  const handleTranslate = async (messageId: string, text: string) => {
+    try {
+      const savedSettings = localStorage.getItem("familia_translation");
+      let prefLangName = "English";
+      if (savedSettings) {
+        prefLangName = JSON.parse(savedSettings).preferredLanguage || "English";
+      }
+      
+      const LANG_MAP: Record<string, string> = {
+        "English": "en", "Hindi": "hi", "Portuguese": "pt",
+        "Japanese": "ja", "Spanish": "es", "Korean": "ko",
+        "French": "fr", "German": "de", "Chinese": "zh",
+        "Arabic": "ar", "Russian": "ru", "Italian": "it",
+        "Tamil": "ta", "Telugu": "te", "Bengali": "bn",
+        "Turkish": "tr", "Thai": "th", "Vietnamese": "vi",
+        "Dutch": "nl", "Polish": "pl", "Swedish": "sv",
+        "Indonesian": "id", "Malay": "ms", "Swahili": "sw",
+        "Urdu": "ur", "Persian": "fa", "Hebrew": "he",
+        "Greek": "el", "Czech": "cs", "Romanian": "ro",
+      };
+      
+      const targetCode = LANG_MAP[prefLangName] || "en";
+      
+      const res = await api.translate({
+        text,
+        source_language: "",
+        target_language: targetCode
+      });
+      
+      setMessages(prev => prev.map(m => 
+        m.id === messageId 
+          ? { ...m, translated_content: res.translated_text } 
+          : m
+      ));
+    } catch (err: any) {
+      toast.error('Failed to translate');
     }
   };
 
@@ -584,9 +623,21 @@ function FamilyRoomsPage() {
                               : 'bg-[var(--bg-card)] border border-themed rounded-bl-md'
                           }`}>
                             <p className="text-sm">{(msg as any).original_text || msg.content}</p>
+                            {msg.translated_content && (
+                              <p className="text-[12px] leading-[1.3] text-muted mt-1 italic">{msg.translated_content}</p>
+                            )}
                           </div>
-                          <div className={`text-[10px] text-muted mt-1 ${isMe ? 'text-right' : 'text-left'}`}>
-                            {formatTime(msg.created_at)}
+                          <div className={`text-[10px] text-muted mt-1 flex items-center ${isMe ? 'justify-end' : 'justify-start'} gap-2`}>
+                            <span>{formatTime(msg.created_at)}</span>
+                            {!isMe && !msg.translated_content && ((msg as any).original_text || msg.content) ? (
+                              <button
+                                onClick={() => handleTranslate(msg.id, (msg as any).original_text || msg.content)}
+                                className="flex items-center gap-1 hover:text-familia-400 transition"
+                                title="Translate"
+                              >
+                                <Languages className="w-3 h-3" /> Translate
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       </motion.div>

@@ -212,10 +212,18 @@ class CreateUserQuestionRequest(BaseModel):
 class AnswerUserQuestionRequest(BaseModel):
     answer: str
 
+class DetectRequest(BaseModel):
+    text: str
+
+class TranslateRequest(BaseModel):
+    text: str
+    source_language: Optional[str] = None
+    target_language: str = "en"
+
 class BatchTranslateRequest(BaseModel):
     texts: List[str]
-    source_lang: Optional[str] = None
-    target_lang: str = "en"
+    source_language: Optional[str] = None
+    target_language: str = "en"
 
 class ToggleShowOriginalRequest(BaseModel):
     show_original: bool

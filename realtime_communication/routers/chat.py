@@ -120,18 +120,13 @@ async def send_message(req: SendMessageRequest, current_user: str = Depends(get_
     except Exception:
         pass
     
-    # Translate
+    # Translation (Disabled automatic, only on-demand now)
     translation = {
         "translated_text": req.original_text,
         "has_idiom": False,
         "idiom_explanation": None,
         "cultural_note": None,
     }
-    if req.original_text and source_lang != target_lang:
-        try:
-            translation = await translate_text(req.original_text, source_lang, target_lang)
-        except Exception as e:
-            print(f"[Chat] Translation failed: {e}")
     
     # Extract facts
     facts = []
@@ -812,13 +807,8 @@ async def websocket_chat(websocket: WebSocket, relationship_id: str, user_id: st
                 except Exception:
                     pass
                 
-                # Translate
+                # Translation (Disabled automatic, only on-demand now)
                 translation = {"translated_text": original_text, "has_idiom": False, "idiom_explanation": None, "cultural_note": None}
-                if original_text and source_lang != target_lang:
-                    try:
-                        translation = await translate_text(original_text, source_lang, target_lang)
-                    except Exception:
-                        pass
                 
                 # Save
                 message = db.table("messages_realtime_comunicatio_realtime").insert({

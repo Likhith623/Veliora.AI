@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { api } from './api';
 import { supabase } from './supabase';
 import toast from 'react-hot-toast';
@@ -67,7 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [xp, setXP] = useState<XPInfo | null>(null);
   const [nicknames, setNicknamesState] = useState<Record<string, string>>({});
 
-  const setNickname = (userId: string, nickname: string) => {
+  const setNickname = useCallback((userId: string, nickname: string) => {
     if (nickname.trim()) {
       localStorage.setItem(`nickname_${userId}`, nickname.trim());
       setNicknamesState(prev => ({ ...prev, [userId]: nickname.trim() }));
@@ -79,7 +79,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return next;
       });
     }
-  };
+  }, []);
 
   useEffect(() => {
     const loaded: Record<string, string> = {};

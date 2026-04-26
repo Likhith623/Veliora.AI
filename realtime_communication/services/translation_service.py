@@ -97,16 +97,24 @@ async def _translate_with_google(text: str, source_lang: str, target_lang: str) 
     if not api_key: return f"[Translation Server Error] {text}"
 
     try:
+        data = {"q": text, "target": target_lang, "format": "text"}
+        if source_lang and source_lang != "und":
+            data["source"] = source_lang
+            
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                GOOGLE_TRANSLATE_URL, params={"key": api_key},
-                json={"q": text, "source": source_lang, "target": target_lang, "format": "text"}, timeout=15
+                GOOGLE_TRANSLATE_URL, 
+                params={"key": api_key},
+                data=data, 
+                timeout=15
             )
             if resp.status_code == 200:
                 translations = resp.json().get("data", {}).get("translations", [])
                 if translations: return translations[0].get("translatedText", text)
-    except Exception:
-        pass
+            else:
+                print(f"[Google Translate Error] Status: {resp.status_code}, Body: {resp.text}")
+    except Exception as e:
+        print(f"[Google Translate Exception] {e}")
     return text
 
 async def _batch_translate_google(texts: List[str], source_lang: str, target_lang: str) -> List[str]:
@@ -115,25 +123,45 @@ async def _batch_translate_google(texts: List[str], source_lang: str, target_lan
     if not api_key: return texts
 
     try:
+        data = [("target", target_lang), ("format", "text")]
+        if source_lang and source_lang != "und":
+            data.append(("source", source_lang))
+        for t in texts:
+            data.append(("q", t))
+            
         async with httpx.AsyncClient() as client:
             resp = await client.post(
-                GOOGLE_TRANSLATE_URL, params={"key": api_key},
-                json={"q": texts, "source": source_lang, "target": target_lang, "format": "text"}, timeout=20
+                GOOGLE_TRANSLATE_URL, 
+                params={"key": api_key},
+                data=data, 
+                timeout=20
             )
             if resp.status_code == 200:
                 translations = resp.json().get("data", {}).get("translations", [])
                 return [t.get("translatedText", orig) for t, orig in zip(translations, texts)]
-    except Exception:
-        pass
+            else:
+                print(f"[Google Batch Translate Error] Status: {resp.status_code}, Body: {resp.text}")
+    except Exception as e:
+        print(f"[Google Batch Translate Exception] {e}")
     return texts
+
+def _normalize_for_google(lang: str) -> str:
+    """Normalize codes like 'te-Latn' to 'te' for Google Translate V2 compatibility."""
+    if not lang: return lang
+    if "-" in lang:
+        # Keep common variants like pt-BR, zh-CN, but strip script variants like -Latn
+        if lang.endswith("-Latn") or lang.endswith("-Hans") or lang.endswith("-Hant"):
+            return lang.split("-")[0]
+    return lang
 
 async def translate_text(text: str, source_lang: str, target_lang: str) -> dict:
     """Translates text and synchronously fetches nuanced cultural context."""
     if not text.strip() or source_lang == target_lang:
         return {"translated_text": text, "has_idiom": False, "idiom_explanation": None, "cultural_note": None}
 
-    # Parallel Execution context could be added, but async is fine here
-    translated = await _translate_with_google(text, source_lang, target_lang)
+    # Normalize source for Google but keep original for Gemini context
+    google_src = _normalize_for_google(source_lang)
+    translated = await _translate_with_google(text, google_src, target_lang)
     context = await _get_cultural_context_gemini(text, source_lang, target_lang)
 
     return {
@@ -148,7 +176,8 @@ async def batch_translate(texts: List[str], source_lang: str, target_lang: str) 
     if not texts or source_lang == target_lang:
         return [{"translated_text": txt, "has_idiom": False} for txt in texts]
 
-    translated_list = await _batch_translate_google(texts, source_lang, target_lang)
+    google_src = _normalize_for_google(source_lang)
+    translated_list = await _batch_translate_google(texts, google_src, target_lang)
     
     return [
         {"original_text": orig, "translated_text": trans, "has_idiom": False} 
