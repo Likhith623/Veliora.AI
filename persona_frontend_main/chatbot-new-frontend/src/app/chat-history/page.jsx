@@ -738,7 +738,7 @@ const History = () => {
   return (
     <>
       <Head>
-        <title>Culturevo | Chat History – NOVI Remembers You</title>
+        <title>Veliora | Chat History – VELIORA Remembers You</title>
         <meta
           name="description"
           content="Experience an AI that remembers past chats and an AI that remembers convos, built for people who want an AI friend that gets me. This AI best friend you can vibe with is also an AI companion with memory and the ultimate AI bestie app."
@@ -749,11 +749,11 @@ const History = () => {
         />
         <meta
           property="og:title"
-          content="Chat History – NOVI Remembers You | Culturevo"
+          content="Chat History – VELIORA Remembers You | Veliora"
         />
         <meta
           property="og:description"
-          content="Relive previous conversations with NOVI—your AI companion that builds memory over time for personalized support."
+          content="Relive previous conversations with VELIORA—your AI companion that builds memory over time for personalized support."
         />
         <meta
           property="og:url"
@@ -775,7 +775,7 @@ const History = () => {
         <div className="container mx-auto px-4 py-5 relative">
           <div>
             <h1 className="text-2xl md:text-4xl font-bold text-gray-700 dark:text-white text-center">
-              NOVI AI
+              VELIORA AI
             </h1>
             <div className="flex items-center justify-between mb-4 mt-8 md:mt-3">
               <div>

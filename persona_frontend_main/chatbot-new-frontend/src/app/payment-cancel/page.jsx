@@ -3,7 +3,7 @@ export default function PaymentCancel() {
   return (
     <>
       <Head>
-        <title>Culturevo | Payment Canceled – NOVI Still Here</title>
+        <title>Veliora | Payment Canceled – VELIORA Still Here</title>
         <meta
           name="description"
           content="Your payment has been canceled, but your AI chatbot companion is still waiting. Return to your digital companion and virtual AI friend. We provide the best AI companion for loneliness and a personal AI assistant who remembers you."
@@ -14,11 +14,11 @@ export default function PaymentCancel() {
         />
         <meta
           property="og:title"
-          content="Payment Canceled – NOVI Still Here | Culturevo"
+          content="Payment Canceled – VELIORA Still Here | Veliora"
         />
         <meta
           property="og:description"
-          content="Even if payment failed, your NOVI companion remains—ready to reconnect and support you whenever you're ready."
+          content="Even if payment failed, your VELIORA companion remains—ready to reconnect and support you whenever you're ready."
         />
         <meta
           property="og:url"

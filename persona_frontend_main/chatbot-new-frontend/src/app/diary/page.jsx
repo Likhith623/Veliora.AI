@@ -32,7 +32,7 @@ function Diary() {
             <IconLoader size={16} className="text-white" /> Please wait until the bot processes your diary...
         </span>)
         try {
-            // Use adapter for saving notes manually (falls back to culturevo as new backend handles diary auto)
+            // Use adapter for saving notes manually (falls back to veliora as new backend handles diary auto)
             const data = await diaryAddNote(userDetails.email, selectedBotId, text);
             console.log(data);
             setStatus(<span className='flex flex-row gap-2 items-center text-green-400'>
@@ -48,7 +48,7 @@ function Diary() {
     return (
       <>
         <Head>
-          <title>Culturevo | NOVI Diary – Emotional Support AI</title>
+          <title>Veliora | VELIORA Diary – Emotional Support AI</title>
           <meta
             name="description"
             content="Use your AI companion for venting in moments of stress and loneliness. This virtual friend for lonely nights is a cute AI chat app and offers emotional support AI for teens. It’s also a great AI for social anxiety and an AI friend for depression/anxiety."
@@ -59,11 +59,11 @@ function Diary() {
           />
           <meta
             property="og:title"
-            content="NOVI Diary – Emotional Support AI | Culturevo"
+            content="VELIORA Diary – Emotional Support AI | Veliora"
           />
           <meta
             property="og:description"
-            content="Write with NOVI as your digital diary and emotional support chatbot—supportive, safe, and always listening."
+            content="Write with VELIORA as your digital diary and emotional support chatbot—supportive, safe, and always listening."
           />
           <meta property="og:url" content="http://localhost:3000/diary" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />

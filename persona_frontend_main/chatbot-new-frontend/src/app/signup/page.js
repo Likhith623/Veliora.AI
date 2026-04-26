@@ -17,7 +17,7 @@ const SignPage = () => {
   return (
     <>
       <Head>
-        <title>Culturevo | Sign Up – Meet NOVI Your AI Friend</title>
+        <title>Veliora | Sign Up – Meet VELIORA Your AI Friend</title>
         <meta
           name="description"
           content="Sign up for a customizable AI chatbot experience and build a personal AI assistant. Our platform is an AI friend for seniors, AI friends for kids, and even an AI friend for gamers — made for everyone."
@@ -28,11 +28,11 @@ const SignPage = () => {
         />
         <meta
           property="og:title"
-          content="Sign Up – Meet NOVI Your AI Friend | Culturevo"
+          content="Sign Up – Meet VELIORA Your AI Friend | Veliora"
         />
         <meta
           property="og:description"
-          content="Register to start your personalized journey with NOVI—versatile companionship for every age."
+          content="Register to start your personalized journey with VELIORA—versatile companionship for every age."
         />
         <meta property="og:url" content="http://localhost:3000/signup" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

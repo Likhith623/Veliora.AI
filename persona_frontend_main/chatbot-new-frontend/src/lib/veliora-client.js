@@ -159,7 +159,7 @@ export function authGetXP() {
 /**
  * Send a chat message to the new backend.
  *
- * Old payload shape (api.culturevo.com/cv/chat):
+ * Old payload shape (api.veliora.com/cv/chat):
  *   { message, bot_id, custom_bot_name, user_name, user_gender, language, traits,
  *     previous_conversation, email, request_time, platform }
  *
@@ -205,7 +205,7 @@ export async function chatSend(botId, message, options = {}) {
 /**
  * Fetch chat history for a bot.
  *
- * Old: POST api.culturevo.com/sync  →  { response: [ { id, text, sender, timestamp, ... } ] }
+ * Old: POST api.veliora.com/sync  →  { response: [ { id, text, sender, timestamp, ... } ] }
  * New: POST /api/chat/history       →  { messages: [ { id, role, content, bot_id, created_at } ], total, page }
  *
  * ADAPTER: Converts `role/content/created_at` → `sender/text/timestamp` so the
@@ -290,7 +290,7 @@ export async function chatGetOverview() {
  * Signal end of chat session — syncs Redis → Supabase.
  * MUST be called on page unload / bot change.
  *
- * Old: navigator.sendBeacon("https://api.culturevo.com/end-chat", blob)
+ * Old: navigator.sendBeacon("https://api.veliora.com/end-chat", blob)
  * New: POST /api/chat/end-chat  { bot_id, message: "", language: "english" }
  */
 export function chatEndSession(botId) {
@@ -353,7 +353,7 @@ export async function chatForgetFriend(botId) {
 /**
  * Generate a TTS audio URL for a text message.
  *
- * Old: POST api.culturevo.com/generate-audio
+ * Old: POST api.veliora.com/generate-audio
  *      body: { transcript, bot_id, output_format: { container, encoding, sample_rate } }
  *      response: { audio_base64 }
  *
@@ -382,7 +382,7 @@ export async function voiceGenerateNote(botId, text, language = "english") {
 
 /**
  * Returns the WebSocket URL for a real-time voice call.
- * Old: wss://api.culturevo.com/voice-call-ultra-fast (REST POST with FormData)
+ * Old: wss://api.veliora.com/voice-call-ultra-fast (REST POST with FormData)
  * New: ws://localhost:8000/api/voice/call?token=<JWT>&bot_id=<BOT_ID>
  */
 export function voiceGetCallUrl(botId) {
@@ -399,7 +399,7 @@ export function voiceGetCallUrl(botId) {
  * Generate a persona selfie.
  *
  * Old: two-step:
- *   1. GET  api.culturevo.com/get-last-bot-responses-string/:email/:botId
+ *   1. GET  api.veliora.com/get-last-bot-responses-string/:email/:botId
  *   2. POST https://fastapi-imagegen-2l5aaarlka-uc.a.run.app/v1/generate_image
  *      body: { bot_id, message, email, previous_conversation, username }
  *      response: { image_url, image_base64, emotion_context }
@@ -599,7 +599,7 @@ export function gameEnd(botId, sessionId) {
 /**
  * Get the persona's diary for a user.
  *
- * Old: GET api.culturevo.com/get-summaries/:email/:botId
+ * Old: GET api.veliora.com/get-summaries/:email/:botId
  *      response: { summaries: [ { summary_date, generated_summary } ] }
  *
  * New: GET /api/diary/{bot_id}?limit=30
@@ -633,7 +633,7 @@ export async function diaryAddNote(_email, botId, text) {
 
 /**
  * Delete a diary entry.
- * Old: DELETE api.culturevo.com/delete-summary  body: { email, bot_id, summary_date }
+ * Old: DELETE api.veliora.com/delete-summary  body: { email, bot_id, summary_date }
  * New backend has no direct delete-diary endpoint; this is a no-op placeholder
  * that silently succeeds so the UI doesn't break.
  */
@@ -650,12 +650,12 @@ export async function diaryDeleteEntry(_botId, _summaryDate) {
 
 /**
  * Fetch persona memories.
- * Old: GET api.culturevo.com/get_persona?email=...&bot_id=...
+ * Old: GET api.veliora.com/get_persona?email=...&bot_id=...
  *      response: [ { id, memory, category, relation_id, created_at } ]
  *
  * New backend doesn't expose a direct persona-memories CRUD endpoint in the
  * integration spec. We keep the OLD endpoint call here so Memories.jsx
- * continues to work — these older calls to api.culturevo.com for memories
+ * continues to work — these older calls to api.veliora.com for memories
  * remain unchanged (they aren't covered by the integration spec migration).
  *
  * For now, this is a transparent pass-through to the old endpoint.
@@ -705,7 +705,7 @@ export async function memoriesExtract(botId, userName, userMessage, botResponse)
 /**
  * Get XP for the current user on a specific bot.
  *
- * Old: GET api.culturevo.com/user-xp-current/:email/:botId
+ * Old: GET api.veliora.com/user-xp-current/:email/:botId
  *      response: { success, current_total_xp, magnitude }
  *
  * New: GET /api/auth/xp

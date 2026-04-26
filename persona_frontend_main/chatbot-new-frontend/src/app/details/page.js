@@ -26,7 +26,7 @@ const MainComponent = () => {
   return (
     <>
       <Head>
-        <title>Culturevo | Customize NOVI – Your AI Partner</title>
+        <title>Veliora | Customize VELIORA – Your AI Partner</title>
         <meta
           name="description"
           content="Create a customizable AI chatbot that adapts to your needs. Select an AI with personality traits and customize your AI’s personality to build an AI BFF with moods and drama. Our AI companion with voice & face also acts as a choose-your-story AI bestie."
@@ -37,11 +37,11 @@ const MainComponent = () => {
         />
         <meta
           property="og:title"
-          content="Customize NOVI – Your AI Partner | Culturevo"
+          content="Customize VELIORA – Your AI Partner | Veliora"
         />
         <meta
           property="og:description"
-          content="Personalize NOVI’s voice, mood, and personality to build the perfect virtual friend tailored to you."
+          content="Personalize VELIORA’s voice, mood, and personality to build the perfect virtual friend tailored to you."
         />
         <meta property="og:url" content="http://localhost:3000/details" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

@@ -403,6 +403,24 @@ async def create_game_session(
     return result.data[0] if result.data else {}
 
 
+async def get_active_game_session(user_id: str, bot_id: str) -> dict:
+    """Get the active game session for a user-bot pair."""
+    client = get_supabase_admin()
+    def _fetch():
+        return (
+            client.table("user_game_sessions")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("bot_id", bot_id)
+            .eq("status", "active")
+            .order("created_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+    import asyncio
+    result = await asyncio.to_thread(_fetch)
+    return result.data[0] if result.data else None
+
 async def update_game_session(session_id: str, updates: dict) -> dict:
     """Update a game session (turn count, status, xp)."""
     client = get_supabase_admin()

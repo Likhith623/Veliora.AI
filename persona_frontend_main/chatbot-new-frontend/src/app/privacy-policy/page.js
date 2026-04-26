@@ -7,7 +7,7 @@ const Privacy_Policy = () => {
   return (
     <>
       <Head>
-        <title>Culturevo | Privacy Policy – NOVI Data Protection</title>
+        <title>Veliora | Privacy Policy – VELIORA Data Protection</title>
         <meta
           name="description"
           content="Our privacy policy ensures your data is safe while using our AI companion app. Your emotional AI support chatbot and virtual partner AI provide a realistic AI friend experience through secure, personal conversations."
@@ -18,11 +18,11 @@ const Privacy_Policy = () => {
         />
         <meta
           property="og:title"
-          content="Privacy Policy – NOVI Data Protection | Culturevo"
+          content="Privacy Policy – VELIORA Data Protection | Veliora"
         />
         <meta
           property="og:description"
-          content="We’re serious about your privacy—your conversations with NOVI are protected, personalized, and secure."
+          content="We’re serious about your privacy—your conversations with VELIORA are protected, personalized, and secure."
         />
         <meta
           property="og:url"

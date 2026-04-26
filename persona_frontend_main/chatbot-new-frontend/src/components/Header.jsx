@@ -72,7 +72,7 @@ export default function Header() {
               theme === "dark" ? "text-gray-300" : "text-black/50"
             }`}
           >
-            CultureVo
+            Veliora
           </Link>
         </div>
 
@@ -80,16 +80,7 @@ export default function Header() {
         <div className="text-xl hidden sm:flex justify-end gap-8">
           <NavLink href="/chat">Chat</NavLink>
           <NavLink href="/dashboard">Mental Health</NavLink>
-          <NavLink href="/join-us">Join Us</NavLink>
           <NavLink href="/about">About</NavLink>
-          <NavLink href='#'>Blogs</NavLink>
-          <NavLink
-            href="https://discord.com/invite/mNmwYdmsPz"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Discord
-          </NavLink>
         </div>
 
         {/* Mobile Menu Button */}
@@ -125,7 +116,6 @@ export default function Header() {
             <div className="flex flex-col gap-4">
               <NavLink href="/chat">Chat</NavLink>
               <NavLink href="/dashboard">Mental Health Dashboard</NavLink>
-              <NavLink href="/join-us">Join Us</NavLink>
               <NavLink href="/about">About</NavLink>
             </div>
           </div>

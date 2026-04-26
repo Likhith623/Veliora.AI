@@ -52,7 +52,7 @@ export default function ResetPassword() {
   return (
     <>
       <Head>
-        <title>Culturevo | Reset Password – Reconnect with NOVI</title>
+        <title>Veliora | Reset Password – Reconnect with VELIORA</title>
         <meta
           name="description"
           content="Reset your password to reconnect with your voice-enabled AI companion and AI best friend you can vibe with. This AI bestie for late-night overthinking is also a Gen Z AI chatbot and an emotional support AI ready for real convos."
@@ -63,11 +63,11 @@ export default function ResetPassword() {
         />
         <meta
           property="og:title"
-          content="Reset Password – Reconnect with NOVI | Culturevo"
+          content="Reset Password – Reconnect with VELIORA | Veliora"
         />
         <meta
           property="og:description"
-          content="Forgot your password? Reset now and continue chatting with NOVI—your nightly companion for comfort, support, and real connection."
+          content="Forgot your password? Reset now and continue chatting with VELIORA—your nightly companion for comfort, support, and real connection."
         />
         <meta
           property="og:url"

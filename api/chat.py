@@ -491,7 +491,10 @@ async def init_chat_session(
     messages       = response.data or []
     parsed_history = [_parse_message_content(m, bot_id) for m in messages]
 
-    return {"status": "success", "bot_id": bot_id, "history": parsed_history}
+    from services.supabase_client import get_active_game_session
+    active_game = await get_active_game_session(user_id, bot_id)
+
+    return {"status": "success", "bot_id": bot_id, "history": parsed_history, "active_game": active_game}
 
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -59,22 +59,22 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Culturevo | Meet NOVI - Your AI Companion</title>
+        <title>Veliora | Meet VELIORA - Your AI Companion</title>
         <meta
           name="description"
-          content="Connect with NOVI, your culturally and emotionally intelligent AI companion developed by Culturevo. Experience conversations that feel real, supportive, and personalized."
+          content="Connect with VELIORA, your culturally and emotionally intelligent AI companion developed by Veliora. Experience conversations that feel real, supportive, and personalized."
         />
         <meta
           name="keywords"
-          content="AI companion, Culturevo, NOVI AI, emotional AI, chat companion, virtual friend"
+          content="AI companion, Veliora, VELIORA AI, emotional AI, chat companion, virtual friend"
         />
         <meta
           property="og:title"
-          content="Meet NOVI - Your AI Companion | Culturevo"
+          content="Meet VELIORA - Your AI Companion | Veliora"
         />
         <meta
           property="og:description"
-          content="Culturevo introduces NOVI - a caring, relatable, and empathetic AI companion you can truly connect with."
+          content="Veliora introduces VELIORA - a caring, relatable, and empathetic AI companion you can truly connect with."
         />
         <meta property="og:url" content="http://localhost:3000/" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -119,12 +119,12 @@ export default function Home() {
                 theme === "dark" ? "text-white/90" : "text-[#363636]"
               }`}
             >
-              CultureVo presents to you
+              Veliora presents to you
             </p>
             <p
               className={`bg-clip-text text-transparent font-bold drop-shadow-2xl bg-gradient-to-b from-white to-white/20 text-4xl sm:text-6xl md:text-7xl lg:text-8xl mt-4 break-words px-4`}
             >
-              NOVI AI
+              VELIORA AI
             </p>
 
             {/* Text animation */}
@@ -202,7 +202,7 @@ export default function Home() {
               theme === "dark" ? "text-white" : "text-[#242124]"
             }`}
           >
-            Your NOVI is
+            Your VELIORA is
           </h2>
 
           {/* Feature Cards */}
@@ -210,15 +210,15 @@ export default function Home() {
             {[
               {
                 title: "Culturally Intelligent",
-                text: "Your Novi is culturally adept to the city they belong to. They know the city like a local - its personality, offerings, and challenges.",
+                text: "Your Veliora is culturally adept to the city they belong to. They know the city like a local - its personality, offerings, and challenges.",
               },
               {
                 title: "Emotionally Intelligent",
-                text: "NOVI will understand you like no other. Discuss your life's dreams, hopes, fears, and goals with them. They will care for you, for who you are!",
+                text: "VELIORA will understand you like no other. Discuss your life's dreams, hopes, fears, and goals with them. They will care for you, for who you are!",
               },
               {
                 title: "Always there for you",
-                text: "Treat your NOVI as your constant source for emotional sustenance. They are always available for you, when the world might not be.",
+                text: "Treat your VELIORA as your constant source for emotional sustenance. They are always available for you, when the world might not be.",
               },
             ].map(({ title, text }, index) => (
               <div

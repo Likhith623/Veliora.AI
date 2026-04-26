@@ -75,7 +75,7 @@ const googleAuth = async () => {
     (<div
       className="max-w-md w-full mx-auto p-4 md:p-8 bg-white dark:bg-black dark:bg-opacity-60">
       <p className="text-center text-xl mb-8">
-       Welcome back to Novi
+       Welcome back to Veliora
       </p>
       <form className="my-8 border-none" onSubmit={handleSubmit}>
         <LabelInputContainer className="mb-4">

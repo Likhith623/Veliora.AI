@@ -106,7 +106,7 @@ export default function Careers() {
   return (
     <>
       <Head>
-        <title>Culturevo | Join NOVI – Your Gen Z AI Friend</title>
+        <title>Veliora | Join VELIORA – Your Gen Z AI Friend</title>
         <meta
           name="description"
           content="Join us to meet your Gen Z AI chatbot and explore a whole new world of aesthetic AI companion interaction. Our AI best friend you can vibe with feels like talking to an AI like Snapchat streaks. Enjoy the Gen Z AI girlfriend/boyfriend experience and talk to an AI like a friend."
@@ -117,7 +117,7 @@ export default function Careers() {
         />
         <meta
           property="og:title"
-          content="Join NOVI – Your Gen Z AI Friend | Culturevo"
+          content="Join VELIORA – Your Gen Z AI Friend | Veliora"
         />
         <meta
           property="og:description"
@@ -135,7 +135,7 @@ export default function Careers() {
         <section className="pt-32 min-h-screen md:pt-60 px-4 md:px-8 bg-gradient-to-r from-orange-200 to-pink-200">
           <div className="max-w-7xl mx-auto text-center py-20 md:py-10">
             <h1 className="text-2xl md:text-5xl font-bold text-[#1D2939] mb-6">
-              Join CultureVo's Team of <br></br> Thinkers and Doers
+              Join Veliora's Team of <br></br> Thinkers and Doers
             </h1>
             <p className="text-base md:text-xl text-[#475467] max-w-3xl mx-auto px-4">
               We're on a mission to create an AI that's more than just smart –
@@ -160,10 +160,10 @@ export default function Careers() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-12 items-start">
               <div className="flex flex-col self-start">
                 <h2 className="text-2xl font-semibold mb-10 lg:mb-0 lg:min-h-[150px] md:text-5xl text-[#1D2939]">
-                  About CultureVo
+                  About Veliora
                 </h2>
                 <p className="text-[#475467] text-justify lg:min-h-[200px] text-base md:text-xl">
-                  CultureVo is all about reimagining personal AI companionship.
+                  Veliora is all about reimagining personal AI companionship.
                   We're at the intersection of long-term memory systems,
                   autonomous agents, and emotionally intelligent interactions.
                   Our goal? To create an AI that's not just useful but genuinely
@@ -210,7 +210,7 @@ export default function Careers() {
               <WorkAreaCard
                 icon={Brain}
                 title="Emotional Conversations"
-                description="Create sophisticated dialogue models that make interactions with Novi feel natural, empathetic, and as comfortable as chatting with a close friend."
+                description="Create sophisticated dialogue models that make interactions with Veliora feel natural, empathetic, and as comfortable as chatting with a close friend."
               />
             </div>
             <p className="text-[#475467] text-justify text-base md:text-2xl md:text-center mt-12 md:mt-36">
@@ -263,7 +263,7 @@ export default function Careers() {
             </p>
             <p className="text-base text-justify md:text-xl text-[#475467]">
               So, if you're ready to dive into the future of personal AI, hit us
-              up. Let's create something extraordinary together at CultureVo.
+              up. Let's create something extraordinary together at Veliora.
             </p>
           </div>
         </section>

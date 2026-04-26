@@ -25,7 +25,7 @@ function Diary() {
       </span>
     );
     try {
-      // Use adapter for saving notes manually (falls back to culturevo as new backend handles diary auto)
+      // Use adapter for saving notes manually (falls back to veliora as new backend handles diary auto)
       const data = await diaryAddNote(userDetails.email, selectedBotId, text);
       console.log(data);
       setStatus(

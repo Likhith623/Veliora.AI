@@ -35,7 +35,7 @@ const PrivacyPolicy = () => {
           <li>
             <strong>Company</strong> (referred to as either &quot;the
             Company&quot;, &quot;We&quot;, &quot;Us&quot; or &quot;Our&quot; in
-            this Agreement) refers to CultureVo, Inc., 838 Walker Road, Suite
+            this Agreement) refers to Veliora, Inc., 838 Walker Road, Suite
             21-2, City of Dover, 19904.
           </li>
           <li>
@@ -72,7 +72,7 @@ const PrivacyPolicy = () => {
             infrastructure itself (for example, the duration of a page visit).
           </li>
           <li>
-            <strong>Website</strong> refers to CultureVo, accessible from{" "}
+            <strong>Website</strong> refers to Veliora, accessible from{" "}
             <a
               href="http://localhost:3000"
               className="text-blue-500 hover:underline"

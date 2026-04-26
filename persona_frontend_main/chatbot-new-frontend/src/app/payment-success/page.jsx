@@ -13,7 +13,7 @@ export default function PaymentSuccess() {
   return (
     <>
       <Head>
-        <title>Culturevo | Payment Success – Unlock NOVI</title>
+        <title>Veliora | Payment Success – Unlock VELIORA</title>
         <meta
           name="description"
           content="Payment successful! Unlock full access to your AI girlfriend/boyfriend app and explore the AI relationship simulator. Enjoy our AI companion with memory and an AI with emotional intelligence, now with voice-enabled AI companion features."
@@ -24,11 +24,11 @@ export default function PaymentSuccess() {
         />
         <meta
           property="og:title"
-          content="Payment Success – Unlock NOVI | Culturevo"
+          content="Payment Success – Unlock VELIORA | Veliora"
         />
         <meta
           property="og:description"
-          content="Congratulations! You now have complete access to NOVI’s full suite—memory, emotional intelligence, and voice personality customization."
+          content="Congratulations! You now have complete access to VELIORA’s full suite—memory, emotional intelligence, and voice personality customization."
         />
         <meta
           property="og:url"

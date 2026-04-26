@@ -7,7 +7,7 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           {/* Logo and Description */}
           <div className="col-span-1 md:col-span-2">
-            <h2 className="text-2xl font-bold text-white mb-4">CultureVo</h2>
+            <h2 className="text-2xl font-bold text-white mb-4">Veliora</h2>
             <p className="mb-4">Your AI companion who understands you culturally and emotionally.
             Always there for you, with all the care in the world!</p>
             <p className="mb-4">Reach out to us at <a href="mailto:support@localhost:3000">support@localhost:3000</a></p>
@@ -32,7 +32,7 @@ export default function Footer() {
 
         {/* Copyright */}
         <div className="border-t border-gray-800 mt-8 pt-8 text-center">
-          <p>&copy;2024 CultureVo AI. All rights reserved.</p>
+          <p>&copy;2024 Veliora.AI. All rights reserved.</p>
         </div>
       </div>
     </footer>

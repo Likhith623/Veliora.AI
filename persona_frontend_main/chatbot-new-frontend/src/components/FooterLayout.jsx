@@ -13,13 +13,13 @@ function FooterLayout() {
           : "bg-[#FFFBF7]/80 backdrop-blur-sm border-t border-gray-200 text-[#242124]"
       }`}
     >
-      <p className="text-lg sm:text-xl font-semibold">CultureVo</p>
+      <p className="text-lg sm:text-xl font-semibold">Veliora</p>
       <p className="text-sm sm:text-base mt-2">
         Your AI companion who understands you culturally and emotionally.
       </p>
       <div className="flex justify-center space-x-6 mt-6">
         <a
-          href="https://www.linkedin.com/company/culturevo/"
+          href="https://www.linkedin.com/company/veliora/"
           target="_blank"
           rel="noopener noreferrer"
           aria-label="LinkedIn"
@@ -49,7 +49,7 @@ function FooterLayout() {
         </a>
 
         <a
-          href="https://www.instagram.com/culturevo_official?igsh=ZnBuenZlZTd5cDl3&utm_source=qr"
+          href="https://www.instagram.com/veliora_official?igsh=ZnBuenZlZTd5cDl3&utm_source=qr"
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Instagram"
@@ -64,20 +64,6 @@ function FooterLayout() {
           </svg>
         </a>
 
-        <a
-          href="https://discord.com/invite/mNmwYdmsPz"
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label="Discord"
-        >
-          <svg
-            className="w-6 h-6 fill-[#5865F2] hover:scale-110 transition-transform"
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 71 55"
-          >
-            <path d="M60.104 4.552A58.59 58.59 0 0 0 46.852.8a.205.205 0 0 0-.215.103c-2.002 3.555-4.243 8.215-5.837 11.873a55.85 55.85 0 0 0-17.602 0c-1.63-3.658-3.882-8.318-5.858-11.873a.206.206 0 0 0-.215-.103A58.58 58.58 0 0 0 10.9 4.552a.188.188 0 0 0-.088.071C1.579 18.49-.927 32.137.293 45.632a.209.209 0 0 0 .079.14 58.937 58.937 0 0 0 17.784 9.098.206.206 0 0 0 .224-.071c1.366-1.872 2.582-3.84 3.627-5.888a.201.201 0 0 0-.116-.28 36.537 36.537 0 0 1-5.211-2.52.206.206 0 0 1-.02-.343c.35-.26.7-.527 1.038-.798a.208.208 0 0 1 .218-.026c10.928 4.99 22.765 4.99 33.619 0a.21.21 0 0 1 .22.023 26.32 26.32 0 0 0 1.04.799.206.206 0 0 1-.018.343 34.76 34.76 0 0 1-5.212 2.52.202.202 0 0 0-.115.281c1.06 2.047 2.27 4.015 3.623 5.887a.206.206 0 0 0 .225.072 58.893 58.893 0 0 0 17.785-9.098.209.209 0 0 0 .078-.14c1.507-15.565-2.547-29.18-9.714-41.01a.155.155 0 0 0-.09-.07zM23.725 37.108c-3.242 0-5.909-2.97-5.909-6.63 0-3.66 2.622-6.63 5.908-6.63 3.304 0 5.95 3.008 5.91 6.63 0 3.66-2.622 6.63-5.909 6.63zm23.482 0c-3.242 0-5.909-2.97-5.909-6.63 0-3.66 2.622-6.63 5.909-6.63 3.305 0 5.951 3.008 5.91 6.63 0 3.66-2.622 6.63-5.91 6.63z" />
-          </svg>
-        </a>
       </div>
       {/* Footer tagline */}
       <hr
@@ -99,7 +85,7 @@ function FooterLayout() {
         Terms and Conditions
       </Link>
       <p className="text-xs sm:text-sm mt-4">
-        ©2025 CultureVo AI. All rights reserved.
+        ©2025 Veliora.AI. All rights reserved.
       </p>
     </footer>
   );

@@ -3521,7 +3521,7 @@ export const Logo = () => {
     >
       <div className="bg-gradient-to-r from-pink-200 to-orange-200 w-full flex justify-center py-2">
         <span className="text-white font-bold text-xl font-[family-name:var(--font-garamond)]">
-          Novi AI
+          Veliora.AI
         </span>
       </div>
     </Link>
@@ -4335,6 +4335,17 @@ const Dashboard = ({
 
         const syncData = await chatInitSession("", selectedBotId);
         const rawHistory = syncData.history || [];
+        const activeGame = syncData.active_game;
+
+        if (activeGame) {
+          activityStateRef.current.sessionId = activeGame.id;
+          activityStateRef.current.currentActivity = activeGame.game_id;
+          setCurrentActivity(activeGame.game_id);
+        } else {
+          activityStateRef.current.sessionId = null;
+          activityStateRef.current.currentActivity = null;
+          setCurrentActivity(null);
+        }
 
         // Adapt to frontend structure
         let formattedMessages = rawHistory.map((msg, idx) => {
@@ -4975,7 +4986,7 @@ const shouldSendWeeklyVoice = () => {
       platform: "web",
     };
 
-    console.log("📤 Sending to Primary LLM (Novi VI):", primaryLlmPayload);
+    console.log("📤 Sending to Primary LLM (Veliora VI):", primaryLlmPayload);
     /* The above code is making a POST request to the URL
             'http://127.0.0.1:8000/cv/chat' with a JSON payload. The payload is
             being stringified using `JSON.stringify()` before sending the request. The request
@@ -5274,7 +5285,7 @@ const shouldSendWeeklyVoice = () => {
   return (
     <>
       <Head>
-        <title>Culturevo | Chat with NOVI - Your AI Bestie</title>
+        <title>Veliora | Chat with VELIORA - Your AI Bestie</title>
         <meta
           name="description"
           content="Talk to an AI like a friend through our voice-enabled AI companion that responds like an AI that talks like a human. This AI that texts like a real person is perfect for chill AI to talk to when bored or for an AI bestie for late-night overthinking."
@@ -5285,11 +5296,11 @@ const shouldSendWeeklyVoice = () => {
         />
         <meta
           property="og:title"
-          content="Chat with NOVI - Your AI Bestie | Culturevo"
+          content="Chat with VELIORA - Your AI Bestie | Veliora"
         />
         <meta
           property="og:description"
-          content="Engage in natural, human‑like conversation with NOVI—your voice‑enabled emotional support AI best friend."
+          content="Engage in natural, human‑like conversation with VELIORA—your voice‑enabled emotional support AI best friend."
         />
         <meta property="og:url" content="http://localhost:3000/chat" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -5994,7 +6005,7 @@ const shouldSendWeeklyVoice = () => {
         >
           {currentActivity
             ? "🎮 Activity mode active - Voice messages disabled during activities"
-            : "Novi can make mistakes, it's constantly learning from you, please be kind!!"}
+            : "Veliora can make mistakes, it's constantly learning from you, please be kind!!"}
         </p>
 
         {/* Voice Call Component - Only show when not in activity mode */}

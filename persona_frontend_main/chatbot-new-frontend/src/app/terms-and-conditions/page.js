@@ -6,7 +6,7 @@ const terms_and_conditions = () => {
   return (
     <>
       <Head>
-        <title>Culturevo | Terms & Conditions – Using NOVI</title>
+        <title>Veliora | Terms & Conditions – Using VELIORA</title>
         <meta
           name="description"
           content="Review the terms for using our AI therapy alternative and AI roleplay companion. Whether you're looking for an AI boyfriend simulator, AI girlfriend experience Gen Z, or an AI that sends voice notes, we’ve got you covered."
@@ -17,11 +17,11 @@ const terms_and_conditions = () => {
         />
         <meta
           property="og:title"
-          content="Terms & Conditions – Using NOVI | Culturevo"
+          content="Terms & Conditions – Using VELIORA | Veliora"
         />
         <meta
           property="og:description"
-          content="Understand how we provide emotional support, roleplay, and personality customization with NOVI while maintaining user safety and transparency."
+          content="Understand how we provide emotional support, roleplay, and personality customization with VELIORA while maintaining user safety and transparency."
         />
         <meta
           property="og:url"

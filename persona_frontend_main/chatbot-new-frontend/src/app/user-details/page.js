@@ -8,7 +8,7 @@ const UserDetailsPage = () => {
   return (
     <>
       <Head>
-        <title>Culturevo | Profile – Your NOVI Settings</title>
+        <title>Veliora | Profile – Your VELIORA Settings</title>
         <meta
           name="description"
           content="Manage user details for your AI companion experience. Whether you're using a digital companion, a virtual AI friend, or an AI chatbot companion, this page keeps your AI friend info up to date."
@@ -19,11 +19,11 @@ const UserDetailsPage = () => {
         />
         <meta
           property="og:title"
-          content="Profile – Your NOVI Settings | Culturevo"
+          content="Profile – Your VELIORA Settings | Veliora"
         />
         <meta
           property="og:description"
-          content="Update your personal settings and preferences to shape how NOVI responds and remembers you."
+          content="Update your personal settings and preferences to shape how VELIORA responds and remembers you."
         />
         <meta
           property="og:url"

@@ -78,7 +78,7 @@ useEffect(() => {
   return (
     <>
       <Head>
-        <title>Culturevo | Traits – Define NOVI’s Personality</title>
+        <title>Veliora | Traits – Define VELIORA’s Personality</title>
         <meta
           name="description"
           content="Explore AI with personality traits and customize your AI’s personality to reflect your vibe. Whether you want a flirty AI friend online, a cute AI chat app, or an AI BFF with moods and drama, we’ve made it possible."
@@ -89,11 +89,11 @@ useEffect(() => {
         />
         <meta
           property="og:title"
-          content="Traits – Define NOVI’s Personality | Culturevo"
+          content="Traits – Define VELIORA’s Personality | Veliora"
         />
         <meta
           property="og:description"
-          content="Fine‑tune NOVI’s character—whether you prefer cute, dramatic, flirty, or chill emotional styles."
+          content="Fine‑tune VELIORA’s character—whether you prefer cute, dramatic, flirty, or chill emotional styles."
         />
         <meta property="og:url" content="http://localhost:3000/traits" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />

@@ -140,7 +140,7 @@ const UserDetails = ({ filter }) => {
       <form className="my-8 border-none" onSubmit={handleSubmit}>
         <LabelInputContainer className="mb-8 ">
           <Label htmlFor="name" className="text-lg text-black/70">
-            What should Novi call you ?
+            What should Veliora call you ?
           </Label>
           <Input
             id="name"

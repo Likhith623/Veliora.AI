@@ -7,3 +7,9 @@ Start the Media Server (mediasoup_server).
 Start the Backend (main.py).
 Start Frontend 1 (persona_frontend).
 Start Frontend 2 (realtime_frontend).
+
+
+for the persona:
+1. start the backend (main.py in the root).
+2. start the persona fontend main folder (cd chatbot_new_frotnend and then npm run dev)
+3. for the emotion: 
