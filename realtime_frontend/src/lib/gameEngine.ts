@@ -177,21 +177,24 @@ export function updateAirHockey(state: AirHockeyState): void {
     }
   });
 
-  const goalWidth = 120;
   const goalCenter = canvas.width / 2;
 
+  // Top wall / Player B's goal (y=0)
   if (puck.y - puck.radius <= 0) {
-    if (Math.abs(puck.x - goalCenter) < goalWidth / 2) {
-      state.scores[player_b] += 1;
+    const goalHalfWidth = (state.goals[player_b]?.width || 200) / 2;
+    if (Math.abs(puck.x - goalCenter) < goalHalfWidth) {
+      state.scores[player_a] += 1; // Player A scores into Player B's goal at top
       resetAirHockeyPuck(state);
     } else {
       puck.vy = Math.abs(puck.vy);
     }
   }
 
+  // Bottom wall / Player A's goal (y=canvas.height)
   if (puck.y + puck.radius >= canvas.height) {
-    if (Math.abs(puck.x - goalCenter) < goalWidth / 2) {
-      state.scores[player_a] += 1;
+    const goalHalfWidth = (state.goals[player_a]?.width || 200) / 2;
+    if (Math.abs(puck.x - goalCenter) < goalHalfWidth) {
+      state.scores[player_b] += 1; // Player B scores into Player A's goal at bottom
       resetAirHockeyPuck(state);
     } else {
       puck.vy = -Math.abs(puck.vy);

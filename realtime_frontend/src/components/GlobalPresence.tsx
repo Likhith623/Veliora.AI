@@ -65,6 +65,9 @@ export default function GlobalPresence() {
       },
       onGlobalNotification: (notif) => {
         if (notif && notif.title) {
+          // Ignore incoming call notifications since they have a dedicated UI popup
+          if (notif.type === 'incoming_call') return;
+          
           const getUrl = () => {
             if (notif.type === 'new_message') {
               if (notif.data?.relationship_id) return `/chat/${notif.data.relationship_id}`;

@@ -127,8 +127,20 @@ function LiveGamesPageContent() {
       try {
         const data = JSON.parse(e.data as string);
         if (data.type === 'state') {
-          // Air hockey host-authoritative fallback
-          gameStateRef.current = data.state as GameState;
+          // Air hockey host-authoritative fallback with Client-Side Prediction for Guest
+          const incomingState = data.state as GameState;
+          if (incomingState.type === 'air_hockey' && !isInitiatorRef.current && user?.id) {
+             const localMallet = incomingState.mallets[user.id];
+             if (localMallet && localInputXRef.current !== null && localInputYRef.current !== null) {
+                 localMallet.x = Math.max(localMallet.radius, Math.min(incomingState.canvas.width - localMallet.radius, localInputXRef.current));
+                 if (user.id === incomingState.player_a) {
+                   localMallet.y = Math.max(incomingState.canvas.height / 2 + localMallet.radius, Math.min(incomingState.canvas.height - localMallet.radius, localInputYRef.current));
+                 } else {
+                   localMallet.y = Math.max(localMallet.radius, Math.min(incomingState.canvas.height / 2 - localMallet.radius, localInputYRef.current));
+                 }
+             }
+          }
+          gameStateRef.current = incomingState;
         } else if (data.type === 'input') {
           // Air hockey fallback input
           handleOpponentInput(data);
@@ -167,7 +179,7 @@ function LiveGamesPageContent() {
           await pcRef.current.setLocalDescription(answer);
           wsRef.current?.send({ type: 'webrtc_answer', answer });
         } else if (msg.type === 'answer') {
-          if (pcRef.current.signalingState !== 'stable') {
+          if (pcRef.current.signalingState === 'have-local-offer') {
             await pcRef.current.setRemoteDescription(msg.data);
           }
         } else if (msg.type === 'ice') {
@@ -547,7 +559,7 @@ function LiveGamesPageContent() {
         onWebRTCAnswer: async (answer) => {
           if (webRTCReadyRef.current && pcRef.current) {
             try {
-              if (pcRef.current.signalingState !== 'stable') {
+              if (pcRef.current.signalingState === 'have-local-offer') {
                 await pcRef.current.setRemoteDescription(answer);
               }
               flushPendingWebRTC(); // Flush ICE candidates now
@@ -639,6 +651,7 @@ function LiveGamesPageContent() {
     handleClientInput(e.clientX, e.clientY);
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    e.preventDefault(); // Prevent iOS page scroll during gameplay
     if (e.touches.length > 0) handleClientInput(e.touches[0].clientX, e.touches[0].clientY);
   };
 
@@ -672,6 +685,12 @@ function LiveGamesPageContent() {
         }
         newState.winner = winnerId;
         wsRef.current.send({ type: 'game_finished', winner: winnerId, state: newState });
+        // Immediate local transition — don't wait for server broadcast
+        setWinner(winnerId);
+        setFinalScores({
+          [newState.player_a]: winnerId === newState.player_a ? 1 : 0,
+          [newState.player_b]: winnerId === newState.player_b ? 1 : 0,
+        });
       } else {
         wsRef.current.send({ type: 'sync_state', state: newState });
       }
@@ -707,16 +726,51 @@ function LiveGamesPageContent() {
     }
   };
 
-  const leaveGame = () => {
-    pcRef.current?.close();
+  const leaveGame = useCallback(() => {
+    // Cancel the game loop
+    if (animFrameRef.current) {
+      cancelAnimationFrame(animFrameRef.current);
+      animFrameRef.current = 0;
+    }
+    // Close WebRTC resources
+    if (dcRef.current) {
+      try { dcRef.current.close(); } catch (e) {}
+      dcRef.current = null;
+    }
+    if (pcRef.current) {
+      try { pcRef.current.close(); } catch (e) {}
+      pcRef.current = null;
+    }
+    // Close signaling WebSocket
     wsRef.current?.close();
-    pcRef.current = null;
-    dcRef.current = null;
+    wsRef.current = null;
+    // Reset engine state
     rollbackManagerRef.current = null;
     webRTCReadyRef.current = false;
     pendingWebRTCMessages.current = [];
+    localInputXRef.current = null;
+    localInputYRef.current = null;
+    // Reset UI state
+    setGameState(null);
+    gameStateRef.current = null;
+    setIsWsConnected(false);
+    setIsP2pConnected(false);
+    setWinner(null);
+    setFinalScores({});
+    setXpAwarded(null);
+    setHudScores({ p1: 0, p2: 0 });
     setView('lobby');
-  };
+  }, []);
+
+  // Cleanup on unmount — prevent dangling WebRTC/WS connections
+  useEffect(() => {
+    return () => {
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+      if (dcRef.current) { try { dcRef.current.close(); } catch (e) {} }
+      if (pcRef.current) { try { pcRef.current.close(); } catch (e) {} }
+      wsRef.current?.close();
+    };
+  }, []);
 
   // ─── Render ───────────────────────────────────────────────────────────────
 

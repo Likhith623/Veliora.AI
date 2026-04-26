@@ -26,7 +26,12 @@ module.exports = {
           kind: 'audio',
           mimeType: 'audio/opus',
           clockRate: 48000,
-          channels: 2
+          channels: 2,
+          parameters: {
+            useinbandfec: 1,
+            usedtx: 1,
+            stereo: 1
+          }
         },
         {
           kind: 'video',

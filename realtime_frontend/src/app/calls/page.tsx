@@ -12,20 +12,12 @@ import {
 import { api } from '@/lib/api';
 import { createCallSignalingWS, type ManagedWebSocket } from '@/lib/websocket';
 import { useAuth } from '@/lib/AuthContext';
+import { Device } from 'mediasoup-client';
+import { io, Socket } from 'socket.io-client';
 import type { CallLog } from '@/types';
 import toast from 'react-hot-toast';
 
 type CallView = 'idle' | 'ringing' | 'incoming' | 'connecting' | 'active' | 'ended';
-
-const ICE_SERVERS = [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  {
-    urls: "turn:YOUR_VM_IP:3478",
-    username: "likhith",
-    credential: "strongpassword"
-  }
-];
 
 function CallsPageContent() {
   const searchParams = useSearchParams();
@@ -47,10 +39,17 @@ function CallsPageContent() {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
-  const pcRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const wsRef = useRef<ManagedWebSocket | null>(null);
+  const sfuSocketRef = useRef<Socket | null>(null);
+  
+  const deviceRef = useRef<Device | null>(null);
+  const sendTransportRef = useRef<any>(null);
+  const recvTransportRef = useRef<any>(null);
+  const consumeQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingRemoteProducersRef = useRef<Array<{producerId: string, peerId: string, kind: string}>>([]);
+
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const callStartTimeRef = useRef<number>(0);
   const timerStartedRef = useRef(false); // Prevent double-start
@@ -68,29 +67,189 @@ function CallsPageContent() {
     }
   }, [selectedRel, activeRel]);
 
-  // ── SDP Optimizer for Reliable Audio Quality (WhatsApp-like) ──
-  const enhanceSDPAudioQuality = (sdp: string) => {
-    let enhancedSdp = sdp;
-    // Extract the OPUS payload type (usually 111, but can vary)
-    const rtpmapMatch = enhancedSdp.match(/a=rtpmap:(\d+) opus\/48000\/2/);
-    if (rtpmapMatch) {
-      const pt = rtpmapMatch[1];
-      // Target existing fmtp line for OPUS, or append if missing
-      // We use a robust VBR Opus profile (approx 48-64kbps) with Forward Error Correction (FEC) and DTX
-      // This eliminates packet loss clipping and guarantees WhatsApp-level voice stability
-      const fmtpRegex = new RegExp(`a=fmtp:${pt}\\s+(.*?)(?:\\r?\\n|$)`);
-      if (fmtpRegex.test(enhancedSdp)) {
-        enhancedSdp = enhancedSdp.replace(fmtpRegex, (match, p1) => {
-          return `a=fmtp:${pt} useinbandfec=1;usedtx=1;maxaveragebitrate=64000\r\n`;
-        });
-      } else {
-        enhancedSdp = enhancedSdp.replace(
-          new RegExp(`a=rtpmap:${pt} opus\\/48000\\/2`),
-          `a=rtpmap:${pt} opus/48000/2\r\na=fmtp:${pt} useinbandfec=1;usedtx=1;maxaveragebitrate=64000`
-        );
-      }
+  const cleanedUpRef = useRef(false);
+
+  // ── Mediasoup SFU Integration ──
+  const handleTransportCreated = async (transportOptions: any, isSender: boolean, stream: MediaStream) => {
+    const device = deviceRef.current;
+    const socket = sfuSocketRef.current;
+    if (!device || !socket) return;
+
+    if (transportOptions.error) {
+        console.error("SFU Server Error creating transport:", transportOptions.error);
+        return;
     }
-    return enhancedSdp;
+
+    try {
+        if (isSender) {
+            const sendTransport = device.createSendTransport(transportOptions);
+            sendTransportRef.current = sendTransport;
+            
+            sendTransport.on('connect', ({ dtlsParameters }: any, callback: () => void, errback: (e: Error) => void) => {
+                socket.emit('connectWebRtcTransport', { transportId: sendTransport.id, dtlsParameters }, (res: any) => {
+                    if (res?.error) errback(new Error(res.error));
+                    else callback();
+                });
+            });
+
+            sendTransport.on('produce', async ({ kind, rtpParameters, appData }: any, callback: (arg: {id: string}) => void, errback: (e: Error) => void) => {
+                socket.emit('produce', { transportId: sendTransport.id, kind, rtpParameters, appData }, ({ id, error }: any) => {
+                    if (error) errback(new Error(error));
+                    else callback({ id });
+                });
+            });
+            
+            const audioTrack = stream.getAudioTracks()[0];
+            const videoTrack = stream.getVideoTracks()[0];
+            
+            if (audioTrack) {
+                await sendTransport.produce({ track: audioTrack });
+            }
+            if (videoTrack) {
+                await sendTransport.produce({ 
+                    track: videoTrack,
+                    encodings: [
+                        { maxBitrate: 100000, scaleResolutionDownBy: 4 },
+                        { maxBitrate: 300000, scaleResolutionDownBy: 2 },
+                        { maxBitrate: 900000, scaleResolutionDownBy: 1 }
+                    ],
+                    codecOptions: { videoGoogleStartBitrate: 300 }
+                });
+            }
+        } 
+        else {
+            const recvTransport = device.createRecvTransport(transportOptions);
+            recvTransportRef.current = recvTransport;
+            
+            recvTransport.on('connect', ({ dtlsParameters }: any, callback: () => void, errback: (e: Error) => void) => {
+                socket.emit('connectWebRtcTransport', { transportId: recvTransport.id, dtlsParameters }, (res: any) => {
+                    if (res?.error) errback(new Error(res.error));
+                    else callback();
+                });
+            });
+            
+            if (pendingRemoteProducersRef.current.length > 0) {
+                const pending = [...pendingRemoteProducersRef.current];
+                pendingRemoteProducersRef.current = [];
+                pending.forEach(p => consumeSFUTrack(p.producerId, p.peerId));
+            }
+        }
+    } catch(err) {
+        console.error("SFU Transport Error:", err);
+    }
+  };
+
+  const consumeSFUTrack = (producerId: string, peerId: string) => {
+      const device = deviceRef.current;
+      const recvTransport = recvTransportRef.current;
+      const socket = sfuSocketRef.current;
+      
+      if (!device || !recvTransport || !socket) {
+          pendingRemoteProducersRef.current.push({ producerId, peerId, kind: 'unknown' });
+          return;
+      }
+      
+      socket.emit('consume', {
+          producerId,
+          rtpCapabilities: device.rtpCapabilities
+      }, ({ id, kind, rtpParameters, error }: any) => {
+          if (error) {
+              console.error("Consume signaling error:", error);
+              return;
+          }
+          
+          consumeQueueRef.current = consumeQueueRef.current.then(async () => {
+              try {
+                  if (recvTransport.closed || cleanedUpRef.current) return;
+                  const consumer = await recvTransport.consume({
+                     id, producerId, kind, rtpParameters
+                  });
+                  
+                  const { track } = consumer;
+                  
+                  if (!remoteStreamRef.current) {
+                      remoteStreamRef.current = new MediaStream();
+                  }
+                  remoteStreamRef.current.addTrack(track);
+                  
+                  // Attach stream to the correct DOM element
+                  if (kind === 'video' && remoteVideoRef.current) {
+                      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+                      remoteVideoRef.current.play().catch(e => console.warn('Video autoplay blocked:', e));
+                  }
+                  if (kind === 'audio' && remoteAudioRef.current) {
+                      remoteAudioRef.current.srcObject = remoteStreamRef.current;
+                      remoteAudioRef.current.play().catch(e => console.warn('Audio autoplay blocked:', e));
+                  }
+                  
+                  socket.emit('resumeConsumer', { consumerId: id });
+                  
+                  setCallView('active');
+                  startTimer();
+                  
+              } catch(err: any) {
+                  if (err?.name === 'InvalidStateError' || cleanedUpRef.current) return;
+                  console.error("Consumer creation failed:", err);
+              }
+          }).catch(err => {
+              if (!cleanedUpRef.current) console.error("Consume queue error:", err);
+          });
+      });
+  };
+
+  const initSFU = async (stream: MediaStream) => {
+    cleanedUpRef.current = false;
+    const socket = io('http://localhost:3016');
+    sfuSocketRef.current = socket;
+
+    let initialized = false;
+    socket.on('connect', () => {
+      if (initialized) return;
+      initialized = true;
+      console.log('🟢 Connected to Mediasoup SFU (1-on-1)');
+
+      socket.emit('joinRoom', { roomId: selectedRel, userId: user?.id }, async (response: any) => {
+        if (!response?.rtpCapabilities) {
+          console.error('joinRoom: invalid response', response);
+          return;
+        }
+        const { rtpCapabilities } = response;
+        const device = new Device();
+        await device.load({ routerRtpCapabilities: rtpCapabilities });
+        deviceRef.current = device;
+
+        // Sequential: create send transport first, await production, then recv
+        socket.emit('createWebRtcTransport', { sender: true }, async (sendOpts: any) => {
+          await handleTransportCreated(sendOpts, true, stream);
+          // Now create recv transport
+          socket.emit('createWebRtcTransport', { sender: false }, (recvOpts: any) => {
+            handleTransportCreated(recvOpts, false, stream);
+          });
+        });
+
+        socket.emit('getProducers', {}, (producers: any[]) => {
+          if (!Array.isArray(producers)) return;
+          for (const p of producers) {
+              if (p.peerId !== user?.id) consumeSFUTrack(p.producerId, p.peerId);
+          }
+          // If no producers exist yet (e.g. caller is alone), transition to active anyway
+          if (producers.length === 0) {
+             setCallView('active');
+             startTimer();
+          }
+        });
+      });
+    });
+
+    socket.on('newProducer', ({ producerId, peerId, kind }: any) => {
+      console.log(`📢 New ${kind} producer from ${peerId}`);
+      if (peerId !== user?.id) consumeSFUTrack(producerId, peerId);
+    });
+
+    // Handle server-side consumer closure (remote producer went away)
+    socket.on('consumerClosed', ({ consumerId }: any) => {
+      console.log('Consumer closed by server:', consumerId);
+    });
   };
 
   // ── Acquire local media ──
@@ -118,43 +277,7 @@ function CallsPageContent() {
     return stream;
   }, []);
 
-  // ── Create RTCPeerConnection ──
-  const createPeerConnection = useCallback(() => {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-    pcRef.current = pc;
 
-    pc.ontrack = (event) => {
-      if (event.streams[0]) {
-        remoteStreamRef.current = event.streams[0];
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
-          remoteVideoRef.current.play().catch(e => console.warn('Video play blocked:', e));
-        }
-        if (remoteAudioRef.current) {
-          remoteAudioRef.current.srcObject = event.streams[0];
-          remoteAudioRef.current.play().catch(e => console.warn('Audio play blocked:', e));
-        }
-      }
-    };
-
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'connected') {
-        setCallView('active');
-        startTimer();
-      } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-        toast.error('Connection lost');
-        endCall(false);
-      }
-    };
-
-    pc.onicecandidate = (event) => {
-      if (event.candidate && wsRef.current) {
-        wsRef.current.send({ type: 'ice_candidate', candidate: event.candidate.toJSON() });
-      }
-    };
-
-    return pc;
-  }, []);
 
   // ── Timer (with guard against double-start) ──
   const startTimer = useCallback(() => {
@@ -168,18 +291,37 @@ function CallsPageContent() {
 
   // ── End call ──
   const endCall = useCallback((sendEndSignal = true) => {
+    if (cleanedUpRef.current) return;
+    cleanedUpRef.current = true;
+
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     timerStartedRef.current = false;
 
+    // Use ref-based timestamp for accurate duration (avoids stale closure on elapsedTime)
     const duration = callStartTimeRef.current > 0
       ? Math.floor((Date.now() - callStartTimeRef.current) / 1000)
-      : elapsedTime;
+      : 0;
 
+    // Stop all media tracks
     localStreamRef.current?.getTracks().forEach(t => t.stop());
     localStreamRef.current = null;
+    remoteStreamRef.current?.getTracks().forEach(t => t.stop());
+    remoteStreamRef.current = null;
 
-    pcRef.current?.close();
-    pcRef.current = null;
+    // Close Mediasoup transports
+    if (sendTransportRef.current) {
+        try { sendTransportRef.current.close(); } catch(e) {}
+        sendTransportRef.current = null;
+    }
+    if (recvTransportRef.current) {
+        try { recvTransportRef.current.close(); } catch(e) {}
+        recvTransportRef.current = null;
+    }
+    if (sfuSocketRef.current) {
+        sfuSocketRef.current.disconnect();
+        sfuSocketRef.current = null;
+    }
+    deviceRef.current = null;
 
     if (sendEndSignal && wsRef.current) {
       wsRef.current.send({
@@ -194,7 +336,9 @@ function CallsPageContent() {
 
     setCallView('ended');
     callStartTimeRef.current = 0;
-  }, [callType, elapsedTime]);
+    // Reset for potential next call
+    cleanedUpRef.current = false;
+  }, [callType]);
 
   // ── Start an outgoing call (CALLER flow) ──
   const startCall = useCallback(async () => {
@@ -203,8 +347,6 @@ function CallsPageContent() {
 
     try {
       const stream = await acquireMedia(callType);
-      const pc = createPeerConnection();
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
 
       const ws = createCallSignalingWS(selectedRel, user.id, {
         onOpen: () => {
@@ -213,44 +355,12 @@ function CallsPageContent() {
         },
         onIncomingCall: () => { /* Caller won't receive incoming_call for own call */ },
         onCallAccept: async () => {
-          // Partner has accepted, now we can send our offer
-          try {
-            const offer = await pc.createOffer();
-            offer.sdp = enhanceSDPAudioQuality(offer.sdp || ''); // Apply highest quality OPUS settings
-            await pc.setLocalDescription(offer);
-            ws.send({ type: 'offer', sdp: offer.sdp });
-          } catch (e) {
-            console.error('[Call] Failed to create offer:', e);
-          }
+          // Partner has accepted, start SFU WebRTC handshake
+          await initSFU(stream);
         },
-        onOffer: async (sdp) => {
-          // If we're the caller and receive an offer, handle gracefully (edge case)
-          try {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
-            const answer = await pc.createAnswer();
-            answer.sdp = enhanceSDPAudioQuality(answer.sdp || ''); // Apply highest quality OPUS settings
-            await pc.setLocalDescription(answer);
-            ws.send({ type: 'answer', sdp: answer.sdp });
-          } catch (e) {
-            console.error('[Call] Failed to handle offer:', e);
-          }
-        },
-        onAnswer: async (sdp) => {
-          try {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
-            setCallView('active');
-            startTimer();
-          } catch (e) {
-            console.error('[Call] Failed to set remote answer:', e);
-          }
-        },
-        onICECandidate: async (candidate) => {
-          try {
-            if (candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch (e) {
-            console.error('[Call] ICE candidate error:', e);
-          }
-        },
+        onOffer: async () => {}, // Handled by SFU natively
+        onAnswer: async () => {}, // Handled by SFU natively
+        onICECandidate: async () => {}, // Handled by SFU natively
         onCallEnded: () => endCall(false),
         onCallRejected: () => {
           toast('Call was rejected');
@@ -277,7 +387,7 @@ function CallsPageContent() {
       }
       setCallView('idle');
     }
-  }, [user?.id, selectedRel, callType, acquireMedia, createPeerConnection, startTimer, endCall]);
+  }, [user?.id, selectedRel, callType, acquireMedia, startTimer, endCall]);
 
   // ── Accept an incoming call (RECEIVER flow) ──
   const acceptIncomingCall = useCallback(async () => {
@@ -286,8 +396,6 @@ function CallsPageContent() {
 
     try {
       const stream = await acquireMedia(incomingCallType);
-      const pc = createPeerConnection();
-      stream.getTracks().forEach(track => pc.addTrack(track, stream));
       setCallType(incomingCallType);
 
       // Close the previous idle listening WS
@@ -296,44 +404,20 @@ function CallsPageContent() {
         wsRef.current = null;
       }
 
-      // The existing WS is already connected from the signaling listener
-      // We now need to handle the full WebRTC handshake as the answerer
+      setCallView('connecting');
+
+      // Start Call Signaling with partner
       const ws = createCallSignalingWS(selectedRel, user.id, {
         onOpen: () => {
-          // Send ready signal — the caller's offer should arrive shortly
+          // Send ready signal — caller will connect to SFU
           ws.send({ type: 'call_accept' });
+          // Initialize our own connection to the SFU
+          initSFU(stream);
         },
         onIncomingCall: () => { /* Already accepted */ },
-        onOffer: async (sdp) => {
-          // Step 1: Receive caller's offer → create answer
-          try {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
-            const answer = await pc.createAnswer();
-            answer.sdp = enhanceSDPAudioQuality(answer.sdp || ''); // Apply highest quality OPUS settings
-            await pc.setLocalDescription(answer);
-            ws.send({ type: 'answer', sdp: answer.sdp });
-            setCallView('active');
-            startTimer();
-          } catch (e) {
-            console.error('[Call] Failed to handle incoming offer:', e);
-            toast.error('Failed to connect');
-            endCall(false);
-          }
-        },
-        onAnswer: async (sdp) => {
-          try {
-            await pc.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
-          } catch (e) {
-            console.error('[Call] Answer error:', e);
-          }
-        },
-        onICECandidate: async (candidate) => {
-          try {
-            if (candidate) await pc.addIceCandidate(new RTCIceCandidate(candidate));
-          } catch (e) {
-            console.error('[Call] ICE error:', e);
-          }
-        },
+        onOffer: async () => {}, // Handled natively by SFU
+        onAnswer: async () => {}, // Handled natively by SFU
+        onICECandidate: async () => {}, // Handled natively by SFU
         onCallEnded: () => endCall(false),
         onCallRejected: () => endCall(false),
         onPeerDisconnected: () => {
@@ -353,7 +437,7 @@ function CallsPageContent() {
       toast.error(err.name === 'NotAllowedError' ? 'Microphone/camera access denied' : 'Failed to accept call');
       setCallView('idle');
     }
-  }, [user?.id, selectedRel, incomingCallType, acquireMedia, createPeerConnection, startTimer, endCall]);
+  }, [user?.id, selectedRel, incomingCallType, acquireMedia, startTimer, endCall]);
 
   // ── Reject an incoming call ──
   const rejectCall = useCallback(() => {
@@ -369,14 +453,24 @@ function CallsPageContent() {
   // Auto-accept if directed from notification
   const hasAutoAccepted = useRef(false);
   useEffect(() => {
-    if (callView === 'incoming' && searchParams.get('incoming') === 'true' && user?.id && selectedRel && !hasAutoAccepted.current) {
+    // If we land on this page with incoming=true, we should auto-accept regardless of current callView
+    if (searchParams.get('incoming') === 'true' && user?.id && selectedRel && !hasAutoAccepted.current) {
+      const urlCallType = (searchParams.get('type') || 'audio') as 'audio' | 'video';
+      
+      // Wait for state to populate so the callback closure has the right values
+      if (!incomingCallType) {
+        setIncomingCallType(urlCallType);
+        setCallView('incoming');
+        return;
+      }
+      
       hasAutoAccepted.current = true;
       // Clean URL params silently so refreshes don't re-trigger it
       window.history.replaceState({}, '', `/calls?rel=${selectedRel}&type=${callTypeParam}`);
-      // Add slight delay to ensure UI state transitions cleanly before acquiring media
-      setTimeout(() => acceptIncomingCall(), 300);
+      
+      acceptIncomingCall();
     }
-  }, [callView, searchParams, user?.id, selectedRel, callTypeParam, acceptIncomingCall]);
+  }, [searchParams, user?.id, selectedRel, callTypeParam, incomingCallType, acceptIncomingCall]);
 
   // ── Listen for incoming calls via WS when idle ──
   useEffect(() => {
@@ -458,7 +552,17 @@ function CallsPageContent() {
   }, [callView, callType]);
 
   // Cleanup on unmount
-  useEffect(() => () => { endCall(false); }, []);
+  useEffect(() => {
+    return () => {
+      // Safety net: stop all tracks and disconnect on unmount
+      localStreamRef.current?.getTracks().forEach(t => t.stop());
+      remoteStreamRef.current?.getTracks().forEach(t => t.stop());
+      if (sendTransportRef.current) { try { sendTransportRef.current.close(); } catch(e) {} }
+      if (recvTransportRef.current) { try { recvTransportRef.current.close(); } catch(e) {} }
+      if (sfuSocketRef.current) { sfuSocketRef.current.disconnect(); }
+      if (timerRef.current) { clearInterval(timerRef.current); }
+    };
+  }, []);
 
   if (!user) {
     return (
