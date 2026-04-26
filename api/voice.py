@@ -461,13 +461,10 @@ async def voice_call(websocket: WebSocket):
                 await cache_message(user_id, bot_id, "user", transcript)
                 await cache_message(user_id, bot_id, "bot", full_response)
 
-                # Trigger memory storage and message log for DB persistence
-                from services.rabbitmq_service import publish_memory_task, publish_message_log
+                # Trigger memory storage for DB persistence
+                from services.rabbitmq_service import publish_memory_task
                 import asyncio
                 asyncio.create_task(asyncio.to_thread(publish_memory_task, user_id, bot_id, transcript, full_response))
-                asyncio.create_task(asyncio.to_thread(
-                    publish_message_log, user_id, bot_id, transcript, full_response, "voice_call", None
-                ))
 
             except Exception as e:
                 logger.error(f"Response generation error: {e}")

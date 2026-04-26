@@ -178,9 +178,6 @@ async def send_message(
                 }
             )
 
-            background_tasks.add_task(
-                publish_message_log, user_id, bot_id, request.message, crisis_response
-            )
             return ChatResponse(
                 bot_id=bot_id,
                 user_message=request.message,
@@ -222,9 +219,6 @@ async def send_message(
         # ── Step 11: Publish to RabbitMQ (async background processing) ────────
         background_tasks.add_task(
             publish_memory_task, user_id, bot_id, request.message, bot_response
-        )
-        background_tasks.add_task(
-            publish_message_log, user_id, bot_id, request.message, bot_response
         )
 
         # ── Step 12: Award XP ─────────────────────────────────────────────────

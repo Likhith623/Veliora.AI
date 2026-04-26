@@ -111,13 +111,22 @@ def serialize_chat_to_messages(chat: dict, embedding: list = None) -> list[dict]
             "media_url": user_media,
         })
 
+    from datetime import datetime, timedelta
+    bot_timestamp = timestamp
+    if timestamp:
+        try:
+            dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+            bot_timestamp = (dt + timedelta(milliseconds=1)).isoformat()
+        except Exception:
+            pass
+
     if chat.get("bot_response"):
         rows.append({
             "user_id": user_id,
             "bot_id": bot_id,
             "role": "bot",
             "content": chat["bot_response"],
-            "created_at": timestamp,
+            "created_at": bot_timestamp,
             "activity_type": activity_type,
             "media_url": bot_media,
         })
