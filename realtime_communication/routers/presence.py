@@ -24,9 +24,24 @@ class PresenceManager:
     async def connect(self, user_id: str, websocket: WebSocket):
         await websocket.accept()
         self.active_users[user_id] = websocket
+        # Update DB status
+        try:
+            db = get_supabase()
+            db.table("profiles_realtime").update({"status": "online"}).eq("id", user_id).execute()
+        except Exception:
+            pass
 
     def disconnect(self, user_id: str):
         self.active_users.pop(user_id, None)
+        # Update DB status
+        try:
+            db = get_supabase()
+            db.table("profiles_realtime").update({
+                "status": "offline", 
+                "last_active": __import__("datetime").datetime.utcnow().isoformat()
+            }).eq("id", user_id).execute()
+        except Exception:
+            pass
 
     async def send_to_user(self, user_id: str, data: dict):
         if user_id in self.active_users:

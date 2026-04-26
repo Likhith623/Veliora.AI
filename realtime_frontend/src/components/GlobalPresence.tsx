@@ -61,6 +61,28 @@ export default function GlobalPresence() {
           return;
         }
         setCallAlert(data);
+      },
+      onGlobalNotification: (notif) => {
+        if (notif && notif.title) {
+          const getUrl = () => {
+            if (notif.type === 'new_message') {
+              if (notif.data?.relationship_id) return `/chat/${notif.data.relationship_id}`;
+              if (notif.data?.room_id) return `/family-rooms`;
+            }
+            if (notif.type === 'xp_gifted' || notif.type === 'xp_earned') return '/xp';
+            if (notif.type.includes('game') || notif.type.includes('contest')) return '/live-games';
+            if (notif.type === 'friend_request_received') return '/network';
+            return '/dashboard';
+          };
+          
+          toast(
+            <div className="flex flex-col gap-1 cursor-pointer" onClick={() => router.push(getUrl())}>
+              <div className="font-bold text-sm">{notif.title}</div>
+              <div className="text-xs opacity-90">{notif.body}</div>
+            </div>, 
+            { duration: 5000, position: 'top-center' }
+          );
+        }
       }
     });
 

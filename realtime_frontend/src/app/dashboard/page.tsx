@@ -15,7 +15,7 @@ import { api } from '@/lib/api';
 
 export default function DashboardPage() {
   const { theme, toggleTheme } = useTheme();
-  const { user, relationships, notifications, unreadCount, markNotificationRead, refreshRelationships } = useAuth();
+  const { user, relationships, notifications, unreadCount, markNotificationRead, refreshRelationships, nicknames } = useAuth();
   const [showNotifications, setShowNotifications] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -241,7 +241,7 @@ export default function DashboardPage() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold truncate">{rel.partner?.display_name || 'Partner'}</span>
+                            <span className="font-semibold truncate">{nicknames[rel.partner?.id || ''] || rel.partner?.display_name || 'Partner'}</span>
                             {rel.partner?.is_verified && <span className="text-green-500 text-sm">✓</span>}
                           </div>
                           <div className="text-xs text-muted flex items-center gap-2">

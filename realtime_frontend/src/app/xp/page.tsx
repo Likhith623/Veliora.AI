@@ -16,7 +16,7 @@ import toast from 'react-hot-toast';
 type XPTab = 'overview' | 'transactions' | 'leaderboard' | 'gift';
 
 export default function XPPage() {
-  const { user, xp, refreshXP, relationships } = useAuth();
+  const { user, xp, refreshXP, relationships, nicknames } = useAuth();
   const [tab, setTab] = useState<XPTab>('overview');
   const [transactions, setTransactions] = useState<XPTransaction[]>([]);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -230,7 +230,7 @@ export default function XPPage() {
                                 )}
                               </div>
                               <div>
-                                <div className="text-sm font-semibold">{rel.partner_display_name || 'Friend'} <span>{rel.partner_country}</span></div>
+                                <div className="text-sm font-semibold">{nicknames[rel.partner?.id || ''] || rel.partner_display_name || 'Friend'} <span>{rel.partner_country}</span></div>
                                 <div className="text-[10px] uppercase tracking-wider text-muted font-bold text-bond-400">{rel.level_label || 'Bond Level'}</div>
                               </div>
                             </div>

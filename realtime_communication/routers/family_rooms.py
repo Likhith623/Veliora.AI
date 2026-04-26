@@ -5,6 +5,7 @@ from typing import Optional, Dict, Set
 from realtime_communication.models.schemas import CreateRoomRequest, InviteToRoomRequest, RoomMessageRequest, CreatePotluckRequest, JoinRoomRequest
 from realtime_communication.services.supabase_client import get_supabase
 from realtime_communication.services.translation_service import translate_text, detect_language
+from realtime_communication.services.notification_service import send_notification_bulk
 from realtime_communication.services.auth_service import get_current_user_id, get_optional_user_id
 from realtime_communication.models.schemas import CreateJoinCodeRequest, JoinByCodeRequest
 import secrets
@@ -308,6 +309,28 @@ async def send_room_message(room_id: str, req: RoomMessageRequest, user_id: str 
                 "type": "new_message",
                 "message": msg_with_profile
             })
+            
+            # Send notifications to other members
+            other_members = [uid for uid in member_ids if uid != user_id]
+            if other_members:
+                sender_name = profile.data[0]["display_name"] if profile.data else "Someone"
+                room = db.table("family_rooms_realtime").select("name").eq("id", room_id).execute()
+                room_name = room.data[0]["name"] if room.data else "Family Room"
+                preview = (req.original_text or "")[:50]
+                if req.content_type == "image":
+                    preview = "📷 Image"
+                elif req.content_type == "video":
+                    preview = "🎥 Video"
+                elif req.content_type == "voice":
+                    preview = "🎤 Voice message"
+                
+                await send_notification_bulk(
+                    other_members, 
+                    "new_message",
+                    data={"room_id": room_id, "message_id": message.data[0]["id"]},
+                    sender=f"{sender_name} in {room_name}",
+                    preview=preview
+                )
         except Exception:
             pass
             

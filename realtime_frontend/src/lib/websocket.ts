@@ -231,6 +231,7 @@ export interface RoomWSHandlers {
   onOpen?: () => void;
   onClose?: (event: CloseEvent) => void;
   onError?: (error: Event) => void;
+  onCustomMessage?: (data: any) => void;
 }
 
 export function createRoomWS(
@@ -248,6 +249,7 @@ export function createRoomWS(
       if (typeof window !== 'undefined' && (window as any)._handleRoomWebRTC) {
         (window as any)._handleRoomWebRTC(data);
       }
+      roomHandlers.onCustomMessage?.(data);
       switch (data.type) {
         case 'new_message':
           roomHandlers.onNewMessage?.(data.message);
@@ -295,6 +297,7 @@ export interface PresenceWSHandlers {
   onGameInviteFailed?: (error: string) => void;
   onInviteResponse?: (data: { accept: boolean, session_id: string, responder_id: string, game_type?: string }) => void;
   onIncomingCall?: (data: { caller_id: string, caller_name: string, call_type: string, relationship_id: string }) => void;
+  onGlobalNotification?: (data: any) => void;
   onOpen?: () => void;
   onClose?: (event: CloseEvent) => void;
 }
@@ -321,6 +324,9 @@ export function createPresenceWS(
           break;
         case 'incoming_call':
           handlers.onIncomingCall?.(data);
+          break;
+        case 'global_notification':
+          handlers.onGlobalNotification?.(data.notification);
           break;
       }
     }

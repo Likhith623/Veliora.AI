@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft, Users, Globe, Heart, Plus, MessageCircle, Loader2,
-  Sparkles, Crown, Send, Wifi
+  Sparkles, Crown, Send, Wifi, X, Video, Phone
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import { createRoomWS, type ManagedWebSocket } from '@/lib/websocket';
@@ -59,8 +59,11 @@ export default function FamilyRoomsPage() {
   const [view, setView] = useState<RoomView>('list');
   const [rooms, setRooms] = useState<FamilyRoom[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<FamilyRoom | null>(null);
+  const [showMembersModal, setShowMembersModal] = useState(false);
   const [messages, setMessages] = useState<RoomMessage[]>([]);
   const [isCallActive, setIsCallActive] = useState(false);
+  const [callType, setCallType] = useState<'audio' | 'video'>('video');
+  const [callRingData, setCallRingData] = useState<any>(null);
   const [msgInput, setMsgInput] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
@@ -344,7 +347,12 @@ export default function FamilyRoomsPage() {
               <div className="p-1.5 rounded-lg bg-gradient-to-br from-bond-500/20 to-familia-500/20">
                 <Users className="w-4 h-4 text-bond-400" />
               </div>
-              {view === 'chat' && selectedRoom ? selectedRoom.room_name : view === 'create' ? 'Create Room' : 'Family Rooms'}
+              {view === 'chat' && selectedRoom ? (
+                <div className="cursor-pointer hover:opacity-80 flex flex-col" onClick={() => setShowMembersModal(true)}>
+                  <span>{selectedRoom.room_name}</span>
+                  <span className="text-[10px] font-normal text-muted">Tap to view members</span>
+                </div>
+              ) : view === 'create' ? 'Create Room' : 'Family Rooms'}
             </h1>
           </div>
           {view === 'list' && (
@@ -511,13 +519,36 @@ export default function FamilyRoomsPage() {
                    ws={roomWsRef.current}
                    onLeave={() => setIsCallActive(false)}
                    members={selectedRoom.members || []}
+                   callType={callType}
                  />
+              )}
+
+              {/* Incoming Call Banner */}
+              {callRingData && !isCallActive && (
+                <div className="m-4 p-4 rounded-xl bg-gradient-to-r from-familia-500/20 to-bond-500/20 border border-familia-500/40 flex items-center justify-between animate-pulse shadow-[0_0_20px_rgba(236,72,153,0.3)]">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-familia-500/30 flex items-center justify-center">
+                      {callRingData.call_type === 'video' ? <Video className="w-5 h-5 text-white" /> : <Phone className="w-5 h-5 text-white" />}
+                    </div>
+                    <div>
+                      <h4 className="font-bold">Incoming Group Call</h4>
+                      <p className="text-xs text-white/80">Someone started a {callRingData.call_type} call in {selectedRoom.room_name}!</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => setCallRingData(null)} className="px-4 py-2 rounded-lg bg-red-500/80 hover:bg-red-500 text-white font-bold text-sm transition">Decline</button>
+                    <button onClick={() => { setCallType(callRingData.call_type); setIsCallActive(true); setCallRingData(null); }} className="px-4 py-2 rounded-lg bg-green-500/80 hover:bg-green-500 text-white font-bold text-sm transition">Join</button>
+                  </div>
+                </div>
               )}
               
               <div className="flex-1 overflow-y-auto space-y-4 mb-4 mt-2">
                 <div className="flex justify-end mb-2 gap-2">
                   {!isCallActive && (
-                    <button onClick={() => setIsCallActive(true)} className="text-xs px-3 py-1 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20">Join Call</button>
+                    <>
+                      <button onClick={() => { setCallType('audio'); setIsCallActive(true); roomWsRef.current?.send({ type: 'start_group_call', call_type: 'audio', sender_id: user?.id }); }} className="text-xs px-3 py-1 rounded-lg bg-[var(--bg-card)] border border-themed hover:bg-[var(--bg-card-hover)] flex items-center gap-1"><Phone className="w-3 h-3" /> Audio Call</button>
+                      <button onClick={() => { setCallType('video'); setIsCallActive(true); roomWsRef.current?.send({ type: 'start_group_call', call_type: 'video', sender_id: user?.id }); }} className="text-xs px-3 py-1 rounded-lg bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 flex items-center gap-1"><Video className="w-3 h-3" /> Video Call</button>
+                    </>
                   )}
                   {selectedRoom.is_moderator && (
                     <button onClick={() => openCodesModal(selectedRoom)} className="text-xs px-3 py-1 rounded-lg bg-[var(--bg-card)] border border-themed hover:bg-[var(--bg-card-hover)]">Manage Invite Codes</button>
@@ -628,6 +659,37 @@ export default function FamilyRoomsPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+      {/* Members Modal */}
+      {showMembersModal && selectedRoom && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-card w-full max-w-sm max-h-[80vh] overflow-y-auto relative border border-themed shadow-2xl">
+            <button onClick={() => setShowMembersModal(false)} className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full transition z-10">
+              <X className="w-5 h-5 text-muted" />
+            </button>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <Users className="w-5 h-5 text-familia-400" />
+              Group Members
+            </h2>
+            <div className="space-y-3 mt-4">
+              {selectedRoom.members && selectedRoom.members.map((member: any) => (
+                <div key={member.user_id} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--bg-card)] border border-themed/50">
+                  <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-familia-500/50 to-bond-500/50 flex items-center justify-center text-lg shadow-inner">
+                    {member.profile?.display_name?.charAt(0).toUpperCase() || 'U'}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-sm">{member.profile?.display_name || 'Unknown User'}</div>
+                    <div className="text-[10px] text-familia-300 capitalize font-medium">{member.role}</div>
+                  </div>
+                </div>
+              ))}
+              {(!selectedRoom.members || selectedRoom.members.length === 0) && (
+                <p className="text-sm text-muted text-center py-4">No members info available.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

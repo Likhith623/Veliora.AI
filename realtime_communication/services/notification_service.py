@@ -82,7 +82,20 @@ async def send_notification(
             "body": body,
             "data": data or {}
         }).execute()
-        return result.data[0] if result.data else None
+        notif = result.data[0] if result.data else None
+        
+        if notif:
+            try:
+                from realtime_communication.routers.presence import presence_manager
+                import asyncio
+                asyncio.create_task(presence_manager.send_to_user(user_id, {
+                    "type": "global_notification",
+                    "notification": notif
+                }))
+            except Exception as push_err:
+                print(f"[Notification Push Error] {push_err}")
+                
+        return notif
     except Exception as e:
         print(f"[Notification] Failed to send {notif_type} to {user_id}: {e}")
         return None

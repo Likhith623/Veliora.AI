@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { api } from './api';
 import { supabase } from './supabase';
+import toast from 'react-hot-toast';
 import type { Profile, Relationship, Notification, XPInfo } from '@/types';
 
 // ── Context Interface ──────────────────────────────────────────
@@ -15,6 +16,8 @@ interface AuthContextType {
   notifications: Notification[];
   unreadCount: number;
   xp: XPInfo | null;
+  nicknames: Record<string, string>;
+  setNickname: (userId: string, nickname: string) => void;
   login: (email: string, password: string) => Promise<void>;
   signup: (data: any) => Promise<void>;
   logout: () => void;
@@ -38,6 +41,8 @@ const AuthContext = createContext<AuthContextType>({
   notifications: [],
   unreadCount: 0,
   xp: null,
+  nicknames: {},
+  setNickname: () => {},
   login: async () => {},
   signup: async () => {},
   logout: () => {},
@@ -60,6 +65,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [relationships, setRelationships] = useState<Relationship[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [xp, setXP] = useState<XPInfo | null>(null);
+  const [nicknames, setNicknamesState] = useState<Record<string, string>>({});
+
+  const setNickname = (userId: string, nickname: string) => {
+    if (nickname.trim()) {
+      localStorage.setItem(`nickname_${userId}`, nickname.trim());
+      setNicknamesState(prev => ({ ...prev, [userId]: nickname.trim() }));
+    } else {
+      localStorage.removeItem(`nickname_${userId}`);
+      setNicknamesState(prev => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
+    }
+  };
+
+  useEffect(() => {
+    const loaded: Record<string, string> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith('nickname_')) {
+        const userId = key.replace('nickname_', '');
+        loaded[userId] = localStorage.getItem(key) || '';
+      }
+    }
+    setNicknamesState(loaded);
+  }, []);
 
   const unreadCount = notifications.filter(n => !n.is_read).length;
 
@@ -94,11 +126,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           {
             event: 'INSERT',
             schema: 'public',
-            table: 'notifications',
+            table: 'notifications_realtime',
             filter: `user_id=eq.${user.id}`,
           },
           (payload) => {
-            setNotifications(prev => [payload.new as Notification, ...prev]);
+            const notif = payload.new as Notification;
+            setNotifications(prev => [notif, ...prev]);
+            
+            // Pop up the notification!
+            if (notif.title) {
+              const getUrl = () => {
+                if (notif.type === 'new_message') {
+                  if (notif.data?.relationship_id) return `/chat/${notif.data.relationship_id}`;
+                  if (notif.data?.room_id) return `/family-rooms`;
+                }
+                if (notif.type === 'xp_gifted' || notif.type === 'xp_earned') return '/xp';
+                if (notif.type.includes('game') || notif.type.includes('contest')) return '/live-games';
+                if (notif.type === 'friend_request_received') return '/network';
+                return '/dashboard';
+              };
+              
+              toast(
+                <div className="flex flex-col gap-1 cursor-pointer" onClick={() => window.location.href = getUrl()}>
+                  <div className="font-bold text-sm">{notif.title}</div>
+                  <div className="text-xs opacity-90">{notif.body}</div>
+                </div>, 
+                { duration: 5000, position: 'top-center' }
+              );
+            }
           }
         )
         .on(
@@ -107,10 +162,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             event: 'UPDATE',
             schema: 'public',
             table: 'profiles_realtime',
-            filter: `id=eq.${user.id}`,
           },
-          () => {
-            refreshUser();
+          (payload) => {
+            const updatedProfile = payload.new as any;
+            if (updatedProfile.id === user.id) {
+              refreshUser();
+            } else {
+              // If a partner's profile (like status) updates, sync it to relationships
+              setRelationships(prev => {
+                const hasRel = prev.some(r => r.partner?.id === updatedProfile.id);
+                if (hasRel) {
+                  return prev.map(r => r.partner?.id === updatedProfile.id ? { ...r, partner: { ...r.partner, ...updatedProfile } } : r);
+                }
+                return prev;
+              });
+            }
           }
         )
         .on(
@@ -337,6 +403,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         markAllNotificationsRead,
         deleteNotification,
         clearAllNotifications,
+        nicknames,
+        setNickname,
       }}
     >
       {children}

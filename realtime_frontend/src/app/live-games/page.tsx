@@ -69,7 +69,7 @@ const SIM_STEP_MS = 1000 / SIM_HZ; // 16.667ms
 function LiveGamesPageContent() {
   const searchParams = useSearchParams();
   const joinSessionId = searchParams.get('session') || '';
-  const { user, relationships } = useAuth();
+  const { user, relationships, nicknames } = useAuth();
 
   const [view, setView] = useState<PageView>('lobby');
   const [availableGames, setAvailableGames] = useState<LiveGameInfo[]>([]);
@@ -809,7 +809,7 @@ function LiveGamesPageContent() {
                       />
                     </div>
                     <span className="text-xs mt-2 truncate w-full text-center">
-                      {partner.display_name}
+                      {nicknames[partner.id] || partner.display_name}
                     </span>
                   </button>
                 );

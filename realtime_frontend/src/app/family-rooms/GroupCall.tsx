@@ -10,9 +10,10 @@ interface GroupCallProps {
   onLeave: () => void;
   members: any[];
   mode?: 'p2p' | 'sfu';
+  callType?: 'audio' | 'video';
 }
 
-export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p' }: GroupCallProps) {
+export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p', callType = 'video' }: GroupCallProps) {
   // --- STATE ---
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
@@ -50,11 +51,11 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p' }
             noiseSuppression: true,
             autoGainControl: true,
           },
-          video: {
+          video: callType === 'video' ? {
             width: { ideal: 640 },
             height: { ideal: 480 },
             frameRate: { ideal: 30, max: 30 }
-          }
+          } : false
         };
         const stream = await navigator.mediaDevices.getUserMedia(constraints);
         if (!active) return;
@@ -160,8 +161,12 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p' }
         }
     };
     
-    ws.onMessage(handleWsMessage);
-    return () => ws.offMessage(handleWsMessage);
+    (window as any)._handleRoomWebRTC = handleWsMessage;
+    return () => {
+      if ((window as any)._handleRoomWebRTC === handleWsMessage) {
+        delete (window as any)._handleRoomWebRTC;
+      }
+    };
   }, [ws, activeMode, userId]);
 
 
@@ -427,20 +432,36 @@ export function GroupCall({ roomId, userId, ws, onLeave, members, mode = 'p2p' }
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div className="relative aspect-video bg-black rounded-xl overflow-hidden shadow-lg border border-white/10 group">
-          <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
-          <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
-            <User className="w-3 h-3" /> You
+        {callType === 'video' ? (
+          <div className="relative aspect-video bg-black rounded-xl overflow-hidden shadow-lg border border-white/10 group">
+            <video ref={localVideoRef} autoPlay playsInline muted className="w-full h-full object-cover transform scale-x-[-1]" />
+            <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
+              <User className="w-3 h-3" /> You
+            </div>
+            <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+              <button onClick={toggleAudio} className={`p-1.5 rounded-lg backdrop-blur ${isAudioEnabled ? 'bg-black/40 text-white' : 'bg-red-500/80 text-white'}`}>
+                {isAudioEnabled ? <Mic className="w-3 h-3" /> : <MicOff className="w-3 h-3" />}
+              </button>
+              <button onClick={toggleVideo} className={`p-1.5 rounded-lg backdrop-blur ${isVideoEnabled ? 'bg-black/40 text-white' : 'bg-red-500/80 text-white'}`}>
+                {isVideoEnabled ? <Video className="w-3 h-3" /> : <VideoOff className="w-3 h-3" />}
+              </button>
+            </div>
           </div>
-          <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
-            <button onClick={toggleAudio} className={`p-1.5 rounded-lg backdrop-blur ${isAudioEnabled ? 'bg-black/40 text-white' : 'bg-red-500/80 text-white'}`}>
-              {isAudioEnabled ? <Mic className="w-3 h-3" /> : <MicOff className="w-3 h-3" />}
-            </button>
-            <button onClick={toggleVideo} className={`p-1.5 rounded-lg backdrop-blur ${isVideoEnabled ? 'bg-black/40 text-white' : 'bg-red-500/80 text-white'}`}>
-              {isVideoEnabled ? <Video className="w-3 h-3" /> : <VideoOff className="w-3 h-3" />}
-            </button>
+        ) : (
+          <div className="relative aspect-video bg-[#1a1d2d] rounded-xl flex flex-col items-center justify-center shadow-lg border border-white/10">
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-familia-500 to-bond-500 flex items-center justify-center shadow-lg border-4 border-[#1a1d2d]">
+              <User className="w-8 h-8 text-white opacity-80" />
+            </div>
+            <div className="mt-2 bg-black/60 backdrop-blur text-white text-[10px] px-2 py-1 rounded-md flex items-center gap-1">
+              <User className="w-3 h-3" /> You
+            </div>
+            <div className="absolute top-2 right-2 flex gap-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition">
+              <button onClick={toggleAudio} className={`p-1.5 rounded-lg backdrop-blur ${isAudioEnabled ? 'bg-black/40 text-white' : 'bg-red-500/80 text-white'}`}>
+                {isAudioEnabled ? <Mic className="w-3 h-3" /> : <MicOff className="w-3 h-3" />}
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         <AnimatePresence>
           {peersToDisplay.map(([pid, stream]) => (

@@ -748,6 +748,12 @@ async def websocket_chat(websocket: WebSocket, relationship_id: str, user_id: st
                     "user_id": user_id
                 }, exclude=websocket)
             
+            elif msg_type == "stopped_typing":
+                await manager.broadcast(relationship_id, {
+                    "type": "stopped_typing",
+                    "user_id": user_id
+                }, exclude=websocket)
+            
             elif msg_type == "read_receipt":
                 # Mark messages as read
                 db = get_supabase()

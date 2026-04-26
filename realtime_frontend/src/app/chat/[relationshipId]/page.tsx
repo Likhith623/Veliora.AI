@@ -43,7 +43,7 @@ const REACTION_EMOJIS = ['❤️', '😂', '😮', '😢', '🔥', '👍'];
 export default function ChatPage() {
   const params = useParams();
   const relationshipId = params.relationshipId as string;
-  const { user, relationships, refreshUser, refreshXP, refreshRelationships } = useAuth();
+  const { user, relationships, refreshUser, refreshXP, refreshRelationships, nicknames, setNickname } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -62,6 +62,9 @@ export default function ChatPage() {
   const wsRef = useRef<ManagedWebSocket | null>(null);
   const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  const [showNicknameModal, setShowNicknameModal] = useState(false);
+  const [newNickname, setNewNickname] = useState('');
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -75,7 +78,8 @@ export default function ChatPage() {
           api.getRelationship(relationshipId),
           api.getMessages(relationshipId, 50),
         ]);
-        setChatData(relData.relationship || relData);
+        const fullRelData = relData.relationship ? { ...relData.relationship, partner: relData.partner, partner_role: relData.partner_role } : relData;
+        setChatData(fullRelData);
         const msgs = Array.isArray(msgData) ? msgData : msgData.messages || [];
         setMessages(msgs);
       } catch (err: any) {
@@ -98,6 +102,14 @@ export default function ChatPage() {
     }
   }, [relationships, relationshipId]);
 
+  // Load nickname
+  useEffect(() => {
+    if (chatData?.partner?.id) {
+      const stored = localStorage.getItem(`nickname_${chatData.partner.id}`);
+      if (stored) setNickname(chatData.partner.id, stored);
+    }
+  }, [chatData?.partner?.id, setNickname]);
+
   // ── WebSocket connection ──
   useEffect(() => {
     if (!relationshipId || !user?.id || isLoading) return;
@@ -114,7 +126,7 @@ export default function ChatPage() {
       onStoppedTyping: () => setIsTyping(false),
       onReadReceipt: (messageId) => {
         setMessages(prev =>
-          prev.map(m => m.id === messageId ? { ...m, is_read: true } : m)
+          prev.map(m => (messageId ? (m.id === messageId ? { ...m, is_read: true } : m) : { ...m, is_read: true }))
         );
       },
       onReaction: (messageId, emoji) => {
@@ -137,6 +149,18 @@ export default function ChatPage() {
 
   useEffect(() => { scrollToBottom(); }, [messages]);
   useEffect(() => { if (!isLoading) inputRef.current?.focus(); }, [isLoading]);
+
+  // Send read receipt if we have unread messages from partner
+  useEffect(() => {
+    const partnerId = chatData?.partner?.id;
+    if (messages.length > 0 && wsRef.current && partnerId) {
+      const hasUnread = messages.some(m => m.sender_id === partnerId && !m.is_read);
+      if (hasUnread) {
+        wsRef.current.send({ type: 'read_receipt' });
+        setMessages(prev => prev.map(m => m.sender_id === partnerId ? { ...m, is_read: true } : m));
+      }
+    }
+  }, [messages, chatData?.partner?.id]);
 
   // ── Send typing indicator ──
   const handleInputChange = useCallback((text: string) => {
@@ -341,7 +365,16 @@ export default function ChatPage() {
 
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-[15px] truncate">{partner?.display_name || 'Partner'}</span>
+                <span 
+                  className="font-semibold text-[15px] truncate cursor-pointer hover:opacity-80 transition"
+                  onClick={() => {
+                    setNewNickname(nicknames[partner?.id] || partner?.display_name || '');
+                    setShowNicknameModal(true);
+                  }}
+                  title="Click to set a custom name for this friend"
+                >
+                  {nicknames[partner?.id] || partner?.display_name || 'Partner'}
+                </span>
                 {partner?.country && <span className="text-[11px] text-muted">{partner.country}</span>}
               </div>
               <div className="text-[11px] text-muted flex items-center gap-1.5">
@@ -742,6 +775,43 @@ export default function ChatPage() {
           </div>
         </footer>
       </div>
+
+      {/* Nickname Modal */}
+      {showNicknameModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="glass-card w-full max-w-sm border border-themed shadow-2xl relative">
+            <button onClick={() => setShowNicknameModal(false)} className="absolute top-4 right-4 p-2 hover:bg-white/10 rounded-full transition">
+              <X className="w-5 h-5 text-muted" />
+            </button>
+            <h2 className="text-xl font-bold mb-2">Edit Contact Name</h2>
+            <p className="text-[11px] text-muted mb-4">This name will only be visible to you on this device, just like saving a contact in your phone.</p>
+            <input 
+              type="text" 
+              className="input-familia w-full mb-4" 
+              placeholder={partner?.display_name || "Enter name"}
+              value={newNickname}
+              onChange={e => setNewNickname(e.target.value)}
+              autoFocus
+            />
+            <div className="flex items-center gap-2 mt-4">
+              <button className="flex-1 py-2 rounded-xl bg-[var(--bg-card-hover)] border border-themed text-sm font-semibold transition hover:bg-white/5" onClick={() => setShowNicknameModal(false)}>Cancel</button>
+              <button 
+                className="flex-1 py-2 rounded-xl bg-gradient-to-r from-familia-500 to-bond-500 text-white text-sm font-semibold transition hover:shadow-lg" 
+                onClick={() => {
+                  if (partner?.id) {
+                    setNickname(partner.id, newNickname);
+                  }
+                  setShowNicknameModal(false);
+                  toast.success("Contact name updated!");
+                }}
+              >
+                Save Name
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
