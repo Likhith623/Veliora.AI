@@ -6,6 +6,7 @@ import { Textarea } from "../ui/textarea";
 import { Button } from "../ui/button";
 import { useBot } from "@/support/BotContext";
 import { supabase } from "../../../supabaseClient";
+import { velioraClient } from "@/lib/veliora-client";
 import {
   IconLoader,
   IconExclamationCircle,
@@ -25,7 +26,7 @@ import {
 
 function Profile({ onClose }) {
   const router = useRouter();
-  const { userDetails } = useUser();
+  const { userDetails, setUserDetails } = useUser();
   const [session, setSession] = useState();
   const { selectedBotId } = useBot();
   const [text, setText] = useState("");
@@ -40,6 +41,11 @@ function Profile({ onClose }) {
     useState(false);
   const [isSubscribing, setIsSubscribing] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  // Password state
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   useEffect(() => {
     const registerServiceWorker = async () => {
@@ -144,26 +150,49 @@ function Profile({ onClose }) {
 
   const handleUpdateProfile = async () => {
     try {
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          date_of_birth: dateOfBirth,
-          gender: gender,
-        })
-        .eq("id", userDetails.id);
-
-      if (error) throw error;
+      const updatedProfile = await velioraClient.updateProfile({
+        date_of_birth: dateOfBirth,
+        gender: gender,
+      });
 
       setIsEditing(false);
       // Update local user details
       const updatedUserDetails = {
         ...userDetails,
-        date_of_birth: dateOfBirth,
-        gender: gender,
+        date_of_birth: updatedProfile.date_of_birth,
+        gender: updatedProfile.gender,
       };
       localStorage.setItem("userDetails", JSON.stringify(updatedUserDetails));
+      if (setUserDetails) {
+        setUserDetails(updatedUserDetails);
+      }
     } catch (error) {
       console.error("Error updating profile:", error);
+      alert("Failed to update profile: " + error.message);
+    }
+  };
+
+  const handleUpdatePassword = async () => {
+    if (!newPassword || !confirmPassword) {
+      alert("Please fill in both password fields.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert("Passwords do not match.");
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      await velioraClient.updatePassword(newPassword);
+      alert("Password updated successfully!");
+      setNewPassword("");
+      setConfirmPassword("");
+    } catch (error) {
+      console.error("Error updating password:", error);
+      alert("Failed to update password: " + error.message);
+    } finally {
+      setIsUpdatingPassword(false);
     }
   };
 
@@ -308,6 +337,8 @@ function Profile({ onClose }) {
                   </label>
                   <input
                     type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
                     className="w-full p-3 mt-1 rounded-lg bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50 text-gray-800 dark:text-gray-200"
                     placeholder="New Password"
                   />
@@ -318,12 +349,18 @@ function Profile({ onClose }) {
                   </label>
                   <input
                     type="password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
                     className="w-full p-3 mt-1 rounded-lg bg-gray-200 dark:bg-gray-800 border border-gray-400 dark:border-gray-600 shadow-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50 text-gray-800 dark:text-gray-200"
                     placeholder="Confirm New Password"
                   />
                 </div>
-                <Button className="w-full bg-gradient-to-r from-purple-400 via-pink-400 to-orange-400 hover:from-purple-500 hover:via-pink-500 hover:to-orange-500 text-white rounded-lg shadow-lg border border-white/20 dark:border-gray-700/20 transition-all duration-300">
-                  Update Password
+                <Button 
+                  onClick={handleUpdatePassword}
+                  disabled={isUpdatingPassword}
+                  className={`w-full bg-gradient-to-r from-purple-400 via-pink-400 to-orange-400 hover:from-purple-500 hover:via-pink-500 hover:to-orange-500 text-white rounded-lg shadow-lg border border-white/20 dark:border-gray-700/20 transition-all duration-300 ${isUpdatingPassword ? "opacity-50 cursor-not-allowed" : ""}`}
+                >
+                  {isUpdatingPassword ? "Updating..." : "Update Password"}
                 </Button>
               </div>
             </div>

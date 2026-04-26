@@ -12,7 +12,7 @@ from config.settings import get_settings
 from config.mappings import XP_REWARDS, calculate_level, calculate_streak_multiplier
 from models.schemas import (
     UserSignUpRequest, UserProfileUpdate, UserProfileResponse,
-    LoginRequest, AuthResponse, XPStatusResponse,
+    LoginRequest, AuthResponse, XPStatusResponse, PasswordUpdateRequest
 )
 
 logger = logging.getLogger(__name__)
@@ -164,6 +164,7 @@ async def signup(request: UserSignUpRequest):
                 gender=request.gender,
                 location=request.location,
                 bio=request.bio,
+                date_of_birth=None,
                 total_xp=0,
                 level=0,
                 streak_days=0,
@@ -258,6 +259,7 @@ async def login(request: LoginRequest):
                 location=profile.get("location"),
                 bio=profile.get("bio"),
                 avatar_url=profile.get("avatar_url"),
+                date_of_birth=profile.get("date_of_birth"),
                 total_xp=profile.get("total_xp", 0),
                 level=calculate_level(profile.get("total_xp", 0)),
                 streak_days=profile.get("streak_days", 0),
@@ -305,6 +307,7 @@ async def get_profile(current_user: dict = Depends(get_current_user)):
         location=profile.get("location"),
         bio=profile.get("bio"),
         avatar_url=profile.get("avatar_url"),
+        date_of_birth=profile.get("date_of_birth"),
         total_xp=profile.get("total_xp", 0),
         level=calculate_level(profile.get("total_xp", 0)),
         streak_days=profile.get("streak_days", 0),
@@ -337,10 +340,36 @@ async def update_profile(
         location=profile.get("location"),
         bio=profile.get("bio"),
         avatar_url=profile.get("avatar_url"),
+        date_of_birth=profile.get("date_of_birth"),
         total_xp=profile.get("total_xp", 0),
         level=calculate_level(profile.get("total_xp", 0)),
         streak_days=profile.get("streak_days", 0),
     )
+
+
+@router.put("/profile/password")
+async def update_password(
+    request: PasswordUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Update the current user's password."""
+    from services.supabase_client import get_supabase_admin
+    import asyncio
+
+    admin = get_supabase_admin()
+    
+    def _update():
+        return admin.auth.admin.update_user_by_id(
+            current_user["user_id"], 
+            {"password": request.password}
+        )
+
+    try:
+        await asyncio.to_thread(_update)
+        return {"message": "Password updated successfully"}
+    except Exception as e:
+        logger.error(f"Failed to update password for {current_user['user_id']}: {e}")
+        raise HTTPException(status_code=400, detail="Failed to update password")
 
 
 @router.post("/profile/avatar")

@@ -145,6 +145,10 @@ export function authUpdateProfile(profileData) {
   return apiPut("/api/auth/profile", profileData);
 }
 
+export function authUpdatePassword(password) {
+  return apiPut("/api/auth/profile/password", { password });
+}
+
 /**
  * Returns XP status: { total_xp, level, streak_days, ... }
  */
@@ -805,6 +809,7 @@ export const velioraClient = {
   logout: authLogout,
   getProfile: authGetProfile,
   updateProfile: authUpdateProfile,
+  updatePassword: authUpdatePassword,
   getXP: authGetXP,
 
   // Chat

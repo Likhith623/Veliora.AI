@@ -47,6 +47,11 @@ class UserProfileUpdate(BaseModel):
     gender: Optional[str] = None
     location: Optional[str] = None
     bio: Optional[str] = None
+    date_of_birth: Optional[str] = None
+
+
+class PasswordUpdateRequest(BaseModel):
+    password: str
 
 
 class UserProfileResponse(BaseModel):
@@ -59,6 +64,7 @@ class UserProfileResponse(BaseModel):
     location: Optional[str] = None
     bio: Optional[str] = None
     avatar_url: Optional[str] = None
+    date_of_birth: Optional[str] = None
     total_xp: int = 0
     level: int = 0
     streak_days: int = 0
