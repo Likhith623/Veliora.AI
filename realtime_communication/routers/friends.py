@@ -169,56 +169,29 @@ async def send_friend_request(
     # Get sender name
     sender = db.table("profiles_realtime").select("display_name").eq("id", current_user).execute()
     sender_name = sender.data[0]["display_name"] if sender.data else "Someone"
+
+    # All requests should start as pending. No auto-accepting under any condition to avoid showing up in "your bonds" until accepted.
+    print(f"Creating pending friend request from {current_user} to {target_id}")
+
+    # PRIVATE: create pending request
+    fr = db.table("friend_requests_realtime").insert({
+        "sender_id": current_user,
+        "receiver_id": target_id,
+        "status": "pending",
+        "message": req.message if req else None,
+    }).execute()
     
-    if visibility == "public":
-        # AUTO-ACCEPT: create relationship immediately
-        relationship = await create_relationship(
-            user_a_id=current_user,
-            user_b_id=target_id,
-            role_a="friend",
-            role_b="friend"
-        )
-        
-        # Create a friend request record (already accepted)
-        db.table("friend_requests_realtime").insert({
-            "sender_id": current_user,
-            "receiver_id": target_id,
-            "status": "accepted",
-            "message": req.message if req else None,
-            "responded_at": datetime.utcnow().isoformat(),
-        }).execute()
-        
-        await send_notification(
-            target_id, "friend_request_accepted",
-            data={"sender_id": current_user, "relationship_id": relationship.get("id")},
-            sender=sender_name
-        )
-        
-        return {
-            "status": "accepted",
-            "message": f"You are now friends with {target.data[0]['display_name']}!",
-            "relationship": relationship,
-        }
-    else:
-        # PRIVATE: create pending request
-        fr = db.table("friend_requests_realtime").insert({
-            "sender_id": current_user,
-            "receiver_id": target_id,
-            "status": "pending",
-            "message": req.message if req else None,
-        }).execute()
-        
-        await send_notification(
-            target_id, "friend_request_received",
-            data={"request_id": fr.data[0]["id"] if fr.data else None, "sender_id": current_user},
-            sender=sender_name
-        )
-        
-        return {
-            "status": "pending",
-            "message": f"Friend request sent to {target.data[0]['display_name']}!",
-            "request": fr.data[0] if fr.data else None,
-        }
+    await send_notification(
+        target_id, "friend_request_received",
+        data={"request_id": fr.data[0]["id"] if fr.data else None, "sender_id": current_user},
+        sender=sender_name
+    )
+    
+    return {
+        "status": "pending",
+        "message": f"Friend request sent to {target.data[0]['display_name']}!",
+        "request": fr.data[0] if fr.data else None,
+    }
 
 
 # ─── Respond to Friend Request ────────────────────────────────────────────────
@@ -486,7 +459,13 @@ async def unfriend(relationship_id: str, current_user: str = Depends(get_current
         "ended_at": datetime.utcnow().isoformat(),
     }).eq("id", relationship_id).execute()
     
+    # Also clean up any lingering friend requests between the users
     partner_id = rel_data["user_b_id"] if rel_data["user_a_id"] == current_user else rel_data["user_a_id"]
+    
+    db.table("friend_requests_realtime").delete().or_(
+        f"and(sender_id.eq.{current_user},receiver_id.eq.{partner_id}),"
+        f"and(sender_id.eq.{partner_id},receiver_id.eq.{current_user})"
+    ).execute()
     
     await send_notification(
         partner_id, "relationship_ended",

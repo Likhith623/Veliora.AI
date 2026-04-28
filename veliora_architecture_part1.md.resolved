@@ -1,0 +1,409 @@
+# Veliora.AI — Canonical Architectural Documentation (Part 1)
+
+## System Overview & Core Backend
+
+> **Document Scope:** This is Part 1 of 3 of the exhaustive architectural reference for the Veliora.AI dual-architecture ecosystem. It covers the system overview, core backend orchestration, configuration, authentication, chat pipeline, voice infrastructure, and LLM engine.
+
+---
+
+## 1. Dual-Architecture Overview
+
+Veliora.AI is a **dual-architecture ecosystem** comprising two independently deployable but interconnected systems:
+
+### Architecture A: AI Persona Orchestration (Port 8000)
+- **Framework:** FastAPI (Python 3.11+, ASGI via Uvicorn)
+- **Purpose:** Customizable AI companion ecosystem with persona-driven conversational intelligence
+- **AI Stack:** Gemini 2.0 Flash (LLM), RoBERTa GoEmotions (text emotion), HuBERT SUPERB-ER (speech emotion), Deepgram Nova-2 (STT), Cartesia Sonic (TTS)
+- **Data Layer:** Redis Stack (RediSearch + HNSW vectors) for active state; Supabase PostgreSQL for persistence
+- **Async Pipeline:** RabbitMQ (durable queues) for memory extraction and message logging
+
+### Architecture B: Real-Time Human Communication — "Familia" (Port 8001)
+- **Framework:** FastAPI (separate app instance)
+- **Purpose:** Cross-cultural human connection platform with verified identities, translated messaging, bonding contests, and family rooms
+- **Translation:** Google Cloud Translation API v2 + Gemini 2.0 Flash for cultural context/idiom detection
+- **Data Layer:** Supabase PostgreSQL exclusively (all tables suffixed `_realtime`)
+- **Real-Time:** WebSocket `ConnectionManager` for live chat, typing indicators, read receipts
+
+### Shared Infrastructure
+| Component | Used By |
+|-----------|---------|
+| Supabase PostgreSQL | Both (separate table namespaces) |
+| Deepgram STT | Both (voice calls + voice verification) |
+| Cartesia TTS | Both (voice responses + voice messages) |
+| `.env` credentials | Shared root `.env` file |
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    VELIORA.AI ECOSYSTEM                         │
+│                                                                 │
+│  ┌──────────────────────┐    ┌──────────────────────────────┐  │
+│  │  AI Persona Backend  │    │  Familia Realtime Backend    │  │
+│  │  (FastAPI :8000)     │    │  (FastAPI :8001)             │  │
+│  │                      │    │                              │  │
+│  │  • Chat API          │    │  • Chat + Translation        │  │
+│  │  • Voice WebSocket   │    │  • Friends + Matching        │  │
+│  │  • Games Engine      │    │  • Contests + Games          │  │
+│  │  • Emotion Pipeline  │    │  • Family Rooms              │  │
+│  │  • Memory System     │    │  • Verification              │  │
+│  │  • Selfie Gen        │    │  • Safety + Moderation       │  │
+│  │  • Diary CRON        │    │  • XP + Leaderboards         │  │
+│  └──────────┬───────────┘    └──────────────┬───────────────┘  │
+│             │                                │                  │
+│  ┌──────────▼────────────────────────────────▼───────────────┐  │
+│  │              SHARED INFRASTRUCTURE                        │  │
+│  │  Supabase (PostgreSQL + Storage + Auth)                   │  │
+│  │  Redis Stack (HNSW Vector Search, Caching)                │  │
+│  │  RabbitMQ (Async Memory/Message Queues)                   │  │
+│  │  External: Gemini, Deepgram, Cartesia, HuggingFace        │  │
+│  └───────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 2. Core Orchestration — `main.py` (296 lines)
+
+**File:** [main.py](file:///Users/likhith./Veliora.AI_backend./main.py)
+
+The application entry point. Responsible for:
+
+### 2.1 Application Factory
+- Creates a `FastAPI` instance with metadata (title, version, description)
+- Configures CORS middleware with permissive origins for development
+- Mounts static file serving at `/static/images/` for generated selfies and uploaded images
+
+### 2.2 Lifespan Management (`@asynccontextmanager`)
+The `lifespan` async context manager orchestrates startup and shutdown:
+
+**Startup Sequence (in order):**
+1. **Redis Connection** — Initializes `RedisManager` from `Redis_chat/working_files/redis_class.py`, establishing connection to local Redis Stack instance
+2. **RabbitMQ Connection** — Establishes persistent connection via `pika` for durable message queues (`memory_extraction_queue`, `message_log_queue`)
+3. **Background Workers** — Spawns four `asyncio.Task` workers:
+   - `redis_sync_worker()` — Periodic Redis→Supabase synchronization of chat messages
+   - `rabbitmq_consumer_worker()` — Consumes memory extraction tasks from RabbitMQ
+   - `xp_flush_worker()` — Periodic batch flush of accumulated XP from Redis to Supabase
+   - `diary_cron_worker()` — Nightly diary generation via Gemini for each active user/bot pair
+
+**Shutdown Sequence:**
+- Cancels all background `asyncio.Task` instances
+- Closes RabbitMQ channel and connection
+- Closes Redis client connection
+
+### 2.3 Router Registration
+Mounts **12 API routers** covering the full feature surface:
+
+| Router Module | Prefix | Tag |
+|---------------|--------|-----|
+| `api.auth` | `/api/auth` | Authentication |
+| `api.chat` | `/api/chat` | Chat & AI Messaging |
+| `api.voice` | `/api/voice` | Voice Calls |
+| `api.voice_ultra` | (root) | Ultra-Fast Voice |
+| `api.games` | `/api/games` | Games & Gamification |
+| `api.selfie` | `/api/selfie` | Selfie Compositing |
+| `api.images` | `/api/images` | Image Generation |
+| `api.diary` | `/api/diary` | Persona Diary |
+| `api.memory` | `/api/memory` | Manual Memory Vault |
+| `api.multimodal` | `/api/multimodal` | Multimodal Features |
+| `api.emotion_dashboard` | `/emotion-dashboard` | Mental Health Dashboard |
+| `api.logs` | `/api/logs` | Frontend Logs & Insights |
+
+Additionally mounts the **Familia** realtime communication app as a sub-application at `/api/v1`.
+
+---
+
+## 3. Configuration Layer
+
+### 3.1 `config/settings.py` (89 lines)
+
+**File:** [settings.py](file:///Users/likhith./Veliora.AI_backend./config/settings.py)
+
+Pydantic `BaseSettings` class with `@lru_cache` singleton pattern. Loads all credentials from root `.env`:
+
+| Setting Group | Keys | Purpose |
+|--------------|------|---------|
+| **Supabase** | `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SERVICE_ROLE_KEY` | Database + Auth + Storage |
+| **Redis** | `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | Cache + Vector Search |
+| **RabbitMQ** | `RABBITMQ_URL` | Async message queues |
+| **Google AI** | `GOOGLE_API_KEY`, `GOOGLE_API_KEY_2` | Gemini LLM (primary + fallback) |
+| **Deepgram** | `DEEPGRAM_API_KEY` | Speech-to-Text |
+| **Cartesia** | `CARTESIA_API_KEY` | Text-to-Speech |
+| **HuggingFace** | `HF_API_TOKEN`, `HF_IMAGE_MODEL` | Selfie generation + cross-encoder reranking |
+
+**Key Design Decision:** The `effective_google_api_key` property implements automatic key rotation — uses `GOOGLE_API_KEY` as primary, falls back to `GOOGLE_API_KEY_2` if the primary is empty. This provides resilience against quota exhaustion.
+
+### 3.2 `config/mappings.py` (305 lines)
+
+**File:** [mappings.py](file:///Users/likhith./Veliora.AI_backend./config/mappings.py)
+
+Central configuration registry for the persona ecosystem:
+
+**Persona Voice Mapping** (`VOICE_MAP`): Maps each `bot_id` to a Cartesia voice UUID. Covers 20+ personas across mentor, friend, and romantic archetypes with region-specific voices (e.g., `delhi_mentor_male`, `tokyo_friend_female`, `paris_romantic_male`).
+
+**Language Mapping** (`LANGUAGE_MAP`): Maps `bot_id` → language string (e.g., `"Hindi"`, `"Japanese"`, `"French"`). Used for prompt injection to control response language.
+
+**Persona Origin Mapping** (`PERSONA_ORIGINS`): Maps `bot_id` → `{city, country}` dict. Used by the weather endpoint to fetch localized weather data.
+
+**XP Reward System** (`XP_REWARDS`):
+```python
+XP_REWARDS = {
+    "message_send": 10,
+    "voice_call": 50,
+    "image_describe": 50,
+    "selfie_generate": 150,
+    "game_play": 100,
+    "game_complete": 200,
+    "diary_read": 30,
+    "url_summarize": 50,
+    "meme_generate": 100,
+    "weather_check": 25,
+    "daily_login": 20,
+    "streak_bonus": 50,
+}
+```
+
+**Level Calculation** (`calculate_level(total_xp)`): Uses a square-root curve — `level = int(sqrt(total_xp / 100)) + 1` — capped at level 50. This creates a logarithmic progression where early levels come quickly but higher levels require exponentially more XP.
+
+**Archetype Resolution** (`get_archetype(bot_id)`): Parses the `bot_id` string to extract archetype (`mentor`/`friend`/`romantic`) based on naming convention (e.g., `delhi_mentor_male` → `"mentor"`).
+
+---
+
+## 4. Authentication — `api/auth.py` (439 lines)
+
+**File:** [auth.py](file:///Users/likhith./Veliora.AI_backend./api/auth.py)
+
+### 4.1 JWT Validation
+Implements `get_current_user()` as a FastAPI `Depends()` dependency:
+1. Extracts `Authorization: Bearer <token>` from request headers
+2. Fetches Supabase JWKS (JSON Web Key Set) from `{SUPABASE_URL}/auth/v1/.well-known/jwks.json`
+3. Decodes and validates the JWT using `PyJWT` with RS256 algorithm
+4. Returns `{"user_id": str, "email": str}` dict
+
+**Caching:** JWKS keys are cached using `@lru_cache` to avoid repeated HTTP fetches.
+
+### 4.2 Signup & Login
+- `POST /api/auth/signup` — Creates Supabase auth user, generates JWT, inserts profile row into `users` table. Returns `AuthResponse{access_token, user_id, email}`.
+- `POST /api/auth/login` — Validates credentials against Supabase Auth, returns JWT. Updates `last_login_date` and `streak_days` atomically.
+
+### 4.3 Profile Management Endpoints
+- `GET /api/auth/profile` — Fetch current user profile with bot relationship data, including active persona list and per-bot XP/level
+- `PUT /api/auth/profile` — Update user profile fields (name, gender, traits, language)
+- `PUT /api/auth/profile/password` — Change password via Supabase Auth `update_user()`. Validates current password first.
+- `POST /api/auth/profile/avatar` — Upload avatar image to Supabase Storage bucket `avatars`, update `avatar_url` in profile
+- `GET /api/auth/xp` — Returns `XPStatusResponse` with total XP, level (via `calculate_level()`), XP to next level, and per-bot breakdown
+- `POST /api/auth/bot-setup` — Initialize a new user↔bot relationship (creates entry in `user_bots` table with default traits/language)
+
+### 4.4 Daily Streak & Login XP
+The `POST /api/auth/daily-login` endpoint:
+1. Checks the user's `last_login_date` in Supabase
+2. If it's a new calendar day: awards `daily_login` XP (20 XP)
+3. If it's consecutive: increments `streak_days` and awards `streak_bonus` XP (50 XP)
+4. If streak is broken: resets `streak_days` to 1
+5. Updates `last_login_date` atomically
+
+---
+
+## 5. Chat Pipeline — `api/chat.py` (656 lines)
+
+**File:** [chat.py](file:///Users/likhith./Veliora.AI_backend./api/chat.py)
+
+The most critical endpoint in the system. Orchestrates the full AI messaging loop.
+
+### 5.1 `POST /api/chat/send` — `send_message()`
+
+**Request Flow (sequential):**
+
+```
+Client Request
+    │
+    ▼
+1. JWT Authentication (get_current_user)
+    │
+    ▼
+2. Session Hydration
+   └─ has_active_session(user_id, bot_id)?
+      ├─ YES → load from Redis
+      └─ NO  → load_session_from_supabase() → hydrate Redis
+    │
+    ▼
+3. Emotion Analysis (Background Thread)
+   └─ ThreadPoolExecutor → get_text_emotion(user_message)
+      └─ RoBERTa GoEmotions → {label, score, valence}
+    │
+    ▼
+4. Dual-Alert Evaluation
+   └─ evaluate_dual_alert(redis, user_id, bot_id, fused_emotion, user_text)
+      ├─ Tier 1 (Acute Crisis) → Bypass LLM, inject crisis resources
+      └─ Tier 2 (Chronic Distress) → Add proactive nudge to system prompt
+    │
+    ▼
+5. Memory Retrieval (Parallel)
+   ├─ Semantic Search: generate_embedding(msg) → HNSW search → top-K memories
+   └─ RFM Search: get_rfm_memories() → recency/frequency/magnitude ranked
+    │
+    ▼
+6. LLM Response Generation
+   └─ generate_chat_response(system_prompt, context, user_message,
+                             semantic_memory, rfm_memory, emotion_state)
+      └─ Gemini 2.0 Flash → persona-driven response
+    │
+    ▼
+7. Post-Processing (Background Tasks)
+   ├─ cache_message(user_id, bot_id, "user", msg)
+   ├─ cache_message(user_id, bot_id, "bot", response)
+   ├─ publish_memory_task(user_id, bot_id, msg, response) → RabbitMQ
+   ├─ publish_message_log(user_id, bot_id, msg, response) → RabbitMQ
+   ├─ award_xp(user_id, bot_id, "message_send")
+   └─ log_emotion_telemetry(user_id, bot_id, emotion) → Supabase
+    │
+    ▼
+8. Response to Client
+   └─ {bot_response, emotion, xp_earned, alert_state?}
+```
+
+### 5.2 Additional Chat Endpoints
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/chat/acknowledge-crisis` | POST | User acknowledges Tier 1 crisis alert; resets cooldown, logs acknowledgment to telemetry |
+| `/api/chat/emotion-state/{bot_id}` | GET | Returns current fused emotion state from Redis for the active session |
+| `/api/chat/end-chat` | POST | Gracefully terminates active session — flushes Redis messages to Supabase, clears session key |
+| `/api/chat/init/{bot_id}` | GET | Initializes/hydrates a chat session — loads context from Supabase if no active Redis session exists |
+| `/api/chat/history` | POST | Returns paginated chat history from Supabase `messages` table (body: `{bot_id, page, limit}`) |
+| `/api/chat/overview` | GET | Returns all bot conversations for the user with last message preview and unread count |
+| `/api/chat/clear` | DELETE | Clears all messages for a specific bot from both Redis and Supabase |
+| `/api/chat/forget` | DELETE | Deletes all memories for a specific bot from Redis HNSW index and Supabase `memories` table |
+
+### 5.3 Emotion Executor Pattern
+A module-level `ThreadPoolExecutor(max_workers=2)` named `_emotion_executor` is shared across all requests. RoBERTa inference runs in this pool via `asyncio.get_event_loop().run_in_executor()`, preventing the PyTorch model from blocking the ASGI event loop.
+
+### 5.4 Session Hydration
+Before any chat operation, the system ensures an active Redis session exists:
+1. Check `session:{user_id}:{bot_id}:active` key in Redis
+2. If missing: query Supabase `messages` table for the last 50 messages
+3. Deserialize and load into Redis hash/list structures
+4. Set session TTL (configurable, typically 30 minutes of inactivity)
+
+---
+
+## 6. Voice Infrastructure
+
+### 6.1 Voice REST Endpoints — `api/voice.py` (533 lines)
+
+**File:** [voice.py](file:///Users/likhith./Veliora.AI_backend./api/voice.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/voice/note` | POST | Generate a voice note — STT→LLM→TTS pipeline in one request, returns audio URL |
+| `/api/voice/generate-audio` | POST | Pure TTS — takes text input, returns Cartesia audio bytes |
+| `/api/voice/call/info` | GET | Returns active voice call session metadata (duration, emotion state, turn count) |
+
+### 6.2 WebSocket Streaming — `api/voice.py`
+
+**Endpoint:** `WS /api/voice/call/{user_id}/{bot_id}`
+
+Implements the **Triple-Streaming Pipeline** for sub-500ms latency:
+
+```
+Client (Opus/WebM audio chunks)
+    │ WebSocket
+    ▼
+┌─────────────────────┐
+│  PersistentFFmpeg    │ ← Persistent subprocess (no spawn overhead)
+│  Decoder             │
+│  Opus → 16kHz PCM    │
+└─────────┬───────────┘
+          │ float32 PCM frames
+          ▼
+┌─────────────────────┐     ┌──────────────────────┐
+│  Deepgram WebSocket │────►│  Gemini 2.0 Flash    │
+│  (Nova-2 STT)       │     │  Streaming Response  │
+│  Audio → Text       │     │  Text → Text         │
+└─────────────────────┘     └──────────┬───────────┘
+                                       │ Token stream
+                                       ▼
+                            ┌──────────────────────┐
+                            │  Cartesia WebSocket   │
+                            │  (Sonic TTS)          │
+                            │  Text → Audio         │
+                            └──────────┬───────────┘
+                                       │ Audio chunks
+                                       ▼
+                            Client (real-time playback)
+```
+
+**Concurrency Model:**
+- Three `asyncio.Task` instances run concurrently within each WebSocket connection
+- `_stt_task`: Feeds audio to Deepgram, collects transcripts
+- `_llm_task`: Streams Gemini response token-by-token
+- `_tts_task`: Feeds text chunks to Cartesia, streams audio back to client
+
+**Emotion Worker Integration:**
+During voice calls, a parallel `emotion_worker` runs on a 4-second rolling window:
+1. Accumulates PCM audio in a ring buffer
+2. Every 4 seconds: runs HuBERT speech emotion inference
+3. Fuses with the latest text emotion from the transcript
+4. Updates Redis emotion state for the session
+
+### 6.3 REST Ultra-Fast — `api/voice_ultra.py` (143 lines)
+
+**File:** [voice_ultra.py](file:///Users/likhith./Veliora.AI_backend./api/voice_ultra.py)
+
+**Endpoint:** `POST /voice-call-ultra-fast`
+
+A simpler, non-streaming alternative using REST APIs:
+1. **STT:** Deepgram REST API (`/v1/listen?model=nova-2`)
+2. **LLM:** `generate_chat_response()` (non-streaming)
+3. **TTS:** Cartesia REST API (`/tts/bytes`) → base64-encoded WAV
+
+Returns the complete response in a single JSON payload. Trades latency for simplicity. Includes background emotion processing via `_ultra_emotion.py`.
+
+### 6.4 Ultra Emotion Background — `api/_ultra_emotion.py` (85 lines)
+
+**File:** [_ultra_emotion.py](file:///Users/likhith./Veliora.AI_backend./api/_ultra_emotion.py)
+
+Background task triggered after ultra-fast voice calls:
+1. Decodes audio via async FFmpeg subprocess (`asyncio.create_subprocess_exec`)
+2. Runs HuBERT speech emotion in thread executor
+3. Runs RoBERTa text emotion in thread executor
+4. Fuses results via `fuse_emotions()`
+5. Persists to Redis via `set_emotion_state()`
+6. Evaluates dual-alert; publishes Tier 1 crisis alerts via Redis Pub/Sub
+
+---
+
+## 7. LLM Engine — `services/llm_engine.py` (640 lines)
+
+**File:** [llm_engine.py](file:///Users/likhith./Veliora.AI_backend./services/llm_engine.py)
+
+Central gateway for all Gemini 2.0 Flash interactions. Uses `google.genai.Client`.
+
+### 7.1 Core Functions
+
+| Function | Purpose | Input | Output |
+|----------|---------|-------|--------|
+| `generate_chat_response()` | Main chat completion | system_prompt, context, user_msg, memories | str (bot response) |
+| `generate_embedding()` | Text→Vector embedding | text string | List[float] (768-dim) |
+| `describe_image()` | Multimodal image description | base64 image, bot_id, language | str (description) |
+| `generate_scene_description()` | Selfie scene from chat context | bot_id, context list | str (scene prompt) |
+| `summarize_url_content()` | URL content summarization | content text, bot_id | str (summary) |
+| `generate_text_meme()` | Persona-voiced meme | bot_id, topic, language | str (meme text) |
+| `generate_diary_entry()` | Nightly diary generation | bot_id, user_name, daily_summary | str (diary entry) |
+| `analyze_sentiment_for_dashboard()` | Dashboard insight generation | emotion_data | dict (narrative, predictions) |
+| `generate_dashboard_insights()` | AI-powered dashboard insights | telemetry summary | dict (narrative, prediction, suggestions) |
+
+### 7.2 Prompt Construction
+All functions inject persona context via `bot_prompt.py` templates. The `generate_chat_response()` function constructs a rich prompt:
+```
+[System Prompt (persona definition)]
+[Semantic Memories: "You remember: ..."]
+[RFM Memories: "Important context: ..."]
+[Emotion State: "User's current emotional state: ..."]
+[Chat Context: last N messages]
+[User Message]
+```
+
+### 7.3 Error Handling & Retry
+All Gemini calls are wrapped in try/except with:
+- Automatic retry on `429 Resource Exhausted` (rate limit)
+- Fallback to `GOOGLE_API_KEY_2` on persistent failures
+- Graceful degradation returning empty strings/defaults on total failure

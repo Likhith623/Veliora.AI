@@ -1,0 +1,462 @@
+# Veliora.AI — Canonical Architectural Documentation (Part 2)
+
+## Emotion Pipeline, Memory System, Services & Gamification
+
+> **Document Scope:** Part 2 of 3. Covers the emotion pipeline, Redis memory system, background workers, Supabase persistence, games engine, and multimodal features.
+
+---
+
+## 8. Emotion Pipeline — `emotion/`
+
+The emotion subsystem provides a clinical-grade affective computing layer with a two-tier safety intervention system.
+
+### 8.1 Text Emotion — `emotion/text_emotion.py` (103 lines)
+
+**File:** [text_emotion.py](file:///Users/likhith./Veliora.AI_backend./emotion/text_emotion.py)
+
+- **Model:** `SamLowe/roberta-base-go_emotions` (RoBERTa fine-tuned on GoEmotions dataset)
+- **Labels:** 28 emotion categories (admiration, amusement, anger, annoyance, approval, caring, confusion, curiosity, desire, disappointment, disapproval, disgust, embarrassment, excitement, fear, gratitude, grief, joy, love, nervousness, optimism, pride, realization, relief, remorse, sadness, surprise, neutral)
+- **Loading:** Double-checked lock pattern — `_model` and `_tokenizer` are global singletons initialized on first call, protected by a `threading.Lock`
+- **Inference:** `torch.no_grad()` context for memory efficiency. Returns `{"label": str, "score": float}` — the highest-probability emotion and its confidence
+
+### 8.2 Speech Emotion — `emotion/speech_emotion.py` (123 lines)
+
+**File:** [speech_emotion.py](file:///Users/likhith./Veliora.AI_backend./emotion/speech_emotion.py)
+
+- **Model:** `superb/hubert-large-superb-er` (HuBERT fine-tuned for emotion recognition)
+- **Input:** 16kHz float32 PCM audio array (minimum `MIN_AUDIO_SAMPLES = 16000` samples = 1 second)
+- **Loading:** Same double-checked lock pattern as text emotion
+- **Inference:** Processes raw waveform through feature extractor → model → softmax → argmax. Returns `{"label": str, "score": float}`
+- **Labels:** 4 categories (angry, happy, neutral, sad)
+
+### 8.3 Emotion Fusion — `emotion/fusion.py` (239 lines)
+
+**File:** [fusion.py](file:///Users/likhith./Veliora.AI_backend./emotion/fusion.py)
+
+**`fuse_emotions(text_result, speech_result)`** implements a confidence-weighted ensemble:
+
+1. **Valence Mapping:** Each emotion label maps to a valence score [-1.0, +1.0]:
+   - Positive: joy(+0.9), love(+0.85), excitement(+0.8), gratitude(+0.75), etc.
+   - Negative: grief(-0.9), sadness(-0.8), fear(-0.7), anger(-0.65), etc.
+   - Neutral: neutral(0.0), realization(+0.1), surprise(+0.1)
+
+2. **Weighted Fusion Formula:**
+   ```
+   text_weight = text_confidence * 0.6    (semantic signal weighted higher)
+   speech_weight = speech_confidence * 0.4 (acoustic signal)
+   fused_valence = (text_valence * text_weight + speech_valence * speech_weight)
+                   / (text_weight + speech_weight)
+   ```
+
+3. **Confidence Gating:** If either signal has confidence < 0.3, it's excluded from fusion to prevent noise injection into the safety system.
+
+4. **Output:** `{"dominant_emotion": str, "fused_valence": float, "text_emotion": str, "speech_emotion": str, "text_confidence": float, "speech_confidence": float}`
+
+### 8.4 Session State & Dual-Alert — `emotion/session_state.py` (400 lines)
+
+**File:** [session_state.py](file:///Users/likhith./Veliora.AI_backend./emotion/session_state.py)
+
+The safety-critical module implementing the **Dual-Alert Intervention System**.
+
+**Redis State Keys:**
+- `emotion:{user_id}:{bot_id}:current` — Current fused emotion state (hash)
+- `emotion:{user_id}:{bot_id}:history` — Rolling window of last 20 emotion readings (list)
+- `emotion:{user_id}:{bot_id}:daily_valence` — Day-level average valence (string)
+- `alert:{user_id}:{bot_id}:tier1_cooldown` — 24-hour cooldown after Tier 1 (TTL key)
+- `alert:{user_id}:{bot_id}:tier2_cooldown` — 24-hour cooldown after Tier 2 (TTL key)
+- `alert:{user_id}:{bot_id}:chronic_counter` — Count of consecutive low-valence sessions
+
+**`evaluate_dual_alert()` — Core Safety Function:**
+
+```
+Input: fused_emotion, user_text
+    │
+    ├─ Crisis Keyword Scan ────────────────────────────┐
+    │  Regex patterns for self-harm, suicide,          │
+    │  hopelessness indicators                         │
+    │                                                   │
+    ├─ Tier 1: ACUTE CRISIS ◄──────────────────────────┘
+    │  Triggered when:                                 
+    │  • Crisis keyword detected, OR                   
+    │  • fused_valence < -0.8 AND confidence > 0.7     
+    │  Action:                                         
+    │  • BYPASS LLM entirely                           
+    │  • Inject pre-written crisis resources            
+    │  • Include hotline numbers, safety plan links     
+    │  • Set 24-hour cooldown                          
+    │  • Log to emotion_telemetry with tier1 flag      
+    │                                                   
+    └─ Tier 2: CHRONIC DISTRESS                        
+       Triggered when:                                 
+       • chronic_counter >= 3 (3+ consecutive sessions 
+         with avg valence < -0.35)                     
+       • No active cooldown                            
+       Action:                                         
+       • Do NOT bypass LLM                             
+       • Append proactive nudge to system prompt        
+       • Suggest wellness activities, breathing exercises
+       • Set 24-hour cooldown                          
+       • Log to emotion_telemetry with tier2 flag      
+```
+
+**`get_active_alert_state()`** — Returns the current alert state for the analytics dashboard, including active tier, cooldown remaining, and chronic counter value.
+
+---
+
+## 9. Redis Memory System — `Redis_chat/working_files/`
+
+### 9.1 RedisManager — `redis_class.py` (353 lines)
+
+**File:** [redis_class.py](file:///Users/likhith./Veliora.AI_backend./Redis_chat/working_files/redis_class.py)
+
+Core class managing all Redis data structures:
+
+**Index Management:**
+- Creates RediSearch indexes for memory vectors (HNSW algorithm, cosine distance, 768-dim)
+- Index naming convention: `idx:memory:{user_id}:{bot_id}`
+- Auto-creates indexes on first access per user/bot pair
+
+**Data Structures Per Session:**
+| Key Pattern | Type | Purpose |
+|-------------|------|---------|
+| `chat:{uid}:{bid}:messages` | List | Recent chat messages (FIFO, capped at 50) |
+| `chat:{uid}:{bid}:context` | List | LLM context window (last 20 messages) |
+| `memory:{uid}:{bid}:{mem_id}` | Hash | Individual memory with embedding vector |
+| `session:{uid}:{bid}:active` | String | Session activity flag with TTL |
+| `game:{uid}:state` | Hash | Active game session state |
+| `xp:{uid}:{bid}:pending` | String | Accumulated XP pending flush |
+
+### 9.2 Memory Functions — `memory_functions.py` (537 lines)
+
+**File:** [memory_functions.py](file:///Users/likhith./Veliora.AI_backend./Redis_chat/working_files/memory_functions.py)
+
+**`get_semantically_similar_memories()`:**
+1. Takes a query embedding (768-dim float vector)
+2. Executes RediSearch HNSW KNN query: `FT.SEARCH idx:memory:{uid}:{bid} "*=>[KNN {k} @embedding $vec AS score]"`
+3. Returns top-K memories sorted by cosine similarity
+4. Optionally bumps `rfm_frequency` and `rfm_recency` metadata (side-effect for RFM scoring)
+
+**`get_rfm_memories()`:**
+1. Fetches all memories for the user/bot pair from Redis
+2. Computes RFM score for each: `rfm = recency * 0.3 + frequency * 0.2 + magnitude * 0.5`
+3. Sorts by RFM score descending
+4. Returns top-K highest-importance memories
+
+**Memory Extraction Engine:**
+Called asynchronously via RabbitMQ after each conversation turn:
+1. Constructs a Gemini prompt requesting JSON extraction of personal facts
+2. Gemini returns: `[{"memory": "User loves basketball", "category": "favorites", "action": "add|merge|override|none"}]`
+3. For each extracted fact:
+   - `add`: Generate embedding → store in Redis with HNSW vector
+   - `merge`: Find similar existing memory → update text, bump frequency
+   - `override`: Replace existing memory text, preserve metadata
+   - `none`: Discard (not personally relevant)
+
+### 9.3 RFM Scoring — `RFM_functions.py` (91 lines)
+
+**File:** [RFM_functions.py](file:///Users/likhith./Veliora.AI_backend./Redis_chat/working_files/RFM_functions.py)
+
+**Recency Score** (1-5): Based on days since last access
+| Days Ago | Score |
+|----------|-------|
+| ≤ 1 | 5 |
+| ≤ 3 | 4 |
+| ≤ 7 | 3 |
+| ≤ 14 | 2 |
+| > 14 | 1 |
+
+**Magnitude Score** (0-5): Gemini-evaluated importance of the memory content on a 0-5 scale, considering personal significance, emotional weight, and informational value.
+
+**Frequency Score**: Raw count of times the memory was accessed/referenced.
+
+**Combined RFM:** `rfm = recency * 0.3 + frequency * 0.2 + magnitude * 0.5`
+Magnitude is weighted highest (50%) because personally significant memories should persist regardless of access patterns.
+
+### 9.4 Chatbot Orchestrator — `chatbot.py` (300 lines)
+
+**File:** [chatbot.py](file:///Users/likhith./Veliora.AI_backend./Redis_chat/working_files/chatbot.py)
+
+**`get_bot_response_combined()`** — The highest-level memory-integrated response function:
+1. Retrieves semantic memories (top-3 by HNSW similarity)
+2. Retrieves RFM memories (top-3 by importance score)
+3. Retrieves current emotion state from Redis
+4. Injects all context into the Gemini prompt
+5. Calls `generate_chat_response()` with full context
+
+**Memory Retrieval Strategies:**
+- **Semantic Only:** Used when user message has clear topical intent
+- **RFM Only:** Used for general conversation (surfaces important facts)
+- **Combined:** Default mode — merges both, deduplicates, takes top-5
+
+### 9.5 Serialization — `serialization.py` (153 lines)
+
+**File:** [serialization.py](file:///Users/likhith./Veliora.AI_backend./Redis_chat/working_files/serialization.py)
+
+Provides schema-aware conversion between Redis hash/list formats and Supabase PostgreSQL row formats:
+- `serialize_memory_to_supabase()` — Converts Redis memory hash → Supabase `memories` table row
+- `deserialize_memory_from_supabase()` — Reverse conversion
+- `serialize_chat_to_supabase()` — Converts Redis message list → Supabase `messages` table rows
+- Handles type coercion (Redis stores everything as strings/bytes)
+
+---
+
+## 10. Background Workers — `services/background_tasks.py` (276 lines)
+
+**File:** [background_tasks.py](file:///Users/likhith./Veliora.AI_backend./services/background_tasks.py)
+
+### 10.1 Redis Sync Worker
+- **Interval:** Every 60 seconds
+- **Action:** Scans all active sessions in Redis, writes dirty chat messages to Supabase `messages` table
+- **Pattern:** Write-behind cache — Redis is the source of truth during active sessions, Supabase is the durable store
+
+### 10.2 XP Flush Worker
+- **Interval:** Every 120 seconds
+- **Action:** Reads `xp:{uid}:{bid}:pending` keys, batch-updates Supabase `user_bots` table with accumulated XP
+- **Rationale:** Prevents per-message Supabase writes for high-frequency XP events (e.g., 10 XP per message)
+
+### 10.3 Diary CRON Worker
+- **Interval:** Every 24 hours (midnight UTC)
+- **Action:** For each active user/bot pair with messages in the last 24 hours:
+  1. Aggregates daily conversation summary from Redis
+  2. Calls `generate_diary_entry()` — Gemini writes a first-person diary entry from the bot's perspective
+  3. Stores in Supabase `diaries` table
+
+### 10.4 `award_xp()` Utility
+Centralized XP awarding function:
+1. Looks up XP amount from `XP_REWARDS` mapping
+2. Accumulates in Redis (`INCRBY xp:{uid}:{bid}:pending {amount}`)
+3. Returns `{"total_earned": int}` for immediate client feedback
+4. Actual Supabase write happens via the XP flush worker
+
+---
+
+## 11. Supabase Client — `services/supabase_client.py` (554 lines)
+
+**File:** [supabase_client.py](file:///Users/likhith./Veliora.AI_backend./services/supabase_client.py)
+
+Wraps the synchronous `supabase-py` SDK with async-safe patterns.
+
+**Thread-Pool Offloading:** All Supabase operations use `await asyncio.to_thread(sync_call)` to prevent blocking the ASGI event loop. This is critical because the Supabase Python SDK uses synchronous `httpx` under the hood.
+
+**Key Functions:**
+| Function | Table | Purpose |
+|----------|-------|---------|
+| `get_user_profile(uid)` | `users` | Fetch user profile data |
+| `update_user_profile(uid, data)` | `users` | Update profile fields |
+| `get_chat_history(uid, bid, limit)` | `messages` | Fetch recent messages |
+| `save_messages_batch(messages)` | `messages` | Batch insert messages |
+| `get_diary_entries(uid, bid, limit)` | `diaries` | Fetch diary entries |
+| `create_game_session(data)` | `user_game_sessions` | Create game session record |
+| `update_game_session(sid, data)` | `user_game_sessions` | Update game status |
+| `get_games_by_archetype(archetype)` | `games` | Fetch game catalog |
+| `log_emotion_telemetry(data)` | `emotion_telemetry` | Persist emotion readings |
+| `upload_to_storage(bucket, bytes, path)` | Storage | Upload files to Supabase Storage |
+
+---
+
+## 12. Games & Gamification — `api/games.py` (1107 lines)
+
+**File:** [games.py](file:///Users/likhith./Veliora.AI_backend./api/games.py)
+
+### 12.1 Game Catalog
+Hardcoded catalog of **80+ text-based games** organized by archetype:
+
+| Archetype | Count | Category | Examples |
+|-----------|-------|----------|----------|
+| **Mentor** | 30 | simulation | One Minute Advice Column, Karma Knot, Burning Questions Jar, Quiz Challenge |
+| **Friend** | 25 | social | Daily Debrief, Two Truths and a Lie, Friendly Roast Off, Co-Create Story |
+| **Romantic** | 13 | romance | Love In Another Life, Flirt Or Fail, Date Duel, Love Language |
+
+All games share: `min_turns: 3`, `max_turns: 8`, `xp_reward: 200`
+
+### 12.2 Game Master Engine
+
+**`GET /api/games/catalog/{bot_id}`** — Returns the full game catalog filtered by the bot's archetype. Hardcoded games are auto-seeded to Supabase `games` table on first access to prevent foreign key violations.
+
+**`_get_game_master_prompt()`** — Constructs a strict system directive:
+- Identifies the active game and current turn number
+- Enforces topic lock — if user sends off-topic messages, the bot must redirect
+- On final turn: wraps up the game and declares results
+- Prohibits tag prefixes (`[GAME]`, `[ACTIVITY]`) — bot speaks directly in-character
+
+### 12.3 Game Lifecycle
+
+**`POST /api/games/start`:**
+1. Resolves game from catalog (DB first, hardcoded fallback)
+2. Auto-seeds game to Supabase `games` table if missing (prevents FK violations)
+3. If user has an existing active game: gracefully abandons it (updates status, clears Redis)
+4. Creates `user_game_sessions` record in Supabase
+5. Stores game state in Redis: `game:{uid}:state` → `{session_id, game_id, bot_id, turn, max_turns}`
+6. Generates opening Game Master message via Gemini
+7. Returns `GameStartResponse` with session ID and opening text
+
+**`POST /api/games/action`:**
+1. Loads game state from Redis
+2. Increments turn counter
+3. Builds Game Master prompt with current turn/max
+4. Generates Gemini response
+5. If `turn >= max_turns`: auto-ends game, awards XP, updates Supabase
+6. Returns response with `game_over` flag and XP data
+
+**`POST /api/games/end`:**
+1. Loads game state, calculates final XP based on turns played
+2. Updates Supabase session status to "completed"
+3. Clears Redis game state
+4. Awards XP via `award_xp()`
+
+---
+
+## 13. Multimodal Features
+
+### 13.1 Image Description — `api/multimodal.py`
+**Endpoint:** `POST /api/multimodal/describe-image`
+- Accepts image upload (max 10MB)
+- Converts to base64, sends to Gemini multimodal vision
+- Response is persona-voiced description
+- Saves image to static directory, logs to memory pipeline
+
+### 13.2 URL Summarization — `api/multimodal.py`
+**Endpoint:** `POST /api/multimodal/summarize-url`
+- Fetches URL content via `httpx.AsyncClient`
+- Strips HTML tags via regex
+- Sends cleaned text to Gemini for persona-voiced summary
+- Logs to memory pipeline
+
+### 13.3 Weather — `api/multimodal.py`
+**Endpoint:** `GET /api/multimodal/weather/{bot_id}`
+- Looks up bot's origin city from `PERSONA_ORIGINS`
+- Fetches real-time weather from `wttr.in` (free API, no key)
+- Gemini generates persona commentary on the weather
+- Logs to memory pipeline
+
+### 13.4 Meme Generation — `api/multimodal.py`
+**Endpoint:** `POST /api/multimodal/meme`
+- Text-only meme generation via Gemini
+- Image meme generation code exists but is commented out (budget constraint)
+- Logs to memory pipeline
+
+### 13.5 Selfie Generation — `api/selfie.py` + `api/images.py`
+Two parallel selfie systems:
+
+**`api/selfie.py`** (HuggingFace path):
+1. `POST /api/selfie/generate` — Loads recent chat context from Redis
+2. Gemini generates scene description from conversation mood
+3. `selfie_service.py` constructs visual prompt
+4. HuggingFace Serverless API generates image
+5. Uploads to Supabase Storage
+
+**`api/images.py`** (Gradio/FaceID path):
+1. `POST /api/images/generate-selfie` — Finds base face image for the bot (`image-generation/photos/{bot_id}.jpeg`)
+2. Gets emotional reaction from bot via Gemini
+3. Extracts emotion context (emotion, location, action)
+4. Generates FaceID selfie via Gradio client (preserves face identity)
+5. Saves to static directory, returns URL + base64
+
+**Additional `api/images.py` endpoints:**
+- `GET /api/images/status` — Returns Gradio service availability, current space, and error count
+- `POST /api/images/detect-emotion` — Utility endpoint: extracts emotion context from a text message via Gemini
+
+### 13.6 Diary — `api/diary.py`
+- `GET /api/diary/{bot_id}` — Returns diary entries from Supabase, awards XP for reading
+- `POST /api/diary/add` — Manual diary entry creation
+- `POST /api/diary/cron/daily` — CRON trigger (stub, actual generation in background worker)
+
+### 13.7 Memory Vault — `api/memory.py`
+Full CRUD for manual user memories:
+- `GET /api/memory/get` — List memories for a bot
+- `POST /api/memory/add` — Add manual memory (magnitude=5)
+- `PUT /api/memory/update` — Update memory text/category
+- `DELETE /api/memory/delete` — Delete memory (ownership enforced)
+- `POST /api/memory/extract` — Gemini-powered semantic extraction from a conversation turn. Includes duplicate detection via exact-match query.
+
+---
+
+## 14. Emotion Dashboard — `api/emotion_dashboard.py` (295 lines)
+
+**File:** [emotion_dashboard.py](file:///Users/likhith./Veliora.AI_backend./api/emotion_dashboard.py)
+
+### 14.1 Main Dashboard — `GET /emotion-dashboard/{user_id}`
+Aggregates 30 days of `emotion_telemetry` data into frontend-ready chart series:
+- **Daily series** — Last 7 days: date, avg valence, dominant emotion
+- **Weekly series** — Last 4 weeks: week start, avg valence, dominant
+- **Per-bot breakdown** — Avg valence and dominant emotion per bot
+- **Recent state** — Latest emotion reading
+- **Full history** — Timestamped emotion+valence+text entries
+
+Optional `?bot_id=` query parameter filters for a specific persona.
+
+### 14.2 Analytics Enrichment — `GET /emotion-dashboard/{user_id}/analytics`
+Advanced analytics panel with:
+- **Risk level** — `high` (≥5 streak), `moderate` (≥3 streak or avg < -0.5), `low`
+- **Negative streak days** — Consecutive days where daily avg valence < -0.35
+- **Time-of-day breakdown** — Morning/afternoon/evening avg valence
+- **Bot comparison** — Ranked by avg valence across bots
+- **Journey summary** — Last 7 days' dominant emotions
+- **Live alert state** — Merged from Redis `get_active_alert_state()`
+
+---
+
+## 15. Frontend Logs & AI Insights — `api/logs.py` (99 lines)
+
+**File:** [logs.py](file:///Users/likhith./Veliora.AI_backend./api/logs.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/logs/frontend-error` | POST | Receives frontend JavaScript errors (message, stack trace, browser, URL) for server-side logging |
+| `/api/logs/dashboard-insights` | POST | Accepts merged telemetry+analytics payload, calls `generate_dashboard_insights()` via Gemini. Returns `{narrative, prediction, suggestions}`. Loaded lazily after dashboard renders for instant page load. |
+| `/api/logs/insight-feedback` | POST | Records user feedback on AI-generated insights (`{user_id, insight_text, is_accurate}`) into `insight_feedbacks` table |
+
+---
+
+## 16. Activity UX Helpers — `activities.py` (66 lines)
+
+**File:** [activities.py](file:///Users/likhith./Veliora.AI_backend./activities.py)
+
+In-memory stateful helpers for game/activity UX:
+- **Satisfaction detection** — Scans user messages for completion keywords (`"enough"`, `"done"`, `"finished"`) to gracefully end activities
+- **Cooldown system** — Prevents immediate repeat of the same activity (300s cooldown per `(username, persona, activity)` tuple)
+- **Continuation detection** — Detects user wanting more (`"more"`, `"next"`, `"continue"`)
+
+> **Note:** Per-process in-memory state. For multi-instance deployments, must be migrated to Redis.
+
+---
+
+## 17. Standalone Image Generation — `image-generation/` (3,960 lines)
+
+### 17.1 `image-generation/bot_prompts.py` (3,296 lines)
+Visual prompt templates for each persona. Defines appearance characteristics (ethnicity, hair, clothing, face shape) used to construct Stable Diffusion / FaceID prompts. Each persona has 5+ scene variants.
+
+### 17.2 `image-generation/main.py` (664 lines)
+Standalone FastAPI app (predecessor to `api/images.py`). Contains the original Gradio client integration, space rotation logic, and face-preserving generation pipeline. Now superseded by the integrated `services/image_service.py` but retained for reference and standalone testing.
+
+---
+
+## 18. RabbitMQ Workers — `Redis_chat/working_files/` (432 lines)
+
+### 18.1 `memory_worker.py` (125 lines)
+Async RabbitMQ consumer (aio_pika) that:
+1. Consumes from `memory_extraction_queue`
+2. Calls `generate_candidate_memories()` to extract memories via Gemini
+3. Calls `update_user_memory()` to store in Redis HNSW index
+4. Runs as an independent process (`asyncio.run()`)
+
+### 18.2 `message_worker.py` (107 lines)
+Async RabbitMQ consumer that:
+1. Consumes from `message_log_queue`
+2. Calls `log_message()` to persist chat exchanges in Redis
+3. Independent process with auto-reconnect
+
+### 18.3 `queue_cleanup.py` (49 lines)
+Periodic RabbitMQ maintenance:
+- Polls the RabbitMQ Management API every `CLEANUP_INTERVAL_SEC`
+- Deletes queues with 0 consumers and 0 messages
+- Prevents queue buildup from disconnected sessions
+
+### 18.4 `main.py` (151 lines)
+Standalone FastAPI app for the Redis chat subsystem. Provides direct endpoints for:
+- Login/session initialization
+- Direct chatbot responses (bypassing the main API)
+- Memory management
+- Used for development/testing of the Redis chat pipeline independently
+
+> **Production Note:** These workers are currently embedded in `services/background_tasks.py` inline consumers. For horizontal scaling, they should be extracted to run as dedicated processes using these files as templates.

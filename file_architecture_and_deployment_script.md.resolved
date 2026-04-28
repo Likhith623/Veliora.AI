@@ -1,0 +1,217 @@
+# Veliora.AI — Complete File Architecture & Deployment Script
+
+This document provides a highly rigorous, folder-by-folder breakdown of every major component in the Veliora.AI project. Following the architecture breakdown, it provides the **exact copy-paste bash commands** required to deploy the entire system on a fresh Ubuntu 22.04+ VM.
+
+---
+
+## Part 1: Comprehensive File Architecture Breakdown
+
+### 1. Root Backend Ecosystem (FastAPI Monolith)
+The root folder houses the primary Python API backend.
+
+*   `main.py`: The central orchestrator. Initializes FastAPI, sets up CORS, mounts routers, connects to Redis/RabbitMQ, and spawns background tasks on startup.
+*   `config/settings.py`: The configuration loader. Safely loads all keys, ports, and models from the `.env` file using Pydantic.
+*   `.env`: The secure environment variables file (Supabase keys, Gemini keys, HuggingFace tokens, etc.).
+*   `requirements.txt`: Defines all Python dependencies (FastAPI, Redis, Celery, Pydantic, etc.).
+
+### 2. API Routes (`/api/`)
+Contains all REST HTTP endpoints for the system.
+*   `api/auth.py`: Handles Supabase authentication, login, signup, and password updates.
+*   `api/chat.py`: Endpoints for fetching chat history, sending standard messages, etc.
+*   `api/games.py`: Turn-based logic endpoints.
+*   `api/voice.py` / `api/voice_ultra.py`: Endpoints interfacing with Cartesia TTS and Deepgram STT for voice mechanics.
+*   `api/memory.py`: Endpoints for querying AI vector memory or manually triggering semantic compression.
+*   `api/diary.py`, `api/images.py`: Endpoints for generating AI diaries and stable diffusion images.
+
+### 3. Realtime Communication (`/realtime_communication/`)
+Handles all live interactions over WebSockets.
+*   `routers/chat.py`: Manages the live WebSocket connection for typing indicators, instant message delivery, and read receipts.
+*   `routers/matching.py`: Real-time queue matching for finding new partners/friends globally.
+*   `routers/live_games.py`: Synchronized state management for live multiplayer games.
+
+### 4. Asynchronous Workers & AI Processing (`/Redis_chat/` & `/workers/`)
+Handles heavy AI lifting off the main thread.
+*   `working_files/memory_worker.py`: Subscribes to RabbitMQ queues, reads long conversation chunks, sends them to Gemini for semantic summarization, and stores them in Redis Vector search.
+*   `working_files/message_worker.py`: Asynchronously processes incoming messages, applies AI traits, and generates AI responses without blocking the API.
+*   `queue_cleanup.py`: Maintenance script for RabbitMQ.
+
+### 5. Services & Database Connectors (`/services/`)
+*   `supabase_client.py`: The global singleton for interacting with the Postgres DB (users, profiles, relationships).
+*   `redis_cache.py`: Manages connections to Redis Stack (JSON states and Vector Search).
+*   `rabbitmq_service.py`: Pub/Sub messaging broker interface.
+*   `background_tasks.py`: Holds cron jobs like the `xp_flush_worker` (batching XP to prevent DB spam).
+
+### 6. Video & Voice RTC Server (`/mediasoup_server/`)
+The NodeJS component handling real-time media streams.
+*   `index.js`: Initializes the Mediasoup SFU (Selective Forwarding Unit).
+*   `config.js`: Contains crucial WebRTC configurations, including the `announcedIp` and UDP port ranges (10000-10100) needed for media traversal over NAT.
+
+### 7. Frontends
+*   `/persona_frontend_main/`: The Next.js application (Port 3000) dedicated to the single-player AI companion experience (spiritual guides, specific personas).
+*   `/realtime_frontend/`: The Next.js application (Port 3001) dedicated to multiplayer social mechanics (friend matching, live games, contests, real-time chat).
+
+---
+
+## Part 2: The Exact VM Deployment Script
+
+The following is a continuous script designed for a fresh Ubuntu 22.04 LTS Virtual Machine. 
+
+### Step 1: System Updates & Dependencies
+Run these commands to install Docker, Node.js, Python, Nginx, and PM2.
+
+```bash
+# Update System
+sudo apt update && sudo apt upgrade -y
+
+# Install Python & Nginx
+sudo apt install -y python3-pip python3-venv nginx certbot python3-certbot-nginx curl
+
+# Install Node.js (v20)
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+
+# Install Docker
+sudo apt-get install -y docker.io docker-compose
+
+# Install PM2 (Process Manager) globally
+sudo npm install -g pm2
+```
+
+### Step 2: Start Redis Stack & RabbitMQ
+These must run via Docker. Create a docker-compose file in your home directory:
+
+```bash
+cd ~
+cat << 'EOF' > docker-compose.yml
+version: '3.8'
+services:
+  redis:
+    image: redis/redis-stack-server:latest
+    ports:
+      - "6379:6379"
+    restart: always
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    restart: always
+EOF
+
+sudo docker-compose up -d
+```
+
+### Step 3: Clone Code & Start the FastAPI Backend
+*(Assuming you have pulled your code into `~/Veliora.AI_backend`)*
+
+```bash
+cd ~/Veliora.AI_backend
+
+# Setup Python Virtual Environment
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# Start FastAPI and Workers via PM2
+pm2 start venv/bin/uvicorn --name "veliora-fastapi" -- main:app --host 0.0.0.0 --port 8000
+pm2 save
+```
+
+### Step 4: Start the WebRTC Mediasoup Server
+
+```bash
+cd ~/Veliora.AI_backend/mediasoup_server
+
+# Install dependencies
+npm install
+
+# CRITICAL: Open config.js and change `announcedIp` to your VM's Public IP before running this!
+# Start Mediasoup via PM2
+pm2 start index.js --name "veliora-webrtc"
+pm2 save
+```
+
+### Step 5: Start Both Frontends
+
+```bash
+# Start Persona Frontend (Port 3000)
+cd ~/Veliora.AI_backend/persona_frontend_main/chatbot-new-frontend
+npm install
+npm run build
+pm2 start npm --name "persona-frontend" -- start -- -p 3000
+
+# Start Realtime Frontend (Port 3001)
+cd ~/Veliora.AI_backend/realtime_frontend
+npm install
+npm run build
+pm2 start npm --name "realtime-frontend" -- start -- -p 3001
+
+pm2 save
+```
+
+### Step 6: Configure Nginx & SSL
+You must map your domains to the correct internal ports. Create an Nginx configuration:
+
+```bash
+sudo rm /etc/nginx/sites-enabled/default
+sudo nano /etc/nginx/sites-available/veliora
+```
+
+**Paste the following into the nano editor (replace `yourdomain.com` with your actual domain):**
+
+```nginx
+server {
+    listen 80;
+    server_name yourdomain.com; # Persona Frontend
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+server {
+    listen 80;
+    server_name realtime.yourdomain.com; # Realtime Frontend
+    location / {
+        proxy_pass http://localhost:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+server {
+    listen 80;
+    server_name api.yourdomain.com; # Backend APIs and WebSockets
+    location / {
+        proxy_pass http://localhost:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "Upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+Save the file (`Ctrl+O`, `Enter`, `Ctrl+X`), then enable it and secure it:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/veliora /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+
+# Automatically install Free SSL Certificates
+sudo certbot --nginx -d yourdomain.com -d realtime.yourdomain.com -d api.yourdomain.com
+```
+
+### Final Cloud Provider Firewall Checklist
+Before testing the site, go to AWS / DigitalOcean / Azure and ensure these ports are open to the public:
+*   **TCP 80** (HTTP)
+*   **TCP 443** (HTTPS)
+*   **UDP 10000 - 10100** (WebRTC Media - If you miss this, video/voice calls will not work).

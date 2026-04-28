@@ -2,7 +2,10 @@
 Veliora.AI — Main Application Entry Point
 FastAPI app with Redis Stack + RabbitMQ workers + background tasks.
 """
+from dotenv import load_dotenv
+import os
 
+load_dotenv() 
 import asyncio
 import logging
 import os

@@ -1,0 +1,68 @@
+o run Redis Stack and RabbitMQ on your GCP (Google Cloud Platform) VM, the best and most cost-effective method is to use Docker Compose directly inside that same VM.
+
+Since your project uses Redis Stack (which includes advanced modules like RediSearch and RedisJSON for your AI vector memories), you should not use GCP's managed "Memorystore" because it doesn't natively support those advanced Stack modules out-of-the-box. Self-hosting via Docker is the perfect solution here.
+
+Here are the exact steps to create them in your GCP VM:
+
+1. Install Docker & Docker Compose on the VM
+Once you SSH into your GCP VM, run these commands to install the Docker engine:
+
+bash
+sudo apt update
+sudo apt install -y docker.io docker-compose
+sudo systemctl enable --now docker
+2. Create the Docker Compose File
+Create a new file called docker-compose.yml anywhere in your VM (usually in your home directory or inside your project folder).
+
+bash
+nano docker-compose.yml
+Paste the following configuration into the file:
+
+yaml
+version: '3.8'
+services:
+  redis-stack:
+    image: redis/redis-stack-server:latest
+    container_name: veliora-redis
+    ports:
+      - "6379:6379"
+    restart: always
+    volumes:
+      - redis_data:/data
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: veliora-rabbitmq
+    ports:
+      - "5672:5672"    # Main RabbitMQ communication port
+      - "15672:15672"  # Management UI port
+    restart: always
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+volumes:
+  redis_data:
+  rabbitmq_data:
+(Press Ctrl+O, Enter, Ctrl+X to save and exit).
+
+3. Start the Services
+Run this command in the same directory as your docker-compose.yml file:
+
+bash
+sudo docker-compose up -d
+The -d flag runs them in the background. They will now automatically start up every time your GCP VM reboots.
+
+4. Verify They Are Running
+You can check that both containers are active by running:
+
+bash
+sudo docker ps
+You should see veliora-redis running on port 6379 and veliora-rabbitmq running on port 5672.
+
+5. Backend Configuration Update
+Because you are running them on the same VM as your FastAPI backend, your .env configuration for the backend remains incredibly simple:
+
+ini
+REDIS_HOST=localhost
+REDIS_PORT=6379
+RABBITMQ_URL=amqp://guest:guest@localhost:5672/
+Critical Security Note for GCP:
+By default, Docker binds to all interfaces. Do not open ports 6379, 5672, or 15672 in your GCP VPC Firewall rules! Keep them closed to the public. Because your FastAPI backend is running on the same VM, it can securely access them over localhost without them being exposed to the open internet.

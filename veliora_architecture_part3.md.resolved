@@ -1,0 +1,901 @@
+# Veliora.AI — Canonical Architectural Documentation (Part 3)
+
+## Familia Realtime Communication, Database Schema & System Inventory
+
+> **Document Scope:** Part 3 of 3. Covers the Familia real-time communication platform (Architecture B), the complete database schema for both architectures, supporting services, and system inventory.
+
+---
+
+## 14. Familia — Real-Time Communication Platform
+
+**Directory:** [realtime_communication/](file:///Users/likhith./Veliora.AI_backend./realtime_communication)
+
+A self-contained FastAPI sub-application mounted at `/api/v1` on the main app. Implements a cross-cultural human connection platform.
+
+### 14.1 Architecture
+
+```
+realtime_communication/
+├── config.py              # Pydantic settings (Supabase, Deepgram, Cartesia, Gemini, Google Translate)
+├── models/
+│   └── schemas.py         # 30+ Pydantic request/response models
+├── routers/               # 20 API routers
+│   ├── auth.py            # Signup, login, JWT verification
+│   ├── profiles.py        # Profile CRUD, avatar, languages, status
+│   ├── matching.py        # Role-based matching, smart matching algorithm
+│   ├── friends.py         # Search, friend requests, accept/reject, unfriend
+│   ├── chat.py            # Messages, media upload, polls, reactions, WebSocket
+│   ├── contests.py        # Bonding contests with synchronized questions
+│   ├── games.py           # Game catalog, sessions, scoring
+│   ├── live_games.py      # Real-time multiplayer games
+│   ├── _live_games_new.py # Updated live games (iterative)
+│   ├── family_rooms.py    # Room CRUD, membership, potluck events, room chat
+│   ├── presence.py        # Online/offline status, last_active tracking
+│   ├── privacy.py         # Privacy settings management
+│   ├── safety.py          # Reporting, blocking, moderation queue
+│   ├── verification.py    # Video/voice/photo identity verification
+│   ├── translation.py     # On-demand translation endpoints
+│   ├── voice.py           # STT/TTS for voice messages
+│   ├── calls.py           # Audio/video call logging
+│   ├── questions.py       # Personal Q&A system for contests
+│   └── xp.py              # XP dashboard, gifting, leaderboards
+├── services/
+│   ├── auth_service.py        # JWT extraction (get_current_user_id)
+│   ├── supabase_client.py     # Supabase connection (service role)
+│   ├── translation_service.py # Google Translate + Gemini cultural context
+│   ├── matching_service.py    # Smart matching algorithm
+│   ├── xp_service.py          # XP award/gift/level-up engine
+│   ├── notification_service.py# Push notification dispatch
+│   ├── background_tasks.py    # Streak tracking, XP decay
+│   ├── contest_service.py     # Contest question generation
+│   ├── deepgram_stt.py        # Speech-to-text wrapper
+│   └── cartesia_tts.py        # Text-to-speech wrapper
+└── database.txt               # Complete SQL schema (716 lines)
+```
+
+### 14.2 Auth Router — `routers/auth.py` (262 lines)
+
+**File:** [auth.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/auth.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/auth/signup` | POST | Create Supabase auth user + `profiles_realtime` row. Computes `is_minor` from DOB. Returns `AuthResponse` |
+| `/auth/login` | POST | Validate credentials, auto-create profile for legacy users, update `last_active_at` |
+| `/auth/verify` | POST | Submit verification record (video/voice/photo/gov_id), auto-approve with mock liveness |
+| `/auth/me` | GET | Full profile with languages, achievements, enriched relationships (partner data + roles) |
+| `/auth/logout` | POST | Set `profiles_realtime.status` → `"offline"`, update `last_active_at` |
+| `/auth/refresh` | POST | Refresh JWT via Supabase `refresh_session()` |
+
+### 14.3 Profiles Router — `routers/profiles.py` (386 lines)
+
+**File:** [profiles.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/profiles.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/profiles/me/role` | POST | Set offering/seeking roles + preferred_roles array. Updates `matching_preferences` JSONB |
+| `/profiles/me` | GET | Get current user's public profile (delegates to `/{user_id}`) |
+| `/profiles/me` | PUT | Update own profile fields (display_name, bio, country, etc.) |
+| `/profiles/{user_id}` | GET | Public profile view — includes languages, achievements, active relationship count |
+| `/profiles/{user_id}` | PUT | Update profile (self-only, ownership enforced) |
+| `/profiles/{user_id}/avatar` | PUT | Update avatar_config JSONB |
+| `/profiles/{user_id}/languages` | POST | Add language (code, name, proficiency, is_primary, show_original) |
+| `/profiles/{user_id}/languages/{code}` | DELETE | Remove a language from profile |
+| `/profiles/{user_id}/status` | PUT | Set availability (active/busy/away/break/offline) with optional status_message and return_date |
+| `/profiles/{user_id}/relationships` | GET | All relationships enriched with partner data, roles, bond_points, level_label |
+| `/profiles/{user_id}/notifications` | GET | Notifications list (50 max), optional `?unread_only=true` filter |
+| `/profiles/{user_id}/notifications/{id}/read` | PUT | Mark single notification as read |
+| `/profiles/{user_id}/notifications/read-all` | PUT | Mark all unread notifications as read |
+| `/profiles/{user_id}/notifications/{id}` | DELETE | Delete single notification |
+| `/profiles/{user_id}/notifications` | DELETE | Clear all notifications |
+
+### 14.4 WebSocket Chat — `routers/chat.py` (849 lines)
+
+**File:** [chat.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/chat.py)
+
+**ConnectionManager** — Singleton managing WebSocket connections:
+```python
+class ConnectionManager:
+    active_connections: Dict[str, Set[WebSocket]]  # relationship_id → set of connections
+    
+    async def connect(ws, relationship_id)     # Accept + register
+    def disconnect(ws, relationship_id)         # Remove from set
+    async def broadcast(relationship_id, msg, exclude=None)  # Fan-out to all peers
+```
+
+**WebSocket Endpoint:** `WS /api/v1/chat/ws/{relationship_id}/{user_id}`
+
+Supported message types:
+| Type | Action |
+|------|--------|
+| `typing` | Broadcast typing indicator to partner |
+| `stopped_typing` | Clear typing indicator |
+| `read_receipt` | Mark all unread messages as read, broadcast receipt |
+| `message` | Full message send with translation, fact extraction, XP award |
+
+**REST Endpoints:**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/chat/send` | POST | Send message with auto-translation and fact extraction |
+| `/chat/upload-media` | POST | Upload image/video/voice → Supabase Storage → send as message |
+| `/chat/messages/{relationship_id}` | GET | Paginated message history (marks as read) |
+| `/chat/relationship/{relationship_id}` | GET | Full relationship details with feature unlock status |
+| `/chat/poll/create` | POST | WhatsApp-style polls with voting |
+| `/chat/poll/{poll_id}/vote` | POST | Vote on poll option |
+| `/chat/poll/{poll_id}` | GET | Fetch poll with all votes and results |
+| `/chat/message/{message_id}/react` | POST | Toggle emoji reactions |
+| `/chat/message/{message_id}` | DELETE | Soft-delete (sender only) |
+| `/chat/message/{message_id}/forward` | POST | Forward to another relationship |
+| `/chat/gift-xp` | POST | Gift XP to partner (creates system message) |
+
+### 14.4a Translation Router — `routers/translation.py` (88 lines)
+
+**File:** [translation.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/translation.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/translate/` | POST | Translate single text (source auto-detected or explicit) with cultural context |
+| `/translate/batch` | POST | Batch translate array of texts for message history dumps |
+| `/translate/detect` | POST | Detect language of input text |
+| `/translate/languages` | GET | List all supported languages |
+| `/translate/languages/{code}/show-original` | PATCH | Toggle `show_original` flag for a user's language preference |
+
+### 14.4b Translation Service — `services/translation_service.py` (198 lines)
+
+**File:** [translation_service.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/services/translation_service.py)
+
+**Dual-Layer Translation:**
+
+1. **Google Cloud Translation API v2** — Primary translation engine
+   - `detect_language()` — Language detection
+   - `_translate_with_google()` — Single text translation
+   - `_batch_translate_google()` — Batch translation for message history dumps
+   - Handles script variant normalization (e.g., `te-Latn` → `te`)
+
+2. **Gemini 2.0 Flash Cultural Context** — Idiom/slang detection overlay
+   - `_get_cultural_context_gemini()` — Analyzes source text for cultural idioms
+   - Returns `{"has_idiom": bool, "idiom_explanation": str, "cultural_note": str}`
+   - Example: Japanese text "空気を読む" → cultural note: "This means 'read the room' — sensing unspoken social cues"
+
+**Fact Extraction** (`extract_facts_from_message()`):
+Regex-based fallback pattern matching for extracting personal facts from chat:
+- `favorite_food` patterns: "my favorite food is...", "I love eating..."
+- `hobby` patterns: "my hobby is...", "I enjoy ... in my free time"
+- Results stored in `chat_facts_realtime` table for contest question generation
+
+### 14.4c Voice Router — `routers/voice.py` (94 lines)
+
+**File:** [voice.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/voice.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/voice/transcribe` | POST | Upload audio file → Deepgram Nova-2 STT. Auto-detects language if not provided. |
+| `/voice/speak` | POST | Text → Cartesia Sonic-2 TTS. Returns raw audio bytes (audio/mpeg or audio/wav). |
+| `/voice/voices` | GET | List available TTS voices grouped by language |
+
+### 14.4 XP & Relationship Levels — `services/xp_service.py` (295 lines)
+
+**File:** [xp_service.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/services/xp_service.py)
+
+**10-Level Relationship Progression:**
+
+| Level | Name | Bond Points | Unlocked Feature |
+|-------|------|-------------|-----------------|
+| 1 | Stranger | 0 | Text messaging |
+| 2 | Acquaintance | 50 | Emojis & reactions |
+| 3 | Bonded | 150 | Audio calls |
+| 4 | Close | 300 | Video calls |
+| 5 | Family | 500 | Global Family Room |
+| 6 | Trusted | 750 | Custom themes |
+| 7 | Kindred | 1000 | Priority matching |
+| 8 | Soulbound | 1500 | Mentor badge |
+| 9 | Eternal | 2000 | Cultural Ambassador |
+| 10 | Legendary | 3000 | Digital Family Book |
+
+**`calculate_level(bond_points)`** — Linear threshold lookup (different from AI persona's sqrt curve).
+
+**`award_xp(user_id, amount, source)`:**
+1. Ensure `realtime_xp_realtime` row exists (upsert)
+2. Increment `current_xp` and `total_xp_earned`
+3. Log to `xp_transactions_realtime` with full metadata
+4. Send notification
+
+**`gift_xp(sender_id, receiver_id, amount)`:**
+1. Verify sender has sufficient balance
+2. Deduct from sender, log `gifted_out` transaction
+3. Add to receiver, log `gifted_in` transaction
+4. Notify receiver
+
+**`check_and_level_up(relationship_id)`:**
+1. Fetch current bond_points and level
+2. Calculate new level from thresholds
+3. If level increased: update relationship, create milestone, notify both users
+
+### 14.5 Friends System — `routers/friends.py` (476 lines)
+
+**File:** [friends.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/friends.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/friends/search` | GET | Search profiles by `?query=` (matches username/display_name), excludes banned |
+| `/friends/request/{target_id}` | POST | Send friend request — checks: not self, not banned, no existing pending, privacy |
+| `/friends/respond/{request_id}` | POST | Accept/reject request. Accept creates `relationships_realtime` row + notifies |
+| `/friends/requests` | GET | List incoming/outgoing pending requests with sender/receiver profiles |
+| `/friends/list` | GET | All active bonds with enriched partner data (display_name, avatar, country, care_score) |
+| `/friends/{friend_id}/profile` | GET | View friend's profile (friendship-gated) with shared relationship stats |
+| `/friends/{relationship_id}` | DELETE | Unfriend — sets relationship status to `"ended"`, deletes pending requests |
+
+> **Key Design Decision:** All friend requests start as `pending` regardless of profile visibility. The auto-accept logic for public profiles was intentionally removed to prevent users from appearing in the "Your Bonds" list without explicit consent.
+
+### 14.6 Matching Router — `routers/matching.py` (420 lines)
+
+**File:** [matching.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/matching.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/matching/browse/{role}` | GET | **Main search** — find profiles by role. Searches `offering_role`, `matching_preferences` JSONB, and `preferred_roles` array. Handles aliases (sibling→brother/sister). Public, no auth. |
+| `/matching/browse-public/{role}` | GET | Backwards-compatible alias for `/browse/{role}` |
+| `/matching/connect/{target_user_id}` | POST | **Direct connect** — creates relationship immediately (no friend request). Infers complement role (mother↔son). |
+| `/matching/search` | POST | Enter matching queue with `MatchRequest{seeking_role, offering_role, preferred_age_min/max, preferred_countries, language_priority}`. Tries instant match via `find_match()`. |
+| `/matching/queue/{user_id}` | GET | Check current queue status (searching/not_in_queue) |
+| `/matching/queue/{user_id}` | DELETE | Cancel active matching search |
+| `/matching/browse-all` | GET | Role selection UI data — returns per-role profile counts |
+| `/matching/roles` | GET | Static list of 11 roles with labels, emojis, descriptions, and pair-with info |
+
+### 14.7a Contests Router — `routers/contests.py` (197 lines)
+
+**File:** [contests.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/contests.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/contests/custom/questions` | POST | Save user's custom MCQ bank (replaces existing) |
+| `/contests/custom/questions` | GET | Retrieve own custom questions |
+| `/contests/custom/eligibility` | GET | Friends who have ≥1 custom question (eligible for custom contests) |
+| `/contests/create` | POST | Generate contest via `contest_service`. Enforces relationship ownership. |
+| `/contests/relationship/{id}` | GET | All contests for a relationship (historic + active) |
+| `/contests/{contest_id}` | GET | Contest details + questions (without correct answers exposed) |
+| `/contests/answer` | POST | Submit answer, auto-scored by `submit_answer()` |
+| `/contests/{contest_id}/complete` | POST | Finalize contest — calculate totals, mutate streaks, update leaderboard |
+| `/contests/leaderboard/{period}` | GET | Global leaderboard by period (daily/weekly/monthly) with profile join |
+| `/contests/schedule/configuration` | GET | Static config: questions per tier, time limits, max points, streak multipliers |
+
+### 14.7b Bonding Games — `routers/games.py` (497 lines)
+
+**File:** [games.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/games.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `WS /games/ws/{session_id}/{user_id}` | WebSocket | Real-time turn-based game sync — manages `GameSessionManager` with round-based state, answer tracking, and scoring |
+| `/games/` | GET | List all available games filtered by `?category=` (text/trivia/creative/immersive) |
+| `/games/start` | POST | Start a game session for a relationship — creates `game_sessions_realtime` row |
+| `/games/action` | POST | Submit a game action/answer — scores via LLM or exact-match, broadcasts via WebSocket |
+| `/games/session/{session_id}` | GET | Get current session state (scores, round, status) |
+| `/games/history/{relationship_id}` | GET | Game history for a relationship — all completed/abandoned sessions |
+
+### 14.7c Family Rooms — `routers/family_rooms.py` (991 lines)
+
+**File:** [family_rooms.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/family_rooms.py)
+
+**REST Endpoints:**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/family-rooms/create` | POST | Create room with name, type, max_members. Creator = initial moderator |
+| `/family-rooms/` | GET | List all rooms user belongs to with member counts |
+| `/family-rooms/{room_id}/invite` | POST | Send invite to a user (moderator only). Creates `family_room_members_realtime` with `invited` status |
+| `/family-rooms/{room_id}/join` | POST | Accept invite — changes status to `joined` |
+| `/family-rooms/{room_id}/message` | POST | Send room message with auto-translation per member language |
+| `/family-rooms/{room_id}/messages` | GET | Paginated room message history |
+| `/family-rooms/{room_id}/leave` | POST | Leave room — triggers 7-day farewell period. Auto-dissolves if ≤1 member |
+| `/family-rooms/{room_id}/potluck` | POST | Create cultural potluck event (theme, dish, recipe, cultural_significance) |
+| `/family-rooms/{room_id}/potlucks` | GET | List potluck events for a room |
+| `/family-rooms/{room_id}/join-code` | POST | Generate shareable join code with expiration and max_uses (moderator only) |
+| `/family-rooms/{room_id}/join-codes` | GET | List active join codes for a room |
+| `/family-rooms/join-by-code` | POST | Join a room via shareable code (validates expiry + max uses) |
+| `/family-rooms/{room_id}/poll/create` | POST | Create room poll |
+| `/family-rooms/{room_id}/poll/{poll_id}/vote` | POST | Vote on room poll |
+| `/family-rooms/{room_id}/message/{id}/react` | POST | Toggle emoji reaction on room message |
+| `/family-rooms/{room_id}/message/{id}` | DELETE | Delete room message (sender or moderator) |
+
+**WebSocket:** `WS /family-rooms/{room_id}/ws/{user_id}` — Full details in §14.8 below.
+
+### 14.7 Mediasoup SFU Infrastructure — Dual Server Architecture
+
+Veliora deploys **two** mediasoup SFU servers for different call topologies:
+
+#### A. Primary SFU — `mediasoup_server/index.js` (310 lines)
+
+**Port:** 3016 (configurable) | **Protocol:** Socket.IO over HTTP
+
+**Purpose:** Powers 1-on-1 audio/video calls from `realtime_frontend/src/app/calls/page.tsx`. Uses Socket.IO for signaling between the Next.js frontend and mediasoup workers.
+
+**Worker Pool:** Spawns `os.cpus().length` mediasoup workers via round-robin (`getWorker()`). Each worker handles RTC port range 10000–10100.
+
+**Codec Configuration** (`config.js`):
+- Audio: Opus (48kHz, 2ch, FEC+DTX+stereo)
+- Video: VP8, VP9, H.264 (profile `42e01f`, packetization-mode 1)
+- Max incoming bitrate: 2.5 Mbps | Initial outgoing: 600 Kbps
+
+**Socket.IO Events:**
+| Event | Direction | Action |
+|-------|-----------|--------|
+| `joinRoom` | Client→Server | Create/join room, allocate router, return `rtpCapabilities` |
+| `createWebRtcTransport` | Client→Server | Create send/recv transport, return ICE+DTLS params |
+| `connectWebRtcTransport` | Client→Server | Complete DTLS handshake |
+| `produce` | Client→Server | Start sending media, broadcast `newProducer` to peers |
+| `consume` | Client→Server | Subscribe to a remote producer (paused initially) |
+| `resumeConsumer` | Client→Server | Unpause a consumer after client is ready |
+| `getProducers` | Client→Server | List all existing producers in the room |
+| `disconnect` | Automatic | Close transports, remove peer, clean empty rooms |
+
+**Room Lifecycle:** Rooms auto-create on first `joinRoom` and auto-destroy when `peers.size === 0` (router closed, Map entry deleted).
+
+#### B. Internal REST SFU — `sfu_server/server.js` (203 lines)
+
+**Port:** 4000 | **Protocol:** Express REST API (no Socket.IO)
+
+**Purpose:** Called internally by the FastAPI `family_rooms.py` WebSocket handler. FastAPI acts as the **control plane**, proxying SFU commands from clients through the room WebSocket to this headless server.
+
+**REST Endpoints:**
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/room/:roomId/producers` | List all active producers in a room |
+| `POST` | `/room/:roomId/capabilities` | Get router RTP capabilities (auto-creates room) |
+| `POST` | `/room/:roomId/peer/:peerId/transport` | Create WebRTC transport for a peer |
+| `POST` | `/peer/:peerId/transport/:transportId/connect` | Connect transport (DTLS) |
+| `POST` | `/peer/:peerId/transport/:transportId/produce` | Start producing media |
+| `POST` | `/room/:roomId/peer/:peerId/transport/:transportId/consume` | Consume a producer |
+| `DELETE` | `/room/:roomId/peer/:peerId` | Cleanup peer + auto-delete empty rooms |
+
+**Key Difference from Primary:** No Socket.IO — FastAPI relays all signaling via the room WebSocket, making the SFU a pure media server with no client-facing connections.
+
+### 14.8 Family Rooms Call Infrastructure — `routers/family_rooms.py` (991 lines)
+
+**File:** [family_rooms.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/family_rooms.py)
+
+The `FamilyRoomConnectionManager` extends basic WebSocket broadcasting with **call state management**:
+
+```python
+class FamilyRoomConnectionManager:
+    active_rooms: Dict[str, Set[WebSocket]]     # room_id → WebSocket connections
+    call_participants: Dict[str, Set[str]]       # room_id → user_ids in active call
+    room_modes: Dict[str, str]                   # room_id → "p2p" | "sfu"
+```
+
+**WebSocket Message Types (beyond chat):**
+| Type | Direction | Action |
+|------|-----------|--------|
+| `start_group_call` | Client→All | Broadcast call initiation, push notification via `presence_manager` |
+| `call_join` | Client→All | Add to `call_participants`, force SFU mode, broadcast participant count |
+| `call_leave` | Client→All | Remove from participants, `DELETE /room/:id/peer/:id` on SFU server |
+| `sfu_get_router_rtp_capabilities` | Client→SFU | Proxy to `POST /room/:id/capabilities` |
+| `sfu_create_webrtc_transport` | Client→SFU | Proxy to `POST /room/:id/peer/:id/transport` |
+| `sfu_connect_transport` | Client→SFU | Proxy to `POST /peer/:id/transport/:id/connect` |
+| `sfu_produce` | Client→SFU→All | Proxy produce, then broadcast `sfu_new_producer` to all peers |
+| `sfu_consume` | Client→SFU | Proxy to consume endpoint |
+| `sfu_get_producers` | Client→SFU | Proxy to `GET /room/:id/producers` |
+
+**Ghost Leak Prevention:** On `WebSocketDisconnect`, an async cleanup task fires `DELETE /room/:id/peer/:id` via `asyncio.create_task()` to release mediasoup resources without blocking the disconnect handler.
+
+**Additional Features:**
+- **Room Polls** — Create/vote on polls within rooms (`POST /{room_id}/poll/create`, `POST /{room_id}/poll/{poll_id}/vote`)
+- **Message Reactions** — Toggle emoji reactions on room messages (JSONB `reactions` column)
+- **Message Deletion** — Soft-delete by sender or moderator (`is_deleted` flag)
+- **Join Codes** — Moderator-generated shareable codes with expiration and max-use limits
+- **Cultural Potlucks** — Scheduled events with theme, recipe, cultural significance metadata
+- **7-Day Farewell** — Leaving a room triggers a farewell period before actual removal; room auto-dissolves if ≤1 member remains
+
+### 14.9 Live Games WebRTC Signaling — `routers/live_games.py` (391 lines)
+
+**File:** [live_games.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/live_games.py)
+
+**REST Endpoints:**
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/live-games/available` | GET | List all available immersive games from `games_realtime_communication` (is_immersive=true) |
+| `/live-games/create` | POST | Create a session and return session_id |
+| `WS /live-games/ws/{session_id}/{user_id}` | WebSocket | P2P signaling for WebRTC games |
+
+**`LiveGameManager`** — In-memory signaling coordinator for P2P games (Pong, Air Hockey):
+
+```python
+class LiveGameManager:
+    sessions: Dict[str, dict]           # session_id → {players, status, game_type, ...}
+    waiting_players: Dict[str, str]     # user_id → session_id (matchmaking queue)
+    active_connections: Dict[str, WebSocket]  # user_id → WebSocket
+```
+
+**WebSocket Endpoint:** `WS /api/v1/live-games/ws/{session_id}/{user_id}`
+
+**Signaling Flow:**
+```
+Player A: {"type": "create_session", "game_type": "pong"}
+  → Server creates session, adds A to waiting_players
+  → Returns {"type": "session_created", "session_id": "..."}
+
+Player B: {"type": "join_session", "session_id": "..."}
+  → Server adds B, removes from waiting, marks "ready"
+  → Broadcasts {"type": "game_ready"} to both
+
+Player A: {"type": "webrtc_offer", "target": B, "sdp": "..."}
+  → Server relays to B
+
+Player B: {"type": "webrtc_answer", "target": A, "sdp": "..."}
+  → Server relays to A
+
+Both: {"type": "ice_candidate", "target": ..., "candidate": "..."}
+  → Server relays ICE candidates
+
+(Game runs over RTCDataChannel — server has NO game logic)
+
+Player A: {"type": "game_over", "winner_id": "...", "scores": {...}}
+  → Server validates, awards XP, updates relationship bond_points
+```
+
+**REST Endpoints:**
+- `POST /live-games/create` — Create a session and return session_id
+- `POST /live-games/{session_id}/join` — Join an existing session
+- `POST /live-games/{session_id}/result` — Submit final game result with XP/bond rewards
+
+### 14.10 Calls Router — `routers/calls.py` (281 lines)
+
+**File:** [calls.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/calls.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `WS /calls/signal/{relationship_id}/{user_id}` | WebSocket | Signaling for 1-on-1 audio/video calls |
+| `/calls/transcribe` | POST | Upload in-call audio for transcription (Deepgram STT) |
+| `/calls/speak` | POST | Generate TTS audio for in-call playback (Cartesia) |
+| `/calls/voices` | GET | List available TTS voices for calls |
+| `/calls/logs/{relationship_id}` | GET | Call history for a relationship |
+
+**`SignalingManager`** — WebRTC signaling for 1-on-1 audio/video calls:
+
+```python
+class SignalingManager:
+    active_calls: Dict[str, dict]           # call_id → {caller, callee, status, type}
+    user_connections: Dict[str, WebSocket]   # user_id → WebSocket
+```
+
+**WebSocket Endpoint:** `WS /api/v1/calls/signal/{relationship_id}/{user_id}`
+
+**Message Types:** `call_initiate`, `call_accept`, `call_reject`, `webrtc_offer`, `webrtc_answer`, `ice_candidate`, `call_end`
+
+**Level-Based Feature Locks:**
+- Audio calls: Requires relationship Level ≥ 3
+- Video calls: Requires relationship Level ≥ 4
+
+**Call Logging:** Every completed call creates a `call_logs_realtime` row with `caller_id`, `callee_id`, `call_type`, `duration_seconds`, `started_at`, `ended_at`.
+
+### 14.11 Presence System — `routers/presence.py` (230 lines)
+
+**File:** [presence.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/presence.py)
+
+**`PresenceManager`** — Global singleton tracking all online users:
+
+```python
+class PresenceManager:
+    active_users: Dict[str, WebSocket]  # user_id → WebSocket
+```
+
+**WebSocket Endpoint:** `WS /api/v1/presence/ws/{user_id}`
+- On connect: Update `profiles_realtime.status` → `"online"`
+- On disconnect: Update status → `"offline"`, set `last_active` timestamp
+
+**Game Invite Flow (WebSocket):**
+| Type | Action |
+|------|--------|
+| `invite_game` | Sender invites target; server generates `session_id`, relays to target via `send_to_user()` |
+| `respond_invite` | Target accepts/rejects; server relays response to inviter |
+
+**REST Endpoints:**
+- `POST /presence/invite` — Create game session in DB, push invite via WebSocket + push notification fallback
+- `GET /presence/active-friends` — Returns friends currently in `active_users` map
+
+### 14.12 Verification Pipeline — `routers/verification.py` (183 lines)
+
+**File:** [verification.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/verification.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/verification/submit` | POST | Submit multi-modal verification (photo/video/voice/gov_id). Auto-approves if score ≥80 |
+| `/verification/status` | GET | Get latest verification record (score, status, type) |
+
+**Three Verification Modes:**
+
+| Mode | Required Assets | Base Score | Intent Bonus |
+|------|----------------|------------|--------------|
+| `government_id` | Gov ID photo + live photo | 85 | +14.9 |
+| `voice_photo` | Live photo + voice recording | 55 | +44.9 |
+| `video` | Live video recording | 85 | +14.9 |
+
+**Intent Audio Validation:** Fetches audio → Deepgram STT auto-detect → checks transcript for keywords (`"veliora"`, `"familia"`, `"i want to join"`, `"my name is"`, `"real person"`) OR ≥4 words with confidence ≥0.65.
+
+**Threshold:** Score ≥80.0 → auto-approved → `profiles_realtime.is_verified = true`. Below 80 → `status: "pending"` for manual moderator review.
+
+### 14.13 Contest Service — `services/contest_service.py` (273 lines)
+
+**File:** [contest_service.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/services/contest_service.py)
+
+**Question Generation Strategy:**
+1. **Custom contests** (`contest_type: "custom"`): Pull from `user_custom_questions_realtime` (user-authored MCQ bank)
+2. **Standard contests**: Query `chat_facts_realtime` for unused facts → map to question templates → fallback to generic templates if insufficient facts
+
+**Streak Mutation (`update_user_streak`):** Daily=consecutive days, Weekly=≤7 days gap, Monthly=≤31 days gap. Resets on gap violation.
+
+**Answer Scoring:** Exact match = full points; partial match (substring) = half points.
+
+### 14.14 Matching Algorithm — `services/matching_service.py` (158 lines)
+
+**File:** [matching_service.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/services/matching_service.py)
+
+**Compatibility Scoring:**
+| Factor | Points | Logic |
+|--------|--------|-------|
+| Language overlap (ease mode) | +20/shared lang | Shared languages boost |
+| Language diversity (learn mode) | +20/unique lang | Different languages boost |
+| Verified badge | +30 | Trust signal |
+| Care score | +score/10 | Community reputation |
+| Reliability score | +score/20 | Anti-ghosting metric |
+| Randomness | +0-15 | Prevents deterministic lock-in |
+
+**Role Complement Map:** mother↔son, father↔daughter, mentor↔student, brother↔sister, friend↔friend, grandparent↔grandchild.
+
+### 14.15 Notification Service — `services/notification_service.py` (108 lines)
+
+**File:** [notification_service.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/services/notification_service.py)
+
+Centralized template-driven notification system with **43 notification types** across 8 categories (friends, messages, XP, games, contests, relationships, polls, rooms, calls, Q&A). Each type has an emoji-prefixed title and interpolatable body template.
+
+**Delivery:** Writes to `notifications_realtime` table, then attempts real-time push via `presence_manager.send_to_user()` (WebSocket). `send_notification_bulk()` iterates over multiple recipients.
+
+### 14.16 Familia Background Scheduler — `services/background_tasks.py` (182 lines)
+
+**File:** [background_tasks.py (realtime)](file:///Users/likhith./Veliora.AI_backend./realtime_communication/services/background_tasks.py)
+
+**24-Hour Loop** (`background_scheduler()`): Waits 10s after startup, then runs daily:
+1. **`update_streaks()`** — Increment `streak_days` if `last_interaction_at ≥ yesterday`; reset to 0 otherwise. Awards XP at milestones (7, 14, 30, 60, 100 days).
+2. **`decay_care_scores()`** — Reduce `care_score` by 2 for relationships with no interaction for 3+ days (minimum 0).
+3. **`check_all_level_ups()`** — Iterate all active relationships, call `check_and_level_up()` for each.
+4. **`generate_random_questions_for_new_users()`** — Seed 5 random personal questions for users with zero questions.
+
+### 14.17 Personal Q&A — `routers/questions.py` (349 lines)
+
+**File:** [questions.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/questions.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/questions/mine` | POST | Add personal question with options (max 20 per user) |
+| `/questions/mine` | GET | Retrieve own questions with correct answers |
+| `/questions/{question_id}` | PUT | Update question text/options/correct answer |
+| `/questions/{question_id}` | DELETE | Delete own question |
+| `/questions/friend/{friend_id}` | GET | View friend's questions **without** correct answers (friendship-gated) |
+| `/questions/answer` | POST | Submit answer; exact match=10 XP, partial=5 XP; notifies question owner |
+| `/questions/random` | GET | Get random questions for discovery |
+| `/questions/generate-ai` | POST | Gemini generates MCQ with `responseMimeType: "application/json"` |
+
+### 14.18 Deepgram STT Wrapper — `services/deepgram_stt.py` (143 lines)
+
+**File:** [deepgram_stt.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/services/deepgram_stt.py)
+
+Two functions:
+- `transcribe_audio(bytes, language, mime_type)` — Nova-2 with explicit language code, punctuation, smart formatting
+- `transcribe_audio_auto_detect(bytes, mime_type)` — Nova-2 with `detect_language=true` for unknown-language verification audio
+
+### 14.19 Cartesia TTS Wrapper — `services/cartesia_tts.py` (124 lines)
+
+**File:** [cartesia_tts.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/services/cartesia_tts.py)
+
+**9 curated voices** mapped by language (en, es, fr, de, pt, ja, ko, hi, zh). Uses Sonic-2 model at 24kHz. Supports MP3 and WAV output.
+
+### 14.20 Safety & Moderation — `routers/safety.py` (173 lines)
+
+**File:** [safety.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/safety.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/safety/report` | POST | Creates report + high-priority moderation queue entry; auto-cancels target's matching queue |
+| `/safety/sever` | POST | One-tap bond severance with farewell message, 24h cooldown before re-matching |
+| `/safety/exit-survey` | POST | Post-severance feedback (reason, rating, would_recommend) |
+| `/safety/reliability/{user_id}` | GET | Ghosting protection policy (7-day grace, status options) |
+| `/safety/minor-protection/{user_id}` | GET | Minor-specific restrictions (no adult matches, no calls until L3) |
+
+### 14.21 Privacy Settings — `routers/privacy.py` (100 lines)
+
+**File:** [privacy.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/privacy.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/privacy/settings` | GET | Get own privacy settings (auto-creates with defaults if missing) |
+| `/privacy/settings` | PUT | Update privacy settings |
+| `/privacy/settings/{user_id}` | GET | Get another user's privacy settings (for display logic) |
+
+Fields: profile_visibility (public/private), show_last_active, show_care_score, show_achievements, show_bio, allow_friend_requests, allow_search, translation_language.
+
+### 14.22 XP Dashboard — `routers/xp.py` (95 lines)
+
+**File:** [xp.py](file:///Users/likhith./Veliora.AI_backend./realtime_communication/routers/xp.py)
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/xp/me` | GET | Get own XP stats (current_xp, total_earned, games_won, streak_days) |
+| `/xp/gift` | POST | Gift XP to another user (validates balance, creates bidirectional transaction logs) |
+| `/xp/leaderboard` | GET | Global XP leaderboard sorted by total_xp_earned |
+| `/xp/transactions` | GET | Own XP transaction history (earned, gifted_in, gifted_out, spent) |
+| `/xp/{user_id}` | GET | Get another user's XP stats (public view) |
+
+---
+
+## 15. Complete Database Schema Reference
+
+### 15.1 AI Persona Tables (Architecture A)
+
+| Table | Key Columns | Purpose |
+|-------|-------------|---------|
+| `users` | id, email, name, gender, streak_days, last_login_date, total_xp | User profiles |
+| `user_bots` | user_id, bot_id, xp, level, traits, language | User↔Bot relationship config |
+| `messages` | user_id, bot_id, role, content, created_at | Chat message history |
+| `memories` | user_id, bot_id, memory, category, rfm_magnitude, embedding | Long-term memory store |
+| `diaries` | user_id, bot_id, content, mood, entry_date | Bot diary entries |
+| `games` | id, name, archetype, category, xp_reward | Game catalog |
+| `user_game_sessions` | user_id, bot_id, game_id, status, turn_count, xp_earned | Game session tracking |
+| `emotion_telemetry` | user_id, bot_id, dominant_emotion, fused_valence, text_message | Emotion tracking logs |
+| `insight_feedbacks` | user_id, insight_text, is_accurate | Dashboard insight feedback |
+
+### 15.2 Familia Realtime Tables (Architecture B) — All `_realtime` Suffixed
+
+| Table | Key Columns | Purpose |
+|-------|-------------|---------|
+| `profiles_realtime` | id, username, display_name, country, avatar_config, care_score | User profiles |
+| `privacy_settings_realtime` | user_id, profile_visibility, allow_friend_requests, translation_language | Privacy controls |
+| `user_languages_realtime` | user_id, language_code, proficiency, is_primary | Language preferences |
+| `friend_requests_realtime` | sender_id, receiver_id, status, message | Friend request tracking |
+| `relationships_realtime` | user_a_id, user_b_id, level, bond_points, streak_days, status | Active bonds |
+| `relationship_milestones_realtime` | relationship_id, milestone_type, title, bond_points_awarded | Level-up milestones |
+| `realtime_xp_realtime` | user_id, current_xp, total_xp_earned, games_won, streak_days | XP ledger |
+| `xp_transactions_realtime` | user_id, amount, transaction_type, source, balance_after | XP audit log |
+| `messages_realtime_comunicatio_realtime` | relationship_id, sender_id, content_type, original_text, translated_text, reactions | 1-on-1 messages |
+| `chat_facts_realtime` | user_id, relationship_id, fact_category, fact_value, confidence | Extracted personal facts |
+| `user_questions_realtime` | user_id, question_text, correct_answer, category | Personal Q&A for contests |
+| `polls_realtime` | creator_id, question, options, allow_multiple, is_anonymous | Chat polls |
+| `poll_votes_realtime` | poll_id, user_id, selected_option | Poll vote records |
+| `contests_realtime` | relationship_id, contest_type, user_a_score, user_b_score, status | Bonding contests |
+| `contest_questions_realtime` | contest_id, question_text, question_type, correct_answer | Contest questions |
+| `games_realtime_communication` | game_type, title, category, difficulty, is_immersive | Game catalog |
+| `game_sessions_realtime` | game_id, relationship_id, players, status, winner_id | Game session tracking |
+| `family_rooms_realtime` | room_name, room_type, max_members, created_by | Family room config |
+| `family_room_members_realtime` | room_id, user_id, role_in_room, is_moderator | Room membership |
+| `family_room_messages_realtime` | room_id, sender_id, original_text, translations | Room messages |
+| `family_room_join_codes_realtime` | room_id, code, max_uses, expires_at | Invite codes |
+| `cultural_potlucks_realtime` | room_id, host_id, theme, dish_name, recipe | Potluck events |
+| `verification_records_realtime` | user_id, verification_type, liveness_score, is_real_human | Identity verification |
+| `matching_queue_realtime` | user_id, seeking_role, offering_role, status | Matching queue |
+| `notifications_realtime` | user_id, type, title, body, is_read | Push notifications |
+| `achievements_realtime` | name, criteria_type, criteria_value, rarity | Achievement definitions |
+| `user_achievements_realtime` | user_id, achievement_id, unlocked_at | Unlocked achievements |
+| `reports_realtime` | reporter_id, reported_user_id, reason, status | Safety reports |
+| `moderation_queue_realtime` | user_id, queue_type, priority, status | Moderation pipeline |
+| `call_logs_realtime` | relationship_id, caller_id, call_type, duration_seconds | Call history |
+| `contest_leaderboard_realtime` | user_id, contest_type, period, score, rank | Leaderboard rankings |
+| `time_capsules_realtime` | relationship_id, content, open_date, is_opened | Time capsule messages |
+| `gratitude_entries_realtime` | relationship_id, author_id, message, is_anonymous | Gratitude journal |
+| `exit_surveys_realtime` | user_id, relationship_id, reason, rating | Bond exit feedback |
+
+---
+
+## 16. Supporting Services
+
+### 16.1 RabbitMQ — `services/rabbitmq_service.py` (130 lines)
+- Two durable queues: `memory_extraction_queue`, `message_log_queue`
+- `publish_memory_task()` — Serializes user/bot/message data → publishes to memory queue
+- `publish_message_log()` — Serializes message with activity_type, media_url → publishes to log queue
+- Uses `pika` (synchronous) wrapped in `asyncio.to_thread()` for non-blocking dispatch
+
+### 16.2 Vector Search — `services/vector_search.py` (138 lines)
+Two-stage semantic search:
+1. **HNSW Search:** Supabase RPC `match_memories` function — pgvector cosine similarity, returns top-20 candidates
+2. **Cross-Encoder Reranking:** HuggingFace Serverless API with `cross-encoder/ms-marco-MiniLM-L-6-v2` — reranks candidates, returns top-K
+
+### 16.3 Audio Decoder — `services/audio_decoder.py` (157 lines)
+`PersistentFFmpegDecoder` — Long-lived FFmpeg subprocess:
+- Spawned once per voice call session
+- Input: arbitrary audio (Opus/WebM) via stdin pipe
+- Output: 16kHz mono float32 PCM via stdout pipe
+- Eliminates per-chunk process spawn overhead (critical for real-time streaming)
+
+### 16.4 Emotion Worker — `services/emotion_worker.py` (236 lines)
+Background loop for voice call emotion tracking:
+- Accumulates PCM audio in 4-second rolling window
+- Runs HuBERT inference every 4 seconds
+- Synchronizes with latest text emotion from conversation
+- Updates Redis emotion state for real-time dashboard
+
+### 16.5 Selfie Service — `services/selfie_service.py` (242 lines)
+Constructs HuggingFace inference prompts from:
+- Bot persona definition (ethnicity, style, features)
+- Scene description (generated by Gemini from chat context)
+- Current emotion state
+Sends to HuggingFace Serverless API, uploads result to Supabase Storage.
+
+### 16.6 Image Service — `services/image_service.py` (331 lines)
+Gradio client integration for FaceID-preserving selfie generation:
+- Maintains connection to HuggingFace Spaces running FaceID models
+- Automatic space rotation on failure (multiple backup spaces)
+- `generate_selfie()` — Takes base face image + emotion context → preserves face identity in generated scene
+
+---
+
+## 17. Persona System — `bot_prompt.py` (800+ lines)
+
+**File:** [bot_prompt.py](file:///Users/likhith./Veliora.AI_backend./bot_prompt.py)
+
+Central repository for all system prompts. `get_bot_prompt(bot_id)` returns a parameterized template:
+
+**Template Variables:**
+- `{custom_bot_name}` — Display name of the persona
+- `{userName}` — Current user's name
+- `{userGender}` — User's gender for pronoun adaptation
+- `{traitsString}` — Comma-separated personality traits selected by user
+- `{languageString}` — Response language preference
+
+Each persona prompt defines:
+- **Cultural identity** — Origin city, cultural references, local expressions
+- **Personality archetype** — Mentor (wise/guiding), Friend (casual/playful), Romantic (affectionate/caring)
+- **Behavioral constraints** — Response length limits, topic boundaries, safety guidelines
+- **Dynamic trait injection** — User-selected traits (e.g., "sarcastic", "philosophical") modify behavior
+
+---
+
+## 18. Known Issues & Blockers
+
+| Issue | Severity | Module | Description |
+|-------|----------|--------|-------------|
+| Memory Worker Verification | Medium | `workers/` | The `workers/` directory is empty — RabbitMQ consumer logic runs inline in `background_tasks.py` but needs extraction for horizontal scaling |
+| Legacy XP Parity | Low | `voice_ultra.py` | Lines 117-127 attempt to import from non-existent `reference_main` and `MM2.user_xp` — always falls through to fallback |
+| Selfie Feature Toggle | Low | `selfie.py` | Composite selfie (user+bot) code is fully commented out; depends on user avatar availability |
+| Image Meme Generation | Low | `multimodal.py` | Image-based meme generation commented out (budget constraint); only text memes active |
+| Diary CRON Stub | Low | `diary.py` | `POST /api/diary/cron/daily` endpoint is a stub returning `{"success": True}` |
+| Table Name Typo | Info | `database.txt` | Messages table is `messages_realtime_comunicatio_realtime` (typo in "comunicatio") — preserved for backwards compatibility |
+
+---
+
+## 19. External Service Dependency Map
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                    EXTERNAL SERVICES                        │
+│                                                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ Gemini 2.0   │  │ Deepgram     │  │ Cartesia         │  │
+│  │ Flash        │  │ Nova-2       │  │ Sonic            │  │
+│  │              │  │              │  │                  │  │
+│  │ • Chat LLM   │  │ • REST STT   │  │ • REST TTS       │  │
+│  │ • Embeddings  │  │ • WebSocket  │  │ • WebSocket      │  │
+│  │ • Vision      │  │   Streaming  │  │   Streaming      │  │
+│  │ • Extraction  │  │              │  │                  │  │
+│  │ • Diary Gen   │  │              │  │                  │  │
+│  │ • Scene Desc  │  │              │  │                  │  │
+│  │ • Insights    │  │              │  │                  │  │
+│  │ • Cultural    │  │              │  │                  │  │
+│  │   Context     │  │              │  │                  │  │
+│  └─────────────┘  └──────────────┘  └──────────────────┘  │
+│                                                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐  │
+│  │ HuggingFace  │  │ Google Cloud │  │ wttr.in          │  │
+│  │              │  │ Translation  │  │                  │  │
+│  │ • Selfie Gen │  │              │  │ • Weather Data   │  │
+│  │ • Cross-     │  │ • V2 API     │  │   (free, no key) │  │
+│  │   Encoder    │  │ • Detection  │  │                  │  │
+│  │   Reranking  │  │ • Batch      │  │                  │  │
+│  └─────────────┘  └──────────────┘  └──────────────────┘  │
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 20. File Inventory — Complete Module Index
+
+### AI Persona Backend (Root)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `main.py` | 296 | Application entry, lifespan, router registration |
+| `bot_prompt.py` | 800+ | Persona system prompts |
+| `config/settings.py` | 89 | Environment configuration |
+| `config/mappings.py` | 305 | Voice/language/origin/XP mappings |
+| `models/schemas.py` | 348 | Pydantic request/response models |
+| `api/auth.py` | 439 | JWT auth, profiles, daily login |
+| `api/chat.py` | 656 | Core chat pipeline |
+| `api/voice.py` | 533 | WebSocket voice streaming |
+| `api/voice_ultra.py` | 143 | REST ultra-fast voice |
+| `api/_ultra_emotion.py` | 85 | Background emotion for ultra voice |
+| `api/games.py` | 1107 | Game catalog + engine |
+| `api/selfie.py` | 112 | HuggingFace selfie route |
+| `api/images.py` | 182 | Gradio/FaceID selfie route |
+| `api/diary.py` | 112 | Diary CRUD |
+| `api/memory.py` | 281 | Memory vault CRUD + extraction |
+| `api/multimodal.py` | 424 | Image/URL/weather/meme |
+| `api/emotion_dashboard.py` | 295 | Mental health analytics |
+| `api/logs.py` | 99 | Frontend logs + AI insights |
+| `services/llm_engine.py` | 640 | Gemini gateway |
+| `services/redis_cache.py` | 260 | Redis cache operations |
+| `services/supabase_client.py` | 554 | Supabase wrapper |
+| `services/voice_service.py` | 304 | Voice streaming orchestrator |
+| `services/background_tasks.py` | 276 | Background workers |
+| `services/rabbitmq_service.py` | 130 | Message queue dispatch |
+| `services/vector_search.py` | 138 | Semantic search + reranking |
+| `services/emotion_worker.py` | 236 | Voice call emotion loop |
+| `services/selfie_service.py` | 242 | HuggingFace selfie generation |
+| `services/image_service.py` | 331 | Gradio FaceID service |
+| `services/audio_decoder.py` | 157 | Persistent FFmpeg decoder |
+| `emotion/text_emotion.py` | 103 | RoBERTa text emotion |
+| `emotion/speech_emotion.py` | 123 | HuBERT speech emotion |
+| `emotion/fusion.py` | 239 | Confidence-weighted fusion |
+| `emotion/session_state.py` | 400 | Dual-alert safety system |
+| `Redis_chat/.../redis_class.py` | 353 | RedisManager core |
+| `Redis_chat/.../chatbot.py` | 300 | Memory-integrated chatbot |
+| `Redis_chat/.../memory_functions.py` | 537 | Memory retrieval/extraction |
+| `Redis_chat/.../RFM_functions.py` | 91 | RFM scoring |
+| `Redis_chat/.../serialization.py` | 153 | Redis↔Supabase serialization |
+
+### Familia Realtime (realtime_communication/)
+| File | Lines/Size | Purpose |
+|------|-----------|---------|
+| `config.py` | 74 | Environment configuration |
+| `models/schemas.py` | 255 | 30+ Pydantic models |
+| `database.txt` | 716 | Complete SQL schema |
+| `routers/auth.py` | 262 | Auth endpoints |
+| `routers/profiles.py` | 386 | Profile management |
+| `routers/chat.py` | 849 | Messages, WebSocket, polls, reactions |
+| `routers/friends.py` | 476 | Friend request lifecycle |
+| `routers/matching.py` | 420 | Role-based matching |
+| `routers/games.py` | 497 | Game catalog + sessions |
+| `routers/live_games.py` | 391 | Real-time multiplayer (WebRTC signaling) |
+| `routers/family_rooms.py` | 991 | Family rooms + SFU call infrastructure |
+| `routers/contests.py` | 197 | Bonding contests + leaderboard |
+| `routers/presence.py` | 230 | Online status + game invites |
+| `routers/privacy.py` | 100 | Privacy settings |
+| `routers/safety.py` | 173 | Reports, blocking, minor protection |
+| `routers/verification.py` | 183 | Identity verification + liveness |
+| `routers/translation.py` | 88 | Translation endpoints |
+| `routers/voice.py` | 94 | STT/TTS |
+| `routers/calls.py` | 281 | Call signaling + logging |
+| `routers/questions.py` | 349 | Personal Q&A + AI generation |
+| `routers/xp.py` | 95 | XP dashboard + gifting |
+| `services/translation_service.py` | 198 | Google Translate + Gemini |
+| `services/xp_service.py` | 295 | XP economy engine |
+| `services/matching_service.py` | 158 | Smart matching algorithm |
+| `services/notification_service.py` | 108 | Centralized notification dispatch |
+| `services/background_tasks.py` | 182 | Streak/decay/level-up workers |
+| `services/contest_service.py` | 273 | Contest question generation + scoring |
+| `services/auth_service.py` | ~70 | JWT extraction |
+| `services/supabase_client.py` | ~85 | Supabase connection |
+| `services/deepgram_stt.py` | 143 | STT wrapper (Nova-2) |
+| `services/cartesia_tts.py` | 124 | TTS wrapper (Sonic-2) |
+
+### Mediasoup SFU Servers (Node.js)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `mediasoup_server/index.js` | 310 | Primary SFU (Socket.IO, port 3016) |
+| `mediasoup_server/config.js` | 79 | Codec/worker/transport configuration |
+| `sfu_server/server.js` | 203 | Internal REST SFU (Express, port 4000) |
+
+### Additional Modules (Root)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `activities.py` | 66 | Activity UX helpers (satisfaction/cooldown) |
+| `image-generation/bot_prompts.py` | 3296 | Visual prompt templates per persona |
+| `image-generation/main.py` | 664 | Standalone image generation FastAPI |
+
+### RabbitMQ Workers (Redis_chat/working_files/)
+| File | Lines | Purpose |
+|------|-------|---------|
+| `Redis_chat/.../memory_worker.py` | 125 | Async memory extraction consumer (aio_pika) |
+| `Redis_chat/.../message_worker.py` | 107 | Async message log consumer |
+| `Redis_chat/.../queue_cleanup.py` | 49 | RabbitMQ queue maintenance |
+| `Redis_chat/.../main.py` | 151 | Standalone Redis chat FastAPI (dev/test) |
+
+---
+
+*Document generated from exhaustive codebase traversal. Every module, function, endpoint, and design decision has been verified against the source code. Total: 75+ source files, 20,000+ lines of application code, 35+ database tables, 3 runtime processes (FastAPI ×2, Node.js SFU), 170 API endpoints.*
+
