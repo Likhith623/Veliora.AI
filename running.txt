@@ -8,8 +8,28 @@ Start the Backend (main.py).
 Start Frontend 1 (persona_frontend).
 Start Frontend 2 (realtime_frontend).
 
+for redis indexes: (clearly in redis_chat folder)
+-- Memory Index (with bot_id for multi-persona support):
+FT.CREATE memories_idx ON HASH PREFIX 1 memories: SCHEMA \
+user_id TAG SEPARATOR , \
+bot_id TAG SEPARATOR , \
+memory_text TEXT WEIGHT 1 \
+embedding VECTOR HNSW 10 TYPE FLOAT32 DIM 768 DISTANCE_METRIC COSINE M 16 EF_CONSTRUCTION 200 \
+rfm_score NUMERIC SORTABLE magnitude NUMERIC frequency NUMERIC \
+created_at TEXT WEIGHT 1 last_used TEXT WEIGHT 1
 
-for the persona:
-1. start the backend (main.py in the root).
-2. start the persona fontend main folder (cd chatbot_new_frotnend and then npm run dev)
-3. for the emotion: 
+
+-- Chat Index (with bot_id for multi-persona support):
+FT.CREATE chats_idx ON HASH PREFIX 1 chat: SCHEMA \
+user_message TEXT WEIGHT 1 \
+bot_response TEXT WEIGHT 1 \
+user_id TAG SEPARATOR , \
+bot_id TAG SEPARATOR , \
+timestamp TEXT WEIGHT 1
+
+
+# Redis Stack
+docker run -d --name redis-stack -p 6379:6379 -p 8001:8001 redis/redis-stack:latest
+
+# RabbitMQ
+docker run -d --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management
